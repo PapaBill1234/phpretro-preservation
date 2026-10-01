@@ -2,10 +2,19 @@
 
 - **Coordinator:** `gpt-6.1-sol` through A6API. A6API merchant telemetry is authoritative for the model actually used. If Codex displays `gpt-6-sol` while A6API reports `gpt-6.1-sol`, treat that as a Codex display/configuration glitch and record both labels in the run log; do not infer the billed model from the local label.
 - **Subagents:** `gpt-6-luna` through A6API for bounded, Sol-approved units only.
-- **Jev:** use the existing `jev_judge` MCP tool for typed rankings/classifications over facts already found; batch related questions; `jev_gate` remains disabled.
+- **Jev:** use the existing `jev_judge` MCP tool for typed rankings/classifications over facts already found; batch related questions. The current Codex configuration exposes both `jev_judge` and `jev_gate`, and the global `PreToolUse` hook invokes the Jev gate command. This observed configuration is recorded here; it is not a substitute for testing the hook in a live session.
 - **Evidence:** deterministic search/reduction precedes Jev for broad multi-file and noisy-log tasks. Jev receives sanitized candidate IDs and bounded excerpts only.
 - **Confidence:** 0.80 permits a verified low-risk selection; 0.60-0.79 requires expanded Sol review; below 0.60, escalation, unavailable Jev, or source disagreement falls back to Sol.
 - **Delegation:** no Luna for exact lookups or tiny edits; delegate only bounded units whose expected work can repay a second context.
 - **Authority:** Sol verifies every Jev result against source before delegation or acceptance. Jev and Luna never make final authentication, authorization, schema ownership, production enablement, merge, or runner-security decisions.
 - **Economics:** record A6API usage and compare matched Sol-only versus Jev/Luna runs by cost per accepted unit before claiming savings.
 - **Foundation status:** supervised only until repository policy, queue, token caps, and evidence transfer are approved.
+- **Repository authority:** `https://github.com/PapaBill1234/phpretro-preservation`; current working branch is `integration`, with `main` reserved for reviewed milestones.
+- **Initial batch:** F0-F5 in `tasks/queue.md` is proposed and requires user review before implementation or delegation.
+- **Go security:** the planned foundation must run `go test`, `go test -race`, `govulncheck ./...`, and direct/transitive license inventory after `go.mod` is introduced.
+- **A6API evidence:** raw JSONL exports and the Tampermonkey/PowerShell collectors are measurement evidence only. Savings require a matched Sol-only versus Jev/Luna comparison after ten accepted units.
+- **F0 baseline:** `go.mod` and `.go-version` now define a dependency-free executable foundation. No product route, schema, credential, or production behavior is included.
+- **External verification:** GitHub branch protection/rulesets, CI execution, and repository settings require verification through an authenticated GitHub review before unattended work.
+- **Foundation caps:** F0 is capped at 40,000 uncached input tokens, 20,000 cached-input tokens, 8,000 output tokens, and 45 minutes wall time. F1-F5 are each capped at 60,000 uncached input tokens, 40,000 cached-input tokens, 12,000 output tokens, and 90 minutes wall time. The supervised foundation batch is capped at 340,000 uncached input tokens, 220,000 cached-input tokens, 68,000 output tokens, and ten hours wall time. These are hard stops, not spending targets.
+- **A6API floor:** stop autonomous work below a manually checked $1.00 provider balance. The floor is not inferred from local files or estimated reports.
+- **Queue approval:** F0-F5 are the initial supervised batch. F0 must pass before F1 starts; each later unit requires the prior unit's accepted evidence. F6-F8 remain parked until F0-F5 are accepted.

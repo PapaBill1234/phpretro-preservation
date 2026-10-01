@@ -1,0 +1,35 @@
+﻿services:
+  db:
+    image: mariadb:10.11
+    environment:
+      MYSQL_ROOT_PASSWORD: stage3root
+      MYSQL_DATABASE: phpretro
+      MYSQL_USER: phpretro
+      MYSQL_PASSWORD: stage3pass
+    volumes:
+      - type: bind
+        source: C:/Users/Karim/Downloads/PHPRetro Setup Pack/HoloGraph Emulator/database.sql
+        target: /docker-entrypoint-initdb.d/01-holograph.sql
+        read_only: true
+      - type: bind
+        source: C:/Users/Karim/Documents/ChatGPT/New project/hotel-drogon-scope-guard/stage3-run/02-stage3.sql
+        target: /docker-entrypoint-initdb.d/02-stage3.sql
+        read_only: true
+    networks: [stage3]
+    tmpfs:
+      - /var/lib/mysql
+  web:
+    build:
+      context: ../stage3-original-phpretro
+      dockerfile: ../stage3-run/Dockerfile
+    depends_on: [db]
+    ports:
+      - '127.0.0.1:18081:80'
+    networks: [stage3]
+    tmpfs:
+      - /var/www/html/cache
+networks:
+  stage3:
+    internal: true
+
+

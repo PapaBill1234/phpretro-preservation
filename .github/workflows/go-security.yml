@@ -1,0 +1,33 @@
+name: Go security and foundation checks
+
+on:
+  pull_request:
+  push:
+    branches: [main, integration, 'auto/**']
+
+permissions:
+  contents: read
+
+jobs:
+  foundation:
+    if: ${{ hashFiles('go.mod') != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: .go-version
+          check-latest: false
+      - run: test -z "$(gofmt -l .)"
+      - run: go test ./...
+      - run: go test -race ./...
+      - run: mkdir -p artifacts && go list -m -json all > artifacts/go-modules.json
+      - run: go run github.com/google/go-licenses@v1.6.0 report ./... > artifacts/go-licenses.txt
+      - uses: golang/govulncheck-action@v1
+        with:
+          go-version-input: '1.24.6'
+          go-package: ./...
+      - uses: actions/upload-artifact@v4
+        with:
+          name: go-security-evidence
+          path: artifacts/
