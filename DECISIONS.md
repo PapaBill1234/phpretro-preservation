@@ -1,6 +1,6 @@
 # Decisions
 
-- **Coordinator:** `gpt-6.1-sol` through A6API. Verify the active Codex profile before cost comparisons; a configuration showing `gpt-6-sol` is a mismatch requiring correction.
+- **Coordinator:** `gpt-6.1-sol` through A6API. A6API merchant telemetry is authoritative for the model actually used. If Codex displays `gpt-6-sol` while A6API reports `gpt-6.1-sol`, treat that as a Codex display/configuration glitch and record both labels in the run log; do not infer the billed model from the local label.
 - **Subagents:** `gpt-6-luna` through A6API for bounded, Sol-approved units only.
 - **Jev:** use the existing `jev_judge` MCP tool for typed rankings/classifications over facts already found; batch related questions; `jev_gate` remains disabled.
 - **Evidence:** deterministic search/reduction precedes Jev for broad multi-file and noisy-log tasks. Jev receives sanitized candidate IDs and bounded excerpts only.
