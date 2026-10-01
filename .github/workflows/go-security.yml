@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   foundation:
-    if: ${{ hashFiles('go.mod') != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
