@@ -6,6 +6,8 @@ The A6API console is the billing authority. Export request rows from `https://a6
 {"timestamp":"2026-10-01T11:31:12Z","request_id":"...","model":"gpt-6.1-sol","input_tokens":13059,"cache_tokens":161536,"output_tokens":799,"input_price_per_million":0.0264,"cache_price_per_million":0.00132,"output_price_per_million":0.132,"accepted":true}
 ```
 
+Luna rows use the separate profile in `config/a6api-rates.json`: input `$0.007200/M`, output `$0.0360/M`, cache read `$0.000720/M`, and cache write `$0.009000/M`. Sol rows use input `$0.0264/M`, output `$0.1320/M`, and cache read `$0.001320/M`. Per-row dashboard values take precedence.
+
 The example row calculates approximately `$0.000663`, matching the console's reference calculation. Actual deduction remains authoritative.
 
 Run the read-only report:

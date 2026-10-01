@@ -14,5 +14,12 @@ pwsh scripts/summarize-a6api-archive.ps1
 
 Each row should include `timestamp`, `request_id`, `model`, `input_tokens`, `cache_tokens`, `output_tokens`, and the three per-million prices. Optional fields are `accepted` and `mode` (`ungated`, `gated`, or `escalated`). Do not store API keys, cookies, authorization headers, or private dashboard HTML.
 
-For the supplied merchant row, use input `$0.0264/M`, output `$0.1320/M`, and cache read `$0.001320/M`. Cache-write pricing was not supplied; record it when the dashboard/export provides it, and do not infer it. Actual deduction remains authoritative.
+Reference merchant rates are stored in `config/a6api-rates.json`:
+
+| Model | Input/M | Output/M | Cache read/M | Cache write/M |
+|---|---:|---:|---:|---:|
+| `gpt-6.1-sol` | `$0.0264` | `$0.1320` | `$0.001320` | unknown |
+| `gpt-6-luna` | `$0.007200` | `$0.0360` | `$0.000720` | `$0.009000` |
+
+The collector prefers prices displayed on each dashboard row. The rate table is used only when a row omits prices and its model matches exactly. Actual deduction remains authoritative.
 
