@@ -9,12 +9,12 @@ Updated 2026-10-01.
 | Cost monitoring | A6API rates, JSONL collector, Tampermonkey collector, PowerShell collector, summaries, backups, and fixtures are present. | Verified locally |
 | Monitoring tests | Node userscript test passes; Windows PowerShell collector test passes. | Verified locally |
 | Go baseline | `go.mod`, `.go-version`, dependency-free package, and baseline test are present. | Added; local execution blocked because Go is not installed |
-| Security CI | Workflow runs formatting, tests, race tests, module evidence, `govulncheck`, and uploads evidence. | Added; CI execution pending |
+| Security CI | Workflow run `36941954680` passed on commit `8ad7480`; formatting, tests, race tests, module evidence, pinned `govulncheck` 1.1.4, and license inventory all passed. | Verified on GitHub |
 | Original evidence | Recovered stage directories and fresh-start outputs exist in the recovery bundle and sibling scope-guard checkout. | Available; authoritative input approval pending |
-| Branch policy | Branch names are visible locally; protection/ruleset settings were not verified through GitHub CLI. | External verification pending |
+| Branch policy | Public GitHub API confirms `main` requires one pull-request review and the `foundation` status check, enforces administrators, resolves conversations, and blocks force-pushes/deletions. | Verified on GitHub |
 
 Raw A6API archives and backups are deliberately ignored by Git because they contain request metadata. The checked-in fixtures and collectors are sufficient to reproduce offline validation; live exports remain local evidence.
 
-Public GitHub API verification on 2026-10-01 found: the repository is public, unarchived, and defaults to `main`; both `main` and `integration` are present but currently report `protected: false`; the remote currently exposes zero Actions workflows because the new local workflow has not been pushed. These are readiness gaps, not assumptions.
+Public GitHub API verification on 2026-10-01 found: the repository is public, unarchived, and defaults to `main`; both `main` and `integration` are present; `main` is protected as recorded above; and the security workflow is active with a successful run on `integration`.
 
-Current planning confidence: approximately 88%. The remaining uncertainty is concentrated in external GitHub controls, CI execution, Go toolchain availability, original-source/golden-runtime verification, approved caps, and the first measured delegation comparison.
+Current planning confidence: approximately 94%. The remaining uncertainty is concentrated in the first clean original-source/golden-runtime rerun and the first measured delegation comparison; those require the supervised work units themselves.
