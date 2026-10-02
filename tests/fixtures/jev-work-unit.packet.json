@@ -1,0 +1,19 @@
+{
+  "unit_id": "fixture-jev-cache",
+  "task_class": "bounded-extraction",
+  "state": "Candidate A is cited at source/file.go:10; Candidate B is cited at source/file.go:20.",
+  "candidate_count": 2,
+  "source_refs": ["source/file.go:10", "source/file.go:20"],
+  "questions": [
+    {
+      "id": "candidate",
+      "type": "choice",
+      "question": "Which cited candidate is most relevant?",
+      "options": {
+        "A": "source/file.go:10",
+        "B": "source/file.go:20",
+        "none of these": "neither citation is relevant"
+      }
+    }
+  ]
+}
