@@ -121,7 +121,7 @@ Flash replacement is **not committed to the autonomous plan and is out of scope 
 
 The foundation slice is limited to password-scheme verification, one account/session flow, one profile read, one content read, translated fixtures, and their golden CI contracts. Cap it at **10 working days and the foundation token cap recorded in `DECISIONS.md`**; no payment or paid-service spend is authorized by this plan. Each unit also has its own token cap recorded in `DECISIONS.md`. Measure input, cached-input, and output tokens from session logs; derive dollars afterward from the merchant's listed prices. Record wall time, retries, and accepted/parked status.
 
-Stop immediately for missing credentials/authority, a payment/quota/auth failure, a second stream failure, a detected secret, guessed schema, production data access, or a destructive action. Stop when the manually checked A6API balance falls below the threshold recorded in `DECISIONS.md`. Stop after two materially similar failures, two failed fixes, five total verification failures, or a red/unexplained CI result after two attempts. Stop when a unit cap or the foundation cap is reached, when no measurable parity/progress is produced in two successive work units, or when the next action is a decision gate. Park unresolved mappings as `UNKNOWN`.
+Stop immediately for missing credentials/authority, a payment/quota/auth failure, a second stream failure, a detected secret, guessed schema, production data access, or a destructive action. Stop after two materially similar failures, two failed fixes, five total verification failures, or a red/unexplained CI result after two attempts. Stop when a unit cap or the foundation cap is reached, when no measurable parity/progress is produced in two successive work units, or when the next action is a decision gate. Park unresolved mappings as `UNKNOWN`.
 
 ## 10. Delivery and decision gates
 
@@ -164,7 +164,7 @@ Keep stable instructions and short briefs. Maintain a generated repository map a
 
 Use Jev only for cheap typed judgments that rank candidates before reading: candidate-file discovery with five or more candidates, log classification, legacy-file ranking, delegation routing, plausible-cause ranking, diff-hunk triage, and claim checks. Batch related questions, include a `none of these` choice, and verify the selected source afterward. Only the user's real A6API, OpenRouter, TypeSafe, and GitHub keys are off-limits; synthetic credentials, configs, and logs are allowed when they contain no real secrets. Helper scripts should gather candidates and call Jev so use is reproducible rather than discretionary.
 
-At session start, attempt the required no-op availability check only when the MCP tool is actually exposed. The current check was exposed and succeeded; `codex mcp get jev --json` confirms `jev_judge` enabled and `jev_gate` disabled, while this CLI has no `codex debug-config` subcommand. Sample consequential Jev answers against source. After ten accepted units, compare measured cost per accepted unit and error rate; retain Jev only where matched evidence shows benefit. The wrapper records output tokens but estimates cost from input tokens only, so output billing remains unverified.
+At session start, attempt the required no-op availability check only when the MCP tool is actually exposed. The current check was exposed and succeeded; `codex mcp get jev --json` confirms `jev_judge` and `jev_gate` are enabled, and the global `PreToolUse` hook invokes `jev-use ... hook gate`. Treat the gate as a safety check that does not replace ordinary Codex permissions or prove savings. Sample consequential Jev answers against source. After ten accepted units, compare measured cost per accepted unit and error rate; retain Jev routing only where matched evidence shows benefit. The wrapper records output tokens but estimates cost from input tokens only, so output billing remains unverified.
 
 ## 14. Autonomous operation and hard stops
 
@@ -172,7 +172,7 @@ A future Goal runner may pull bounded units from `tasks/queue.md` with statuses 
 
 Stop after a payment/quota/auth failure, a second stream failure, a detected secret, two materially similar failed fixes, unexplained red CI after two attempts, guessed schema, an open decision dependency, scope outside this plan, production enablement of registration/payments/client handoff/staff operations, a destructive migration, or an oversized deletion. If no independent unit is ready, stop and report the decision required. A unit without a commit or status change within 45 minutes is stopped. These rules are subordinate to the stricter 10-day foundation-slice cap above.
 
-Every unit must have a token cap in `DECISIONS.md`; stop at that cap. Measure usage from session logs and derive dollars from merchant-listed prices. The runner also stops when the manually checked A6API balance falls below the threshold recorded in `DECISIONS.md`, even if a unit or foundation cap remains. The foundation slice has its own separate token cap and cannot borrow unused allowance from later units.
+Every unit must have a token cap in `DECISIONS.md`; stop at that cap. Measure usage from session logs and derive dollars from merchant-listed prices. The runner also stops on an actual A6API payment, quota, or authentication failure, even if a unit or foundation cap remains. The foundation slice has its own separate token cap and cannot borrow unused allowance from later units.
 
 ## 15. Monitoring
 
@@ -180,7 +180,7 @@ The new repository and integration branch should expose commit and CI status, `a
 
 ## 16. Decision gates
 
-The user decides: confirmation of Go after the capped foundation-slice report; creation of public repository `phpretro-preservation` under the user's account; the per-unit and foundation token caps and `$1.00` manual A6API balance floor in `DECISIONS.md`; the first PolarIS/Octane adapter scope; Pixel63; the SWF replacement; and the final Opus 5.5 then Fable 5.1 reviews. Code is GPL-3.0 and preserved assets stay in the same repository with a provenance file. Autonomous work proceeds only after repository approval and only on units not blocked by these gates.
+The user decides: confirmation of Go after the capped foundation-slice report; creation of public repository `phpretro-preservation` under the user's account; the per-unit and foundation token caps and any optional A6API spending cap in `DECISIONS.md`; the first PolarIS/Octane adapter scope; Pixel63; the SWF replacement; and the final Opus 5.5 then Fable 5.1 reviews. Code is GPL-3.0 and preserved assets stay in the same repository with a provenance file. Autonomous work proceeds only after repository approval and only on units not blocked by these gates.
 
 ### Proposed `DECISIONS.md` additions
 
@@ -191,5 +191,5 @@ These entries are draft content and have not been written as a file:
 - **Dependencies:** pinned `github.com/go-sql-driver/mysql`, `golang.org/x/crypto`, and `github.com/pquerna/otp` (Apache-2.0); exact versions and transitive license inventory are a supervised foundation task.
 - **Production limits:** no registration, payments, client handoff, staff operations, or emulator writes until their decision gates, negative tests, atomic audit behavior, and reviews pass.
 - **Autonomy:** autonomous operation starts only after repository/ruleset/CI approval; the first foundation slice is supervised.
-- **A6API:** stop below a `$1.00` manually checked balance. The current `a6api.config.toml` and `jev-report.ps1` expose no balance API/read path, so balance must be entered from the provider dashboard or another authoritative user-supplied reading. Per-unit and foundation token caps remain placeholders until the supervised unit is measured; dollars are derived from merchant-listed prices.
+- **A6API:** the checked-in collectors and reports record request usage, rates, estimated cost, Jev calls, and cost per accepted unit. Stop on an actual provider payment/quota/auth failure. No fixed balance floor is required; an optional user-defined spending cap may be added later. Provider telemetry remains authoritative.
 - **Stage 3 UNKNOWNs:** host port `18081` remains unverified/unlistening; `/account/logout_ok` remains a PHP 5.6 compatibility fatal; direct internal capture and `/logout.php` are the verified fallback. Do not treat either UNKNOWN as resolved.

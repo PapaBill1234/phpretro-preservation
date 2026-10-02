@@ -14,11 +14,11 @@ Sol (`gpt-6.1-sol`) is the coordinator and final verifier. Luna subagents use `g
 
 ## Jev policy
 
-Jev is a typed decision aid, not a search engine or authority. Include `none of these` when ranking candidates. Accept a low-risk selection only when confidence is at least 0.80 and source verification agrees. Between 0.60 and 0.80, keep the decision with Sol for review. Below 0.60, on `escalate`, on an unavailable response, or on disagreement with source, do not delegate and let Sol decide.
+Jev is a typed judgment engine over supplied evidence, not a search engine. It may review source excerpts and high-risk questions when those facts are explicitly included in the state. Include `none of these` when ranking candidates. Accept a low-risk selection only when confidence is at least 0.80 and source verification agrees. Between 0.60 and 0.80, keep the decision with Sol for review. Below 0.60, on `escalate`, on an unavailable response, or on disagreement with source, do not delegate and let Sol decide.
 
 Batch independent questions into one call; do not call Jev once per candidate. Use candidate reduction before Jev for sets larger than 20. Record candidate count, batch size, Jev call count, latency, input/output tokens, selected candidates, confidence, and verification result.
 
-Jev must not decide authentication, authorization, schema ownership, production enablement, security approval, merge approval, or runner permissions. `jev_gate` remains disabled.
+Jev may perform advisory reviews of authentication, authorization, schema ownership, production enablement, security, merge, and runner questions when the state contains the relevant evidence. Verdicts and confidence must be recorded; a verdict does not grant permissions or replace required source and test evidence. The installed `jev_gate` PreToolUse hook is enabled as a safety check for tool actions; `allow`, `escalate`, unavailable, or hook-failure results leave ordinary Codex permissions in force, and only an explicit `deny` blocks the proposed action.
 
 ## Delegation policy
 
