@@ -1,0 +1,11 @@
+# Local A6API exports and backups may contain request metadata and stay off GitHub.
+monitoring/*.jsonl
+monitoring/.a6api-backup-*.jsonl
+monitoring/*.log
+
+# Local Go build output.
+bin/
+dist/
+
+# Original PHPRetro checkout is local capture evidence, not rewrite source.
+stage3-original-phpretro/

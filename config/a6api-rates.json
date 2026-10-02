@@ -1,0 +1,14 @@
+{
+  "gpt-6.1-sol": {
+    "input_price_per_million": 0.0264,
+    "output_price_per_million": 0.132,
+    "cache_read_price_per_million": 0.00132,
+    "cache_write_price_per_million": null
+  },
+  "gpt-6-luna": {
+    "input_price_per_million": 0.0072,
+    "output_price_per_million": 0.036,
+    "cache_read_price_per_million": 0.00072,
+    "cache_write_price_per_million": 0.009
+  }
+}
