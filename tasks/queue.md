@@ -5,8 +5,8 @@ Only one unit is ready. The batch scope is `docs/evidence/**` and `tasks/F1.md` 
 | ID | Status | Unit | Exact scope | Reason |
 | --- | --- | --- | --- | --- |
 | F0 | accepted | Repository and CI baseline | Historical F0 foundation files | CI baseline passed and was accepted before this queue. |
-| F1 | ready | PolarIS password-scheme evidence | `docs/evidence/**`, `tasks/F1.md` | Sole ready unit; evidence only. |
-| F2 | blocked | Account/session contract | No files approved | Requires accepted F1 verifier evidence. |
+| F1 | parked | PolarIS password-scheme evidence | `docs/evidence/**`, `tasks/F1.md` | Evidence is recorded and merged, but the requested pinned original source commit is unavailable and the PolarIS hash format remains UNKNOWN. |
+| F2 | blocked | Account/session contract | No files approved | Requires resolved F1 source pin and accepted PolarIS verifier evidence. |
 | F3 | blocked | Profile read | No files approved | Requires accepted F2 contract and schema evidence. |
 | F4 | blocked | Golden harness | No files approved | Requires F1-F3 evidence and implementation contracts. |
 | F5 | blocked | Content read | No files approved | Requires prior accepted foundation units. |
