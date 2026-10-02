@@ -483,6 +483,8 @@ Final internal capture through `http://web` on `stage3-run_stage3` (synthetic `s
 
 The 2026-10-02 configuration check supersedes the Jev-specific portions above: `jev_judge` and `jev_gate` are enabled, and the global `PreToolUse` hook invokes `jev-use ... hook gate`. The gate remains a safety check and does not replace ordinary Codex permissions or establish cost savings.
 
+**Owner-authorized setup merge (2026-10-02).** The owner explicitly authorized Sol to merge the setup pull request. The `main` branch protection API and `main-protection-v1` ruleset were updated to require zero approving reviews while retaining pull requests, the `foundation` status check, conversation/thread resolution, administrator enforcement, deletion protection, non-fast-forward protection, and merge-method restrictions. PR #1 (`auto/setup-readiness`) passed both `foundation` checks and merged at commit `741068aee0157512611e2af026e56647e3945e2b`. Product and production gates remain closed as recorded in `DECISIONS.md`.
+
 ## Fresh-start stages 4–5 handoff (2026-09-30)
 
 - **Single summary:** [`fresh-start-stages-summary.md`](fresh-start-stages-summary.md) is the index for all five stages and links to their evidence and drafts.
