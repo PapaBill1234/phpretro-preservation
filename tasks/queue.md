@@ -1,14 +1,15 @@
-# Initial supervised work-unit queue
+# Supervised work queue
 
-These are the initial supervised units. Their caps are recorded in `DECISIONS.md`; Sol must still write the exact brief and status each unit before delegation.
+Only one unit is ready. The batch scope is `docs/evidence/**` and `tasks/F1.md` for F1; no implementation or production scope is approved.
 
-| ID | Unit | Scope | Done when |
-| --- | --- | --- | --- |
-| F0 | Repository and CI baseline | `go.mod`, `.go-version`, `internal/foundation/`, `.github/workflows/`, `docs/`, `DECISIONS.md` | Pinned Go, dependency-free tests, race, `govulncheck`, module evidence artifact, license scan, and artifacts are reproducible. |
-| F1 | Password-scheme evidence | `docs/`, fixture scripts only | PolarIS schema/rows and original source establish the verifier; unknowns remain explicit. |
-| F2 | Account/session contract | named Go account/session packages and tests | Guest, failed, successful, logout, expiry, fixation, cookie, and failure contracts pass golden tests. |
-| F3 | Profile read | profile service/handler/templates and tests | Only schema-proven fields render; unauthenticated and wrong-user cases are covered. |
-| F4 | Golden harness | disposable fixtures, capture runner, hashes, CI | Route/method/status/redirect/cookie/body/hash comparisons are repeatable and classified. |
-| F5 | Content read | one website-owned article/archive path | Source evidence, read contract, template output, and negative cases pass. |
+| ID | Status | Unit | Exact scope | Reason |
+| --- | --- | --- | --- | --- |
+| F0 | accepted | Repository and CI baseline | Historical F0 foundation files | CI baseline passed and was accepted before this queue. |
+| F1 | ready | PolarIS password-scheme evidence | `docs/evidence/**`, `tasks/F1.md` | Sole ready unit; evidence only. |
+| F2 | blocked | Account/session contract | No files approved | Requires accepted F1 verifier evidence. |
+| F3 | blocked | Profile read | No files approved | Requires accepted F2 contract and schema evidence. |
+| F4 | blocked | Golden harness | No files approved | Requires F1-F3 evidence and implementation contracts. |
+| F5 | blocked | Content read | No files approved | Requires prior accepted foundation units. |
+| F6+ | deferred | Later features and production gates | No files approved | Later owner decisions; deferred gates remain closed. |
 
-Every unit brief must state base SHA, exact paths, evidence, tests, acceptance, stop conditions, and token cap. Any security, schema, production, or runner decision stays with Sol.
+Every unit brief must state its base SHA, exact allowed paths, evidence, tests, acceptance criteria, stop conditions, and token cap. Any security, schema, production, or runner decision stays with Sol.
