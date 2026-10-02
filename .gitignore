@@ -6,6 +6,8 @@ monitoring/*.log
 # Local Go build output.
 bin/
 dist/
+frontend/node_modules/
+frontend/dist/
 
 # Original PHPRetro checkout is local capture evidence, not rewrite source.
 stage3-original-phpretro/
