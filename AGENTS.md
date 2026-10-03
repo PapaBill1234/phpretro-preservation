@@ -1,16 +1,20 @@
 # Agent orchestration
 
-Sol (`gpt-6.1-sol`) is the coordinator and final verifier. Luna subagents use `gpt-6-luna` only for bounded units explicitly approved by Sol.
+Sol (`gpt-6.1-sol`) is the coordinator and final verifier. The project uses the
+durable Hermes Kanban board `phpretro-preservation` with five named profiles:
+`coordinator` (Sol), `backend` (Luna), `frontend` (Luna), `reviewer` (Sol),
+and `visual` (Luna). All model traffic uses A6API; Jev is reserved for
+evidence-backed typed judgments through Hermes Nerve.
 
 ## Required flow
 
-1. Sol runs exact search, tests, and source inspection first.
-2. For broad multi-file or noisy-log work, Sol reduces candidates deterministically and prepares short cited excerpts before asking Jev anything.
-3. Sol makes one batched Jev call for related typed rankings/classifications where practical. Jev sees only sanitized candidate IDs and the minimum excerpts needed for the question.
-4. Sol verifies every Jev result against source and records the evidence.
-5. Sol writes a bounded brief with exact file scope, evidence, tests, done criteria, stop conditions, and an approved token cap.
-6. A Luna subagent receives only that approved brief and works within the named scope.
-7. Sol reviews the diff and tests before accepting the unit.
+1. Sol runs exact search, tests, and source inspection first, then creates bounded Kanban cards.
+2. Cards use isolated worktrees and name their base SHA, exact file scope, evidence, tests, done criteria, stop conditions, and token cap.
+3. The gateway dispatcher activates the assigned profile; no two active cards may edit the same files.
+4. Hermes Nerve supervises active Kanban runs through hooks, with Jev as the authoritative Reflex backend when ROI/cooldown policy permits.
+5. `reviewer` independently checks implementation cards; `coordinator` verifies source, diff, tests, and delivery before completion.
+6. The coordinator may continue bounded work autonomously; production, schema ownership, security, and runner decisions remain coordinator-owned.
+7. **Continuation is mandatory:** a coordinator card may not complete while the roadmap has an authorized next unit and the board has no successor planning card. Before completion it must create the next bounded implementation/review cards, link dependencies, and create or hand off a successor coordinator card. It may stop only for an explicit stop condition, exhausted authorized scope, a hard dependency, or an operator-owned gate.
 
 ## Jev policy
 
@@ -20,11 +24,28 @@ Batch independent questions into one call; do not call Jev once per candidate. U
 
 Jev may perform advisory reviews of authentication, authorization, schema ownership, production enablement, security, merge, and runner questions when the state contains the relevant evidence. Verdicts and confidence must be recorded; a verdict does not grant permissions or replace required source and test evidence. The installed `jev_gate` PreToolUse hook is enabled as a safety check for tool actions; `allow`, `escalate`, unavailable, or hook-failure results leave ordinary Codex permissions in force, and only an explicit `deny` blocks the proposed action.
 
-## Delegation policy
+## Kanban agent policy
 
-Do not create a Luna session for an exact lookup, tiny edit, one-file read, or a task whose expected work cannot repay a second context. Prefer Luna for bounded extraction, mechanical implementation, focused tests, or multi-file work with an explicit acceptance contract. Sol owns ambiguous, security-sensitive, schema/ownership, production, and runner work.
+Do not create a card for an exact lookup or tiny edit. Use the five profiles for
+bounded parallel work only when isolated file scope and acceptance gates make
+the second context worthwhile. Prefer `backend` for Go/contracts, `frontend`
+for React/TypeScript, `visual` for theme and presentation fixtures, and
+`reviewer` for independent verification. `coordinator` owns integration,
+schema/ownership, security-sensitive, production, and runner work.
 
-Luna may not expand file scope, infer unknown schema, access production data, change rulesets, push `main`, or approve its own work. High-risk security and runner criteria remain Sol-only.
+Workers may not expand file scope, infer unknown schema, access production
+data, change rulesets, push `main`, or approve their own work. High-risk
+security and runner criteria remain coordinator-only.
+
+## Continuation invariant
+
+The dispatcher executes cards but does not invent roadmap work. Nerve supervises
+active runs but does not replace planning. Therefore every coordinator card
+must include a continuation checkpoint in its done criteria: inspect the current
+result, select the smallest source-backed next unit, create its cards with
+assignees and dependencies, verify that at least one successor is `ready` or
+explicitly record the stop reason, then complete the current card. A finite
+implementation card is never treated as the project loop.
 
 ## Economics
 
