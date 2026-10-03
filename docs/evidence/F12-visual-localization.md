@@ -24,5 +24,5 @@ Verification from the assigned worktree:
 - `npm ci --include=dev --ignore-scripts` — passed.
 - `npm run typecheck` — passed.
 - `npm run build && node --test dist/tests/localization.test.js` — passed;
-  6 tests passed.
+  9 tests passed.
 - `git diff --check` — passed.

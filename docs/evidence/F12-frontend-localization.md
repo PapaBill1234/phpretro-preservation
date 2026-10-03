@@ -17,5 +17,5 @@ Verification
 
 - npm ci --include=dev --ignore-scripts: pass (6 packages, 0 vulnerabilities).
 - npm run typecheck: pass.
-- npm test: pass (7 tests, 0 failures).
+- npm test: pass (9 tests, 0 failures).
 - git diff --check: pass (line-ending warnings only).
