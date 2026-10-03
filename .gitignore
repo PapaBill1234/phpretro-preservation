@@ -2,6 +2,9 @@
 monitoring/*.jsonl
 monitoring/.a6api-backup-*.jsonl
 monitoring/*.log
+monitoring/llm-test-*.json
+__pycache__/
+.worktrees/
 
 # Local Go build output.
 bin/

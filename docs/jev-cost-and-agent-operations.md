@@ -6,9 +6,9 @@ Use `mcp__jev__jev_judge` only for typed judgments over facts already gathered: 
 
 Accept a low-risk Jev selection only at confidence `>= 0.80` when source verification agrees. Between `0.60` and `0.80`, Sol reviews. Below `0.60`, on `escalate`, unavailable output, or disagreement, Sol decides and delegation stops. Keep credentials, personal data, full files, and unrelated context out of calls.
 
-## Sol and Luna handoff
+## Current five-profile Kanban handoff
 
-Sol (`gpt-6.1-sol`) owns discovery, ambiguous decisions, security-sensitive criteria, schema/ownership, runner configuration, acceptance briefs, and final verification. Luna A and Luna B (`gpt-6-luna`) receive only a bounded brief naming base SHA, exact file scope, evidence, tests, done criteria, stop conditions, and token cap. They work in separate worktrees, make no scope expansion, and report commit, diffstat, tests, and unresolved questions. Sol reviews before acceptance; a child never approves its own work.
+Sol (`gpt-6.1-sol`) owns discovery, ambiguous decisions, security-sensitive criteria, schema/ownership, runner configuration, acceptance briefs, integration, and final verification. The durable profiles are `backend`, `frontend`, and `visual` (`gpt-6-luna`) plus `reviewer` (`gpt-6.1-sol`). Cards use separate worktrees and exact scopes; the reviewer never approves its own implementation. Hermes Nerve supervises active Kanban runs through hooks and may route typed decisions to Jev when the configured ROI/cooldown policy permits.
 
 ## Cost evidence
 
