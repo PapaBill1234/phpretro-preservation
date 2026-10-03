@@ -1,6 +1,6 @@
-# PHP-Retro Hermes skill program — design for review
+# PHP-Retro Hermes skill program
 
-Status: **eight project-source `SKILL.md` files authored**, 2026-10-03 UTC. YAML/frontmatter, trigger length, required sections, and checkable steps passed static validation. Loading and deployment evidence belongs in the separate deployment manifest; behavioral improvement still requires matched evaluation. The companion [card failure atlas](phpretro-card-failure-atlas.md) is the evidence for the card procedures below.
+Status: **eight project-source `SKILL.md` files committed and ten profile copies installed**, 2026-10-03 UTC. YAML/frontmatter, trigger length, required sections, and checkable steps passed static validation. Fresh Hermes CLI processes listed the expected skills as enabled in all five profiles. The [deployment record](phpretro-skill-deployment-2026-10-03.md) gives source, hash, and rollback evidence; behavioral improvement still requires matched evaluation. The companion [card failure atlas](phpretro-card-failure-atlas.md) is the evidence for the card procedures below.
 
 ## Evidence and current boundary
 
@@ -17,7 +17,7 @@ Use **project source** at `.agents/skills/phpretro-<name>/SKILL.md`. Eight files
 
 For live deployment, copy only each selected skill from an immutable reviewed repository commit into the owning profile's `skills/phpretro/<name>/` tree. The deployment manifest must record source commit, source and destination paths, SHA-256, profile, backup path, and read-back hash. This gives profile-specific loading even when dispatched worktrees are not individually trusted. Do not enable project trust in the live profiles merely to make a primary-checkout test pass; test that path separately if it is later desired. Do not modify the existing broad catalog. A selected evolved candidate must first replace its committed source through review before staging, so the repository remains canonical.
 
-The installed copies would be: coordinator 3; backend 2; frontend 2; reviewer 1; visual 2. `phpretro-worker-handoff` is the single shared procedure copied to the three worker profiles. No skill belongs in shared/global Hermes because these decisions are specific to this repository and board.
+The installed copies are: coordinator 3; backend 2; frontend 2; reviewer 1; visual 2. `phpretro-worker-handoff` is the single shared procedure copied to the three worker profiles. No skill belongs in shared/global Hermes because these decisions are specific to this repository and board.
 
 ## Proposed skills
 
@@ -82,4 +82,4 @@ Create immutable, sanitized card/board/Git fixtures. Do not run evaluation again
 8. **Selective live deployment.** For each reviewed profile/skill pair, back up destination, copy exact committed bytes, verify SHA-256 read-back and fresh-session loading, then record deployment manifest. Rollback is one profile/skill restore from that manifest, followed by read-back and a fresh-session load check. Never bulk replace all profiles.
 9. **Monitor and iterate.** Track per accepted unit: archived/blocked card rate by cause, stale dispatch, worktree mismatch, rework, reviewer rejection, test/evidence defects, completion time, input/cached/output tokens, retries, Jev calls/cost, and user-visible regressions. Compare matched cases and at least ten accepted live units before claiming cost improvement. Revise or remove weak skills from observed traces; re-run frozen and holdout cases after each change.
 
-Program completion requires all five profiles' ownership/loading decisions, all recurring capabilities explicitly created/merged/retained/omitted, measured before/after card failures, source-backed roadmap-wide tasks, matched baseline-versus-skilled evidence, selective reversible live deployment, and no conflict with `AGENTS.md`. **This document establishes inventory, atlas, architecture, evaluation design, and eight source skills.** The deployment manifest records any loading, staging, and live installation; matched behavioral improvement and evolution remain separate gates.
+Program completion requires all five profiles' ownership/loading decisions, all recurring capabilities explicitly created/merged/retained/omitted, measured before/after card failures, source-backed roadmap-wide tasks, matched baseline-versus-skilled evidence, selective reversible live deployment, and no conflict with `AGENTS.md`. **The eight source skills are committed and selectively installed.** This document establishes inventory, atlas, architecture, and evaluation design; the deployment record covers loading and live installation. Matched behavioral improvement and evolution remain separate gates.
