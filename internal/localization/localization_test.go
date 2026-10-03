@@ -69,3 +69,72 @@ func TestFallbackIsDeterministicAndDoesNotMutateSupportedLocales(t *testing.T) {
 		}
 	}
 }
+
+func TestLocaleVariantsDoNotChangeCanonicalFallback(t *testing.T) {
+	cases := []struct {
+		requested string
+		want      []string
+	}{
+		{requested: "fr-CA", want: []string{"fr-CA", "fr-FR", "en-US"}},
+		{requested: "fr-FR", want: []string{"fr-FR", "fr-CA", "en-US"}},
+		{requested: "FR-fr", want: []string{"en-US"}},
+		{requested: "en-us", want: []string{"en-US"}},
+		{requested: "en-US-POSIX", want: []string{"en-US"}},
+	}
+	for _, tc := range cases {
+		got, err := ResolveLocale(tc.requested)
+		if err != nil {
+			t.Fatalf("requested=%q err=%v", tc.requested, err)
+		}
+		if len(got) != len(tc.want) {
+			t.Fatalf("requested=%q chain=%v want=%v", tc.requested, got, tc.want)
+		}
+		for i := range tc.want {
+			if got[i] != tc.want[i] {
+				t.Fatalf("requested=%q chain=%v want=%v", tc.requested, got, tc.want)
+			}
+		}
+	}
+}
+
+func TestResolveLocaleCanonicalIdentityAndFallbackEdges(t *testing.T) {
+	cases := []struct {
+		requested string
+		want      []string
+	}{
+		{"en-US", []string{"en-US", "en-GB"}}, {"en-GB", []string{"en-GB", "en-US"}},
+		{"fr-FR", []string{"fr-FR", "fr-CA", "en-US"}}, {"fr-CA", []string{"fr-CA", "fr-FR", "en-US"}},
+		{"", []string{"en-US"}}, {"de-DE", []string{"en-US"}},
+	}
+	for _, tc := range cases {
+		got, err := ResolveLocale(tc.requested)
+		if err != nil || len(got) != len(tc.want) {
+			t.Fatalf("requested=%q chain=%v err=%v want=%v", tc.requested, got, err, tc.want)
+		}
+		for i := range tc.want {
+			if got[i] != tc.want[i] {
+				t.Fatalf("requested=%q chain=%v want=%v", tc.requested, got, tc.want)
+			}
+		}
+	}
+}
+
+func TestRejectsMalformedLocaleShapes(t *testing.T) {
+	for _, locale := range []string{"en US", "en	US", "en-US\n"} {
+		if err := ValidateLocale(locale); err == nil {
+			t.Fatalf("accepted malformed locale %q", locale)
+		}
+		if _, err := ResolveLocale(locale); err == nil {
+			t.Fatalf("resolved malformed locale %q", locale)
+		}
+	}
+}
+
+func TestCatalogValidationRejectsMalformedLocaleShapes(t *testing.T) {
+	for _, locale := range []string{"en", "en_ US", "en-US-POSIX", "EN-us", "en-US\x00"} {
+		catalog := Catalog{Version: CatalogVersion, Locale: locale}
+		if err := ValidateCatalog(catalog); err == nil {
+			t.Fatalf("accepted malformed catalog locale %q", locale)
+		}
+	}
+}

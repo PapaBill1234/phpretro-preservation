@@ -14,12 +14,21 @@ test("validates the typed catalog shape and rejects extra or missing keys", () =
   assert.equal(validateCatalog(syntheticCatalogs[0]), true);
   assert.equal(validateCatalog({ locale: "xx", messages: { siteTitle: "x", welcome: "x" } }), false);
   assert.equal(validateCatalog({ locale: "xx", messages: { siteTitle: "x", welcome: "x", navigationHome: "x", extra: "x" } }), false);
+  assert.equal(validateCatalog({ version: "catalog.v1", locale: " en ", messages: syntheticCatalogs[0].messages }), false);
+  assert.equal(validateCatalog({ version: "catalog.v1", locale: "english_US", messages: syntheticCatalogs[0].messages }), false);
 });
 
 test("uses deterministic regional, language, then default fallback", () => {
   assert.deepEqual(localeFallbackChain("fr-CA"), ["fr-ca", "fr", "en"]);
   assert.equal(selectCatalog(syntheticCatalogs, "fr-CA")?.locale, "fr");
   assert.equal(selectCatalog(syntheticCatalogs, "de-DE")?.locale, "en");
+});
+
+test("rejects malformed locale requests and ambiguous normalized catalogs", () => {
+  assert.throws(() => localeFallbackChain(" fr-CA"), /malformed locale/);
+  assert.throws(() => localeFallbackChain("fr", ""), /malformed locale/);
+  const duplicate = [syntheticCatalogs[0], { ...syntheticCatalogs[0], locale: "EN" }];
+  assert.throws(() => selectCatalog(duplicate, "en-US"), /ambiguous localization catalogs/);
 });
 
 test("makes missing keys explicit without hiding them", () => {
@@ -59,4 +68,15 @@ test("uses the same deterministic default display state for unknown locales", ()
   assert.equal(first.locale, "en");
   assert.equal(first.version, "home.v1");
   assert.deepEqual(first.navigation, [{ label: "Home", href: "/" }]);
+});
+
+test("preserves the typed presentation shape after fallback normalization", () => {
+  const model = createLocalizedHomeViewModel(syntheticCatalogs, "FR-ca");
+  assert.deepEqual(model, {
+    version: "home.v1",
+    locale: "fr",
+    siteTitle: "PHPRetro",
+    welcome: "Vue de démarrage synthétique",
+    navigation: [{ label: "Accueil", href: "/" }]
+  });
 });
