@@ -43,6 +43,8 @@ test("builds a localized home view model", () => {
   assert.equal(model.welcome, "Vue de démarrage synthétique");
   assert.deepEqual(model.navigation, [{ label: "Accueil", href: "/" }]);
 });
+<<<<<<< ours
+=======
 
 test("keeps the home.v1 contract fixed across locale display states", () => {
   const english = createLocalizedHomeViewModel(syntheticCatalogs, "en-US");
@@ -80,3 +82,4 @@ test("preserves the typed presentation shape after fallback normalization", () =
     navigation: [{ label: "Accueil", href: "/" }]
   });
 });
+>>>>>>> theirs
