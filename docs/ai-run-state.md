@@ -13,3 +13,9 @@ This is the active state for the Go PHPRetro preservation rewrite. The old C++/D
 - **last boundary:** F7/PolarIS/React/Redis work is on `main` at `0fd95a4706da324c9a6a2390853e6d998b7a980e`; local F8 changes are present but uncommitted and must be treated as the current working baseline
 
 The coordinator may continue bounded Kanban cards autonomously. Every coordinator completion must leave successor work queued or record a documented stop reason; an empty board is not a successful continuation state. Every completion still requires source-backed review, tests, scope verification, and explicit external-state verification before merge.
+
+## Operational skill deployment — 2026-10-03 UTC
+
+- PR [#22](https://github.com/PapaBill1234/phpretro-preservation/pull/22) merged the eight PHP-Retro Hermes skill sources and three supporting documents to `main` at `eea85fe9834247442b9fe9c5021eb427669a59b3`. The required `foundation` check passed, the diff and scope were inspected, and the secret-pattern scan found no match.
+- Ten exact committed skill copies are enabled across the coordinator, backend, frontend, reviewer, and visual Hermes profiles. The [deployment record](phpretro-skill-deployment-2026-10-03.md) names the source commit, profile mapping, hash verification, and local rollback manifest.
+- This operational merge does not accept or deliver the separate F14 candidate `c2d0ef3` and does not authorize a new implementation card. The roadmap summary above predates the board's F14 stop record; reconcile the board, queue, decisions, and Git before resuming roadmap work. Matched behavioral and cost evaluation of the skills remains pending.
