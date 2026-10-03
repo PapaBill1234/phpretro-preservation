@@ -45,6 +45,22 @@ func TestLocalizedKeyCanonicalIdentitySeparatesPlainKey(t *testing.T) {
 	}
 }
 
+func TestLocalizedKeySeparatesSimilarSyntheticIdentities(t *testing.T) {
+	cases := []struct{ locale, id string }{{"en-US", "home"}, {"en-GB", "home"}, {"fr-FR", "home"}, {"en-US", "home:locale:en-GB:"}}
+	seen := make(map[string]string, len(cases))
+	for _, tc := range cases {
+		got, err := LocalizedKey(NamespaceRead, tc.locale, tc.id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		identity := tc.locale + "|" + tc.id
+		if previous, ok := seen[got]; ok {
+			t.Fatalf("identities %q and %q collided as %q", previous, identity, got)
+		}
+		seen[got] = identity
+	}
+}
+
 func TestLocalizedKeySeparatesCanonicalLocaleVariants(t *testing.T) {
 	keys := make(map[string]string)
 	for _, locale := range []string{"en-US", "en-GB", "fr-FR", "fr-CA"} {

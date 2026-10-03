@@ -36,17 +36,16 @@ export const syntheticCatalogs: readonly LocalizationCatalog[] = [
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function normalizeLocale(locale: string): string {
-  return locale.trim().toLowerCase();
+function isLocale(value: string): boolean {
+  return value.length > 0 && value === value.trim() && /^[a-z]{2,8}(?:-[a-z0-9]{1,8})*$/i.test(value);
 }
 
 export function validateCatalog(value: unknown): value is LocalizationCatalog {
   if (!isRecord(value) || value.version !== "catalog.v1" ||
-      typeof value.locale !== "string" || value.locale.trim() === "" ||
-      /\s/.test(value.locale)) {
+      typeof value.locale !== "string" || !isLocale(value.locale)) {
     return false;
   }
   const messages = value.messages;
@@ -56,8 +55,9 @@ export function validateCatalog(value: unknown): value is LocalizationCatalog {
 }
 
 export function localeFallbackChain(requestedLocale: string, fallback: string = defaultLocale): string[] {
-  const requested = normalizeLocale(requestedLocale);
-  const fallbackLocale = normalizeLocale(fallback);
+  if (!isLocale(requestedLocale) || !isLocale(fallback)) throw new Error("malformed locale");
+  const requested = requestedLocale.trim().toLowerCase();
+  const fallbackLocale = fallback.trim().toLowerCase();
   const language = requested.split("-")[0];
   return [...new Set([requested, language, fallbackLocale])].filter(Boolean);
 }
@@ -67,7 +67,7 @@ export function resolveLocale(
   availableLocales: readonly string[],
   fallback: string = defaultLocale
 ): string | undefined {
-  const byNormalized = new Map(availableLocales.map((locale) => [normalizeLocale(locale), locale]));
+  const byNormalized = new Map(availableLocales.map((locale) => [locale.toLowerCase(), locale]));
   for (const candidate of localeFallbackChain(requestedLocale, fallback)) {
     const match = byNormalized.get(candidate);
     if (match) return match;
@@ -81,8 +81,10 @@ export function selectCatalog(
   fallback: string = defaultLocale
 ): LocalizationCatalog | undefined {
   const validCatalogs = catalogs.filter(validateCatalog);
+  const normalizedLocales = validCatalogs.map((catalog) => catalog.locale.toLowerCase());
+  if (new Set(normalizedLocales).size !== normalizedLocales.length) throw new Error("ambiguous localization catalogs");
   const locale = resolveLocale(requestedLocale, validCatalogs.map((catalog) => catalog.locale), fallback);
-  return validCatalogs.find((catalog) => normalizeLocale(catalog.locale) === normalizeLocale(locale ?? ""));
+  return validCatalogs.find((catalog) => catalog.locale === locale);
 }
 
 export function missingKey(key: string): string {
