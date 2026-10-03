@@ -17,7 +17,7 @@ Verification
 
 - npm ci --include=dev --ignore-scripts: pass (6 packages, 0 vulnerabilities).
 - npm run typecheck: pass.
-- npm test: pass (10 tests, 0 failures).
+- npm test: pass (11 tests, 0 failures).
 - git diff --check: pass (line-ending warnings only).
 
 Boundary evidence: all fixtures are synthetic and changes are limited to the exact F13 frontend localization paths.
