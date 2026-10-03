@@ -24,9 +24,6 @@ func TestLocalizedKeyVariesByLocale(t *testing.T) {
 		}
 	}
 }
-<<<<<<< ours
-=======
-
 func TestLocalizedKeyCanonicalIdentitySeparatesPlainKey(t *testing.T) {
 	plain, err := key(NamespaceSupport, "session")
 	if err != nil {
@@ -79,4 +76,3 @@ func TestLocalizedKeySeparatesCanonicalLocaleVariants(t *testing.T) {
 		t.Fatalf("non-canonical locale was accepted: %v", err)
 	}
 }
->>>>>>> theirs
