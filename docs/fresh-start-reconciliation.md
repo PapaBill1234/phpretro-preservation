@@ -24,9 +24,17 @@ Map only fields proved by original source, `CleanDB.sql`, or a golden capture. P
 
 Homes editing, group Homes, purchases, placement, asset import, full client handoff, and broad parity remain deferred.
 
+## Localization and housekeeping CMS
+
+Localization is a first-class website contract. Housekeeping selects and manages supported locales, translation catalogs, fallback order, locale-specific content variants, and activation state. React themes consume typed localized view models; locale selection must not bypass authorization or alter route/security behavior. Cache keys must include the locale when the response varies by language.
+
+Housekeeping uses the same React architecture with a dedicated housekeeping theme/style, not a separate unreviewed template runtime. It is the authenticated CMS and website-management surface: administrators can manage translations, new button pages, navigation/buttons, news, FAQs, banners, landing sections, presentation-only theme settings, safe media metadata, website status, maintenance messaging, cache invalidation, and audit history through separately tested capability slices. All writes require server-side authorization, CSRF, validation, prepared SQL, same-transaction audit, and safe publication/rollback semantics. Housekeeping may not silently write PolarIS-owned tables or execute uploaded code/assets.
+
 ## Theme contract
 
-A theme is an immutable, versioned package with a manifest declaring its API version, templates, assets, and capabilities. It may change presentation templates, CSS, assets, typography, layout, and named component variants. It may not execute server code, access databases, identities, secrets, sessions, CSRF state, permissions, or audit mechanisms, or alter route behavior. Use restricted templates and typed escaped view models; allow no arbitrary network, filesystem, process, or database access. Validate package paths, types, sizes, dependencies, and compatibility at install. Activate by configuration pointer, audit activation, and retain atomic rollback.
+A theme is an immutable, versioned React package with a manifest declaring its API version, component entry points, assets, capabilities, and typed view-model compatibility. All supported themes use React; server-rendered Go templates are not the theme runtime. A theme may change presentation components, CSS, assets, typography, layout, and named variants. It may not access databases, identities, secrets, sessions, CSRF state, permissions, or audit mechanisms, alter route behavior, or use arbitrary filesystem, process, or network capabilities. Validate package paths, bundle capabilities, types, sizes, dependencies, and compatibility in CI and at install. Activate by configuration pointer, audit activation, and retain atomic rollback.
+
+Redis is a required supporting service for approved cache and session-support workloads, while MariaDB remains the system of record. Each Redis-backed feature must document key namespaces, TTLs, serialization, invalidation, outage/fallback behavior, and whether Redis data is disposable cache or session-critical state. No feature may silently treat an unverified Redis value as authoritative.
 
 ## Atom findings
 

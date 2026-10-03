@@ -21,17 +21,20 @@ Map only what original source, golden capture, or profile source proves. Preserv
 
 ## 2. Proposed technical direction
 
-The proposed backend is **Go**. The default presentation is server-rendered Go templates with small, narrowly scoped scripts for interaction.
+The proposed backend is **Go**. The frontend is **React** and is the required presentation layer for every supported theme. Go exposes typed HTTP/API contracts; React owns theme rendering, client interaction, and browser navigation. Server-rendered Go templates are not the theme architecture.
 
 Minimal starting stack:
 
 - Go standard library first (`net/http`, `html/template`, `database/sql`, `crypto/*`, structured standard logging where sufficient).
 - MariaDB only, accessed through parameterized queries and named services.
+- React frontend with a typed API boundary, shared component contracts, and every theme implemented as a React theme package; no theme may introduce a separate server-rendered template runtime.
+- Redis is a required operational component for cache/session-support workloads where the relevant contract is approved; MariaDB remains the system of record. Redis keys, TTLs, serialization, invalidation, outage behavior, and whether a record is cache-only or session-critical must be specified and tested per slice.
+- Localization is a first-class website capability: supported languages, fallback rules, translated labels/content, locale-aware URLs or selection state, and cache variation must be explicit and testable. Housekeeping must provide a safe language-management workflow without allowing arbitrary template or code execution.
 - Database-backed sessions using opaque random tokens, separate public/staff records, expiry, logout, fixation resistance, and secure cookie attributes.
 - Docker Compose only for disposable development/CI and a reproducible MariaDB test fixture.
 - Go tests, integration tests, browser contract tests, and `go test -race` where applicable.
 
-Deferred until evidence requires them: Redis, nginx, metrics, fuzzing, background queues, React, theme publish/rollback UI, and the Atom adapter. Add dependencies only through a recorded decision and measured need.
+Deferred until their own evidence and acceptance slices: nginx, metrics, fuzzing, background queues, theme publish/rollback UI, and the Atom adapter. React and Redis are not deferred technologies; their production contracts and staged implementation remain gated by bounded work units. Add dependencies only through a recorded decision and measured need.
 
 The setup plan installs a pinned Go toolchain on the VPS before any build work. GitHub Actions runs `go test`, `go test -race`, `govulncheck ./...`, and a license scan over direct and transitive modules from the lock/sum files. CI fails on an unpinned or vulnerable dependency, an incompatible license, or a missing scan result.
 
@@ -45,11 +48,11 @@ The initial foundation may use only these non-standard dependencies:
 
 Agents must not hand-write cryptography, password hashing, TOTP, token generation, or verification primitives. Any version change or additional dependency requires a recorded decision and evidence.
 
-### Presentation tradeoff
+### Presentation architecture
 
-Server-rendered templates are the recommended default because PHPRetro is page and form oriented. They preserve redirects, cookies, status codes, HTML structure, and failure behavior in one request path, reducing parity drift and client state. Small scripts can handle menus, validation hints, and other measured interactions.
+React is mandatory for all themes, including the PHPRetro-compatible theme and the modern Habbo-style theme. Each theme is a versioned React package that consumes restricted, typed, escaped view models from the Go API. Themes may change presentation, CSS, assets, typography, layout, and named component variants, but may not access databases, identities, secrets, sessions, permissions, CSRF state, audit mechanisms, arbitrary filesystem/process/network capabilities, or alter route/security behavior.
 
-The existing React frontend offers component reuse, client navigation, typed API contracts, and a better fit for a highly interactive Homes/editor surface. Its cost is a second rendering/runtime contract, API and router work, hydration/state complexity, and more visual-parity work before the legacy account/content slice is proven. React remains a later option for bounded interactive surfaces; it is not the first-slice default.
+The API must preserve the measured original method/status/redirect/cookie/body contracts even when the browser presentation is React. Browser contract tests must cover initial loads, redirects, cookies, failure states, navigation, and progressive enhancement or explicitly documented unsupported behavior. React introduces a second runtime contract, so typed API schemas, fixture-driven component tests, browser tests, and golden output markers are mandatory rather than optional.
 
 Go remains a proposed choice, not a measured speed claim. The foundation slice below has a time and cost cap.
 
@@ -93,13 +96,29 @@ The TOTP library validates time-window codes but does not maintain application r
 
 ## 5. Modular themes and CMS
 
-The server-rendered templates use a restricted, versioned theme manifest: API version, templates, assets, capabilities, compatibility, and typed escaped view models. A theme cannot execute server code, access databases, identities, secrets, sessions, permissions, arbitrary JavaScript, or unsafe HTML. Validate paths, routes, URLs, media, ordering, role visibility, sizes, and dependencies server-side.
+Every theme uses a restricted, versioned React theme manifest: API version, component entry points, assets, capabilities, compatibility, and typed view-model versions. A theme cannot execute server code, access databases, identities, secrets, sessions, permissions, arbitrary JavaScript beyond its reviewed bundle, or unsafe HTML. Validate package paths, routes, URLs, media, ordering, role visibility, sizes, dependencies, and bundle capabilities server-side and in CI.
 
 The PHPRetro theme preserves measured original markup, copy, routes, and behavior. The modern Habbo-style theme ports the supplied visual assets and appearance into templates; it does not execute the reference site's application code. Source path: `C:\Users\Karim\Documents\Codex\2026-09-14\phpretro-continuation-handoff-current-state-repository\ay\modern-assets`. Preserve original logic by reimplementing it; preserve original templates, CSS, and images only where selected and recorded with provenance.
 
 Atom is deferred. If later approved, use a restricted presentation adapter only; Atom's code/theme licensing and bundled artwork do not establish permission or direct compatibility.
 
-Adding a theme must require a manifest and validated assets, not core route rewrites. Theme publish/preview/rollback UI is deferred from the minimal start. Theme selection cannot change route behavior, database ownership, hotel profile, identity, sessions, CSRF, authorization, or audit.
+Adding a theme must require a manifest, validated React bundle, typed view-model compatibility, and provenance-checked assets, not core route rewrites. Theme publish/preview/rollback UI is deferred from the minimal start. Theme selection cannot change route behavior, database ownership, hotel profile, identity, sessions, CSRF, authorization, or audit.
+
+### Housekeeping and website management
+
+Housekeeping is the authenticated administration surface for managing the website, not merely a hotel-operations dashboard. It must use the same React theme system and a dedicated housekeeping visual theme/component set. Its capability model must be explicit and server-enforced; the frontend cannot grant permissions by hiding or showing controls.
+
+The CMS management boundary will cover, through separately accepted slices:
+
+- language/locale configuration, translation catalogs, fallback order, and activation;
+- page creation and editing for new button pages, with stable page identifiers, published/draft state, ordering, and route-safe slugs;
+- navigation and button management, including label, destination, visibility, ordering, locale variants, and theme-compatible presentation metadata;
+- news/articles, FAQs, banners, landing sections, and other website-owned content proven by source or deliberately introduced as new website-owned schema;
+- theme settings that are presentation-only, with typed validation, preview, audit, and rollback;
+- media/provenance metadata and safe asset selection, without arbitrary file paths or executable uploads;
+- website status, maintenance messaging, cache invalidation, audit history, and bounded operational settings.
+
+Every mutation requires authentication, authorization, CSRF protection, validation, prepared SQL, same-transaction audit, and golden/negative tests. Housekeeping must never edit PolarIS-owned tables unless a separate ownership and migration decision explicitly permits it. Configuration changes must be versioned or auditable, and failed publication must not partially activate a theme, locale catalog, page, or navigation change.
 
 ## 6. PolarIS and Octane
 
