@@ -34,3 +34,29 @@ test("builds a localized home view model", () => {
   assert.equal(model.welcome, "Vue de démarrage synthétique");
   assert.deepEqual(model.navigation, [{ label: "Accueil", href: "/" }]);
 });
+
+test("keeps the home.v1 contract fixed across locale display states", () => {
+  const english = createLocalizedHomeViewModel(syntheticCatalogs, "en-US");
+  const french = createLocalizedHomeViewModel(syntheticCatalogs, "fr-FR");
+  const expectedKeys = ["version", "locale", "siteTitle", "welcome", "navigation"];
+
+  assert.deepEqual(Object.keys(english), expectedKeys);
+  assert.deepEqual(Object.keys(french), expectedKeys);
+  assert.equal(english.version, "home.v1");
+  assert.equal(french.version, "home.v1");
+  assert.equal(english.siteTitle, french.siteTitle);
+  assert.notEqual(english.welcome, french.welcome);
+  assert.notEqual(english.navigation[0]?.label, french.navigation[0]?.label);
+  assert.equal(english.navigation[0]?.href, "/");
+  assert.equal(french.navigation[0]?.href, "/");
+});
+
+test("uses the same deterministic default display state for unknown locales", () => {
+  const first = createLocalizedHomeViewModel(syntheticCatalogs, "zz-ZZ");
+  const second = createLocalizedHomeViewModel(syntheticCatalogs, "ZZ-zz");
+
+  assert.deepEqual(second, first);
+  assert.equal(first.locale, "en");
+  assert.equal(first.version, "home.v1");
+  assert.deepEqual(first.navigation, [{ label: "Home", href: "/" }]);
+});

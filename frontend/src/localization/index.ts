@@ -6,6 +6,7 @@ export type LocalizationKey = (typeof localizationKeys)[number];
 export type LocalizationMessages = Readonly<Record<LocalizationKey, string>>;
 
 export type LocalizationCatalog = Readonly<{
+  version: "catalog.v1";
   locale: string;
   messages: LocalizationMessages;
 }>;
@@ -15,6 +16,7 @@ export type MissingKeyBehavior = "placeholder" | "throw";
 export const defaultLocale = "en" as const;
 export const syntheticCatalogs: readonly LocalizationCatalog[] = [
   {
+    version: "catalog.v1",
     locale: "en",
     messages: {
       siteTitle: "PHPRetro",
@@ -23,6 +25,7 @@ export const syntheticCatalogs: readonly LocalizationCatalog[] = [
     }
   },
   {
+    version: "catalog.v1",
     locale: "fr",
     messages: {
       siteTitle: "PHPRetro",
@@ -37,7 +40,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function validateCatalog(value: unknown): value is LocalizationCatalog {
-  if (!isRecord(value) || typeof value.locale !== "string" || value.locale.trim() === "") {
+  if (!isRecord(value) || value.version !== "catalog.v1" ||
+      typeof value.locale !== "string" || value.locale.trim() === "") {
     return false;
   }
   const messages = value.messages;

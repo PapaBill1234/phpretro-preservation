@@ -15,6 +15,7 @@ evidence-backed typed judgments through Hermes Nerve.
 5. `reviewer` independently checks implementation cards; `coordinator` verifies source, diff, tests, and delivery before completion.
 6. The coordinator may continue bounded work autonomously; production, schema ownership, security, and runner decisions remain coordinator-owned.
 7. **Continuation is mandatory:** a coordinator card may not complete while the roadmap has an authorized next unit and the board has no successor planning card. Before completion it must create the next bounded implementation/review cards, link dependencies, and create or hand off a successor coordinator card. It may stop only for an explicit stop condition, exhausted authorized scope, a hard dependency, or an operator-owned gate.
+8. **Dispatch preflight is mandatory:** before unblocking or dispatching a card, the coordinator must verify its recorded base SHA is an accepted ancestor of the current integration head and that every required parent result is terminal and accepted. Cards based on stale or worktree-only commits must be archived and recreated; they may not be unblocked as a workaround.
 
 ## Jev policy
 
@@ -46,6 +47,13 @@ result, select the smallest source-backed next unit, create its cards with
 assignees and dependencies, verify that at least one successor is `ready` or
 explicitly record the stop reason, then complete the current card. A finite
 implementation card is never treated as the project loop.
+
+The coordinator must also perform a board-health checkpoint before ending a
+run: there must be no blocked card whose prerequisites are already satisfied,
+no active card whose base is only a deleted/stale worktree, and either at least
+one `ready`/`running` successor or an explicit stop record. A green worker result
+does not count as delivery until its authoritative commit, review, and base SHA
+are recorded.
 
 ## Economics
 
