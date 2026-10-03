@@ -6,6 +6,7 @@ export type LocalizationKey = (typeof localizationKeys)[number];
 export type LocalizationMessages = Readonly<Record<LocalizationKey, string>>;
 
 export type LocalizationCatalog = Readonly<{
+  version: "catalog.v1";
   locale: string;
   messages: LocalizationMessages;
 }>;
@@ -15,6 +16,7 @@ export type MissingKeyBehavior = "placeholder" | "throw";
 export const defaultLocale = "en" as const;
 export const syntheticCatalogs: readonly LocalizationCatalog[] = [
   {
+    version: "catalog.v1",
     locale: "en",
     messages: {
       siteTitle: "PHPRetro",
@@ -23,6 +25,7 @@ export const syntheticCatalogs: readonly LocalizationCatalog[] = [
     }
   },
   {
+    version: "catalog.v1",
     locale: "fr",
     messages: {
       siteTitle: "PHPRetro",
@@ -36,8 +39,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function normalizeLocale(locale: string): string {
+  return locale.trim().toLowerCase();
+}
+
 export function validateCatalog(value: unknown): value is LocalizationCatalog {
-  if (!isRecord(value) || typeof value.locale !== "string" || value.locale.trim() === "") {
+  if (!isRecord(value) || value.version !== "catalog.v1" ||
+      typeof value.locale !== "string" || value.locale.trim() === "" ||
+      /\s/.test(value.locale)) {
     return false;
   }
   const messages = value.messages;
@@ -47,8 +56,8 @@ export function validateCatalog(value: unknown): value is LocalizationCatalog {
 }
 
 export function localeFallbackChain(requestedLocale: string, fallback: string = defaultLocale): string[] {
-  const requested = requestedLocale.trim().toLowerCase();
-  const fallbackLocale = fallback.trim().toLowerCase();
+  const requested = normalizeLocale(requestedLocale);
+  const fallbackLocale = normalizeLocale(fallback);
   const language = requested.split("-")[0];
   return [...new Set([requested, language, fallbackLocale])].filter(Boolean);
 }
@@ -58,7 +67,7 @@ export function resolveLocale(
   availableLocales: readonly string[],
   fallback: string = defaultLocale
 ): string | undefined {
-  const byNormalized = new Map(availableLocales.map((locale) => [locale.toLowerCase(), locale]));
+  const byNormalized = new Map(availableLocales.map((locale) => [normalizeLocale(locale), locale]));
   for (const candidate of localeFallbackChain(requestedLocale, fallback)) {
     const match = byNormalized.get(candidate);
     if (match) return match;
@@ -73,7 +82,7 @@ export function selectCatalog(
 ): LocalizationCatalog | undefined {
   const validCatalogs = catalogs.filter(validateCatalog);
   const locale = resolveLocale(requestedLocale, validCatalogs.map((catalog) => catalog.locale), fallback);
-  return validCatalogs.find((catalog) => catalog.locale === locale);
+  return validCatalogs.find((catalog) => normalizeLocale(catalog.locale) === normalizeLocale(locale ?? ""));
 }
 
 export function missingKey(key: string): string {
