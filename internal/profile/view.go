@@ -6,7 +6,8 @@ import (
 )
 
 // Tab is the selected profile presentation tab, constrained to the range
-// [TabMin, TabMax] by the original profile.php:28-42 read behavior.
+// [TabMin, TabMax] by the original profile.php:28-42 read behavior and the
+// planning contract in docs/roadmap/F18-profile-read-planning.md:49-56.
 type Tab int
 
 const (
@@ -25,7 +26,8 @@ const (
 // [TabMin, TabMax]. An empty/absent value, a non-integer value, or an
 // out-of-range integer all fall back to TabDefault. This preserves the
 // original profile.php:28-42 range/default intent without reproducing PHP
-// coercion, Location headers, or HTTP status behavior.
+// coercion, Location headers, or HTTP status behavior; see also the planning
+// contract in docs/roadmap/F18-profile-read-planning.md:49-56.
 func NormalizeTab(raw string) Tab {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -44,7 +46,8 @@ func NormalizeTab(raw string) Tab {
 
 // View is the read-only profile presentation model: the accepted six-field
 // Profile projection plus the selected presentation Tab. It adds no
-// principal, auth, session, or privacy field.
+// principal, auth, session, or privacy field. The projection is defined in
+// docs/roadmap/F18-profile-read-planning.md:49-56.
 type View struct {
 	Profile Profile
 	Tab     Tab
