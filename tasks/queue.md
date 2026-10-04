@@ -29,6 +29,24 @@ changes. The durable Hermes Kanban board is `phpretro-preservation`.
 
 Every unit brief must state its base SHA, exact allowed paths, evidence, tests, acceptance criteria, stop conditions, token cap, assignee profile, and worktree boundary. Any security, schema, production, or runner decision stays with the coordinator. Coordinator cards must leave successor cards queued before completion or document why the authorized queue is stopped.
 
+## Owner standing instruction, 2026-10-04
+
+This is a development-only project: no production deployment, no real user
+data, no payments, all work against synthetic or disposable data. The former
+closed list (authentication, sessions, cookies, CSRF, audit-event design,
+schema and migrations, and the units that depend on them) is open for
+development use. Production enablement stays out of scope until a new owner
+decision.
+
+F18-F30 are all eligible and are built in dependency order, one unit at a time,
+each with exact paths, tests, a cost cap, and an independent reviewer. Batch B
+needs no separate owner expansion. Each unit is capped at 3,000,000 tokens
+across all gates.
+
+Report here, not to the owner: on every unit start, finish, or cut-down, write
+one short plain-English line naming the unit, its outcome, and token usage per
+gate. Never wait on the owner; repair blocked cards instead of reporting them.
+
 F16 and its successors are evidence/test-only authorization. Do not turn the
 historical F9-F14 identifiers into permission for their deferred implementation
 work. Stop and record the missing source or capture when a route cannot be

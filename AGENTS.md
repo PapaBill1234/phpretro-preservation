@@ -51,15 +51,49 @@ an explicit not-approved list, the verified facts with their identifiers, the
 retained unknowns, the remaining gates, and any evidence gap.
 
 The approver never authors, reviews, or merges a change it approves. Its verdict
-never grants merge, schema, authentication/session, security, production,
-runner, credential, real-data, or irreversible-change authority; those stay
-coordinator-owned and owner-gated, as do payments, emulator writes, client
-handoff, staff operations, rule changes, and branch-protection policy.
+never grants merge or runner/ruleset authority: merging stays with the
+`coordinator` under the reviewed-PR authority recorded above. As of the
+2026-10-04 development-only owner decision, authentication, sessions, cookies,
+CSRF, audit-event design, schema and migrations, and the units that depend on
+them are open for development use under the normal card, review, and CI gates;
+production enablement, real credentials, real user data, and live outside
+systems remain closed until a new owner decision.
 Approval of a roadmap proposal permits planning and per-unit card creation only
 where the proposal's own text keeps implementation separately gated. Every
 implementation unit still needs its own exact base, named paths, evidence,
 tests, cap, stop conditions, assignee profile, and independent review, and the
 coordinator still merges under its separate reviewed-PR authority.
+
+## Standing owner instruction
+
+The owner does not give approvals, answer questions, or unblock anything. Never
+wait on the owner and never message the owner for a decision. No card may be
+parked as "blocked on owner"; a blocked card is a defect to repair, not a state
+to report.
+
+When a unit fails, resolve it in this order: retry with a different approach;
+narrow the unit to the part that works; obtain a second independent reviewer or
+a different model; split the unit, or move to the next unit and return later.
+Never stall the board on one unit.
+
+Three limits stay in force and need no input: never commit secrets, real
+credentials, or key material, and use obvious development placeholders and
+environment variables; do not touch live outside systems such as the original
+sites or third-party services, and work only from disposable captures and local
+fixtures; do not weaken the project's own gates, because changes to review, CI,
+branch protection, or approval rules go through a normal reviewed PR with
+independent review and approval.
+
+Never invent expected responses or hashes. Where a capture is missing, build
+from disposable fixtures and label the unit's fidelity limit in its
+documentation; the capture stop `t_aed9f2eb` is a fidelity note, not a reason to
+stop work on other units.
+
+Each unit is capped at 3,000,000 tokens across all gates. A unit that reaches
+the cap is cut down to what is already accepted, merged if it passes review, and
+the board moves on; the cap is not raised on request. Write a short
+plain-English status to the queue file when a unit starts, finishes, or is cut
+down, including token usage per gate.
 
 ## Continuation invariant
 
