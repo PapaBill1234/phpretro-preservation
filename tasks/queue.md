@@ -86,3 +86,8 @@ Go 1.25.13, full go test ./... green, changed paths exactly
 internal/profile/view.go, internal/profile/view_test.go and this status
 line; go test -race ./... unverified locally (no C compiler for cgo) and left
 to CI; token usage per gate unavailable (not measured).
+
+F18 profile read/presentation model delivered: PR #39 merged normally at
+7b3f47cb4bb31a0a20d8c4c1dc32778ce9889b97 from reviewed head dd2e33c; exact-head
+foundation CI passed including race and govulncheck; token usage per gate
+unavailable (not measured).
