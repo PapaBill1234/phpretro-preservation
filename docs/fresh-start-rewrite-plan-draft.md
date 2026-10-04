@@ -1,5 +1,7 @@
 # Fresh-start rewrite plan draft
 
+> Superseding note (2026-10-04): This planning draft preserves historical approval and production-gate wording below; those statements are not current policy. The project is development-only with no production environment, and authentication, sessions, cookies, CSRF, audit-event design, schema, migrations, and dependent units are open for development under exact briefs, independent review, and CI. The owner gives no approvals. Production enablement, real credentials, secrets or key material, real user data, live outside systems, and weakening review, CI, branch-protection, or approval gates remain closed.
+
 Status: planning draft. The repository and monitoring/tooling baseline now exist; implementation remains blocked until the readiness gates and supervised work-unit batch are approved.
 
 Jev/cost revision: Jev is a typed routing and triage aid, never an authority for schema ownership, authentication, authorization, security approval, production enablement, merge approval, or runner permissions. Keep Jev calls small and batched, include `none of these`, record confidence and source verification, and stop delegating below 0.80 confidence, on `escalate`, unavailable responses, or disagreement with source. Compare Jev-assisted and matched Sol-only units by cost per accepted unit, input/cached/output tokens, wall time, retries, and error rate after ten accepted units. The A6API collector and PowerShell summaries are operational evidence only; configuration is never evidence of savings.

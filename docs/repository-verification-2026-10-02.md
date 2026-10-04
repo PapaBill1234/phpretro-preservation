@@ -1,5 +1,7 @@
 # PHPRetro Preservation Repository Verification
 
+> Superseding note (2026-10-04): This dated verification is historical. Its owner-approval, closed-production, and no-authorized-work wording reflects the 2026-10-02 state and must not be used as current policy. The current project is development-only with no production environment; authentication, sessions, cookies, CSRF, audit-event design, schema, migrations, and dependent units are open for development under exact briefs, independent review, and CI. The owner gives no approvals. Production enablement, real credentials, secrets or key material, real user data, live outside systems, and weakening repository gates remain closed.
+
 Date: 2026-10-02 UTC
 
 ## Scope
