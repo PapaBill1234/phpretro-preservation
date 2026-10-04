@@ -53,6 +53,13 @@ Independent review, an approver verdict, and the coordinator's separate
 reviewed-PR merge authority still apply to anything that changes scope, schema,
 authentication or sessions, security, or the project's own gates.
 
+This routine chain is the deliberate, bounded exception to the universal
+independent-review rule: a routine unit is reviewed inside its own card by the
+model policy's cross-family first-pass reviewer, while every unit listed in the
+previous paragraph keeps its separate reviewer, approver and coordinator merge
+gates. Nothing else in this file's review, approval or merge authority is
+relaxed by it.
+
 ## Protected instruction files
 
 `AGENTS.md`, `CLAUDE.md`, `SOUL.md`, skills and templates are never edited by a
@@ -67,7 +74,7 @@ coordinator surface.
 2. Cards use isolated worktrees and name their base SHA, exact file scope, evidence, tests, done criteria, stop conditions, and token cap.
 3. The gateway dispatcher activates the assigned profile; no two active cards may edit the same files.
 4. Hermes Nerve supervises active Kanban runs through hooks, with Jev as the authoritative Reflex backend when ROI/cooldown policy permits.
-5. `reviewer` independently checks implementation cards; `coordinator` verifies source, diff, tests, and delivery before completion.
+5. `reviewer` independently checks implementation cards that are outside the routine chain; for a routine unit the first-pass review is a step inside the worker card itself. `coordinator` verifies source, diff, tests, and delivery before completion.
 6. `approver` decides the bounded development-scope and routine technical gates the owner has delegated (see Approval delegation); `coordinator` still owns schema, authentication/session, security, runner, and merge decisions.
 7. The coordinator may continue bounded work autonomously; schema ownership, security, and runner decisions remain coordinator-owned.
 8. **Continuation is mandatory:** a coordinator card may not complete while the roadmap has an authorized next unit and the board has no successor planning card. Before completion it must create the next bounded implementation/review cards, link dependencies, and create or hand off a successor coordinator card. It may stop only for an explicit stop condition, exhausted authorized scope, a hard dependency, or an operator-owned gate.
@@ -116,9 +123,12 @@ nothing is deferred to a future production decision; real credentials, secrets
 or key material, real user data, and live outside systems remain closed.
 Approval of a roadmap proposal permits planning and per-unit card creation only
 where the proposal's own text keeps implementation separately gated. Every
-implementation unit still needs its own exact base, named paths, evidence,
-tests, cap, stop conditions, assignee profile, and independent review, and the
-coordinator still merges under its separate reviewed-PR authority.
+implementation unit outside the routine chain described under Card chain still
+needs its own exact base, named paths, evidence, tests, cap, stop conditions,
+assignee profile, and independent review, and the coordinator still merges under
+its separate reviewed-PR authority. A routine unit follows the Card chain rules
+instead: one worker card carrying the first-pass review, with CI auto-merge on
+green.
 
 ## Standing owner instruction
 
