@@ -3,9 +3,10 @@
 F0-F7 are accepted foundation units. The F8 localization boundary, F14
 evidence/tests, and F15-F17 public-route evidence/synthetic-test slices are on
 `main` through PR #30 at `b398da5aa65e7835689e1e9166bff3b7173d06f3`.
-The user authorized successive source-backed first-release
-route evidence and synthetic tests, with no production behavior or schema
-changes. The durable Hermes Kanban board is `phpretro-preservation`.
+The historical route-evidence authorization covered successive source-backed
+first-release evidence and synthetic tests, not schema or product changes.
+The development-only F18-F30 authorization below is a separate bounded lane.
+The durable Hermes Kanban board is `phpretro-preservation`.
 
 | ID | Status | Unit | Exact scope | Reason |
 | --- | --- | --- | --- | --- |
@@ -18,16 +19,16 @@ changes. The durable Hermes Kanban board is `phpretro-preservation`.
 | F6 | accepted | PolarIS adapter boundary | `internal/polaris/**`, evidence, tests | Synthetic/read-only adapter boundary is merged on `main`. |
 | F7 | accepted | React and Redis boundary | `frontend/**`, `internal/cache/**`, evidence, tests | Synthetic React/theme and injected cache support are merged on `main`. |
 | F8 | merged boundary | Localization contract | `frontend/src/localization/**`, `frontend/tests/localization.test.ts`, `internal/localization/**`, locale-varying `internal/cache/**`, evidence, `tasks/F8.md` | Synthetic boundary is on `main` at `031a336`; F14 evidence/tests were later delivered. |
-| F14 | delivered | Localization evidence and tests | The seven exact evidence/test paths in PR #24 | Candidate `cdab34c` passed independent retry `t_0f7c80e0`, pinned Go matrix, and foundation CI; PR #24 merged at `c522930`. No production changes. |
+| F14 | delivered | Localization evidence and tests | The seven exact evidence/test paths in PR #24 | Candidate `cdab34c` passed independent retry `t_0f7c80e0`, pinned Go matrix, and foundation CI; PR #24 merged at `c522930`. Evidence and tests only. |
 | F15 | delivered | First-release public `GET /` route evidence and synthetic tests | `tasks/F15.md`, `docs/evidence/F15-public-route.md`, `tests/golden/public_route_test.go` | Independently accepted candidate `650ba41` was delivered by PR #26 at `f60470b`; unavailable response metadata remains explicit in the F15 record. |
-| F16 | delivered | Public `GET /login_popup.php` route evidence and synthetic tests | `tasks/F16.md`, `docs/evidence/F16-public-login.md`, `tests/golden/login_route_test.go` | Reviewed candidate `8fb3b10a2153cbd9198de533a04fb82b5ea76242` was delivered by PR #29 at `0e3721c857e5d2e069c7b2c9ed07eb84e88f170b`. The retained disposable capture's 7,940-byte body matches accepted F4 login hash `500ebc4`; retained headers show final 200, no Location/Set-Cookie, and `text/html; charset=UTF-8`. Original `login_popup.php` matches the source manifest. No auth/session implementation, production behavior, schema, real data, or credential changes. |
+| F16 | delivered | Public `GET /login_popup.php` route evidence and synthetic tests | `tasks/F16.md`, `docs/evidence/F16-public-login.md`, `tests/golden/login_route_test.go` | Reviewed candidate `8fb3b10a2153cbd9198de533a04fb82b5ea76242` was delivered by PR #29 at `0e3721c857e5d2e069c7b2c9ed07eb84e88f170b`. The retained disposable capture's 7,940-byte body matches accepted F4 login hash `500ebc4`; retained headers show final 200, no Location/Set-Cookie, and `text/html; charset=UTF-8`. Original `login_popup.php` matches the source manifest. No auth/session implementation, schema, real data, or credential changes. |
 | F17 | delivered | Public `GET /articles/archive` route evidence and synthetic tests | `tasks/F17.md`, `docs/evidence/F17-public-archive.md`, `tests/golden/archive_route_test.go` | Exact candidate `9cf13c75dae8028d53096493e619e91625034c48` received explicit independent ACCEPTED review from `t_510fc369`; PR #30 delivered it at `b398da5aa65e7835689e1e9166bff3b7173d06f3` after exact-head foundation run `37220609598` succeeded. Evidence/synthetic tests only; all recorded UNKNOWNs remain. |
-| Successive route evidence | authorized boundary; hard stop | Further distinct source-backed first-release route evidence and synthetic tests | Each new brief must name exact evidence/test paths and an accepted base SHA before dispatch; no next F number selected | Existing checkpoint `t_aed9f2eb` found no distinct retained response authority for the inspected help/tag/groups/discussions routes. Exact source alone cannot establish response method/status/headers/cookies/markers; dispatch no next unit until both exact source and retained response authority support it. |
-| F18-F30 proposal | owner approval pending; no implementation authorization | Separate scope-approval lane | `docs/roadmap/F18-F30-feature-approval.md` under `t_a0d1b1de` / `t_d77c8293` | Proposal correctness review is not owner scope approval. Explicit owner approval on the scope PR and required delivery gates remain prerequisites; no Batch A implementation dispatch. |
-| F31-F60 design | provisional design only | Separate design-document delivery lane | Three roadmap documents under `t_ed119ebc` | Design review/delivery does not approve feature scope or implementation and does not override the F18-F30 owner gate. |
-| F9+ implementation | deferred | Later features and production gates | No product or schema files approved by this queue | Feature, CMS mutation, production, security, and runner gates remain closed. |
+| Successive route evidence | retained-capture fidelity limit | Further distinct source-backed first-release route evidence and synthetic tests | Each new brief names exact evidence/test paths and an accepted base SHA; capture claims require retained authority | Checkpoint `t_aed9f2eb` found no distinct retained response authority for inspected help/tag/groups/discussions routes. Exact source alone cannot establish response method/status/headers/cookies/markers. These remain UNKNOWN; independent bounded fixture units may proceed with labelled fidelity limits, not invented capture claims. |
+| F18-F30 development | eligible; exact-unit gates required | Separate bounded development lane | Proposal history: `docs/roadmap/F18-F30-feature-approval.md` under `t_a0d1b1de` / `t_d77c8293`; each implementation card declares its own exact paths | The 2026-10-04 owner decision opens planning and implementation in dependency order, one unit at a time, including Batch B without separate owner expansion. Delegated scope decisions, independent review, CI and coordinator delivery gates remain required; no owner approval or capture-stop prerequisite for independent fixture units. |
+| F31-F60 design | provisional design only | Separate design-document delivery lane | Three roadmap documents under `t_ed119ebc` | Design review/delivery does not approve feature scope or implementation. F18-F30 eligibility does not promote F31-F60. |
+| Historical F9+ implementation | no blanket authorization | Older deferred implementations and remaining technical gates | Historical evidence/test identifiers grant no arbitrary product or schema path scope | F18-F30 development eligibility is separate and requires exact-unit briefs. Real credentials/key material, real user data and live outside systems remain closed, and there is no production gate; security, schema ownership and runner decisions remain coordinator-owned. |
 
-Every unit brief must state its base SHA, exact allowed paths, evidence, tests, acceptance criteria, stop conditions, token cap, assignee profile, and worktree boundary. Any security, schema, production, or runner decision stays with the coordinator. Coordinator cards must leave successor cards queued before completion or document why the authorized queue is stopped.
+Every unit brief must state its base SHA, exact allowed paths, evidence, tests, acceptance criteria, stop conditions, token cap, assignee profile, and worktree boundary. Any security, schema, or runner decision stays with the coordinator. Coordinator cards must leave successor cards queued before completion or document why the authorized queue is stopped.
 
 ## Owner standing instruction, 2026-10-04
 
@@ -35,8 +36,8 @@ This is a development-only project: no production deployment, no real user
 data, no payments, all work against synthetic or disposable data. The former
 closed list (authentication, sessions, cookies, CSRF, audit-event design,
 schema and migrations, and the units that depend on them) is open for
-development use. Production enablement stays out of scope until a new owner
-decision.
+development use. There is no production environment and no production gate, and
+nothing here defers to a future production decision.
 
 F18-F30 are all eligible and are built in dependency order, one unit at a time,
 each with exact paths, tests, a cost cap, and an independent reviewer. Batch B
@@ -47,16 +48,27 @@ Report here, not to the owner: on every unit start, finish, or cut-down, write
 one short plain-English line naming the unit, its outcome, and token usage per
 gate. Never wait on the owner; repair blocked cards instead of reporting them.
 
-F16 and its successors are evidence/test-only authorization. Do not turn the
+The historical F16 route-evidence grant and its successors authorize evidence
+and tests only. Do not turn the
 historical F9-F14 identifiers into permission for their deferred implementation
-work. Stop and record the missing source or capture when a route cannot be
-specified without guessing.
+work. Record missing source or captures as UNKNOWN; build only separately
+bounded disposable fixtures with labelled fidelity limits where authorized.
 
-The evidence lane's missing-capture stop is separate from the proposal lane's
-owner gate. Reuse `t_aed9f2eb`; do not duplicate the planner/proposal, acquire
-new captures, or select another F number as part of this reconciliation.
+The retained-capture checkpoint is a fidelity note, not a development dispatch
+stop or owner gate. Reuse `t_aed9f2eb`; do not duplicate the planner/proposal or
+acquire new captures as part of this reconciliation. Independent fixture-based
+F18-F30 units remain eligible under their own exact briefs and normal gates.
 F17's CMS `news` schema, row provenance/content, runtime/database semantics
 beyond the captured response, request-cookie/session provenance, and uncited
-or unobserved behavior remain UNKNOWN. Raw captures remain local. Neither
-lane grants product, schema, authentication/session, security, runner,
-production, credential, or real-data approval.
+or unobserved behavior remain UNKNOWN. Raw captures remain local. Historical
+evidence authorization grants no product implementation scope. The separate
+development-only decision opens authentication/session and schema work under
+exact-unit gates, not real credentials, real data or live systems;
+coordinator security, schema ownership, runner and merge authority is retained.
+
+PR35 correction finished: production removed as a closed item and as a gate from
+AGENTS.md, DECISIONS.md, CHANGELOG.md and this queue; the closed list is now
+exactly real credentials/secrets/key material, real user data, live outside
+systems, merge itself, and any weakening of review, CI, branch-protection or
+approval rules. Correction, review, approval and CI token usage per gate
+unavailable (not measured).
