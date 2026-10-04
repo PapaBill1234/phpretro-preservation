@@ -14,6 +14,7 @@ test("validates the typed catalog shape and rejects extra or missing keys", () =
   assert.equal(validateCatalog(syntheticCatalogs[0]), true);
   assert.equal(validateCatalog({ locale: "xx", messages: { siteTitle: "x", welcome: "x" } }), false);
   assert.equal(validateCatalog({ locale: "xx", messages: { siteTitle: "x", welcome: "x", navigationHome: "x", extra: "x" } }), false);
+
 });
 
 test("uses deterministic regional, language, then default fallback", () => {
@@ -21,6 +22,7 @@ test("uses deterministic regional, language, then default fallback", () => {
   assert.equal(selectCatalog(syntheticCatalogs, "fr-CA")?.locale, "fr");
   assert.equal(selectCatalog(syntheticCatalogs, "de-DE")?.locale, "en");
 });
+
 
 test("makes missing keys explicit without hiding them", () => {
   assert.equal(missingKey("welcome"), "[missing:welcome]");
@@ -33,4 +35,40 @@ test("builds a localized home view model", () => {
   assert.equal(model.locale, "fr");
   assert.equal(model.welcome, "Vue de démarrage synthétique");
   assert.deepEqual(model.navigation, [{ label: "Accueil", href: "/" }]);
+});
+test("keeps the home.v1 contract fixed across locale display states", () => {
+  const english = createLocalizedHomeViewModel(syntheticCatalogs, "en-US");
+  const french = createLocalizedHomeViewModel(syntheticCatalogs, "fr-FR");
+  const expectedKeys = ["version", "locale", "siteTitle", "welcome", "navigation"];
+
+  assert.deepEqual(Object.keys(english), expectedKeys);
+  assert.deepEqual(Object.keys(french), expectedKeys);
+  assert.equal(english.version, "home.v1");
+  assert.equal(french.version, "home.v1");
+  assert.equal(english.siteTitle, french.siteTitle);
+  assert.notEqual(english.welcome, french.welcome);
+  assert.notEqual(english.navigation[0]?.label, french.navigation[0]?.label);
+  assert.equal(english.navigation[0]?.href, "/");
+  assert.equal(french.navigation[0]?.href, "/");
+});
+
+test("uses the same deterministic default display state for unknown locales", () => {
+  const first = createLocalizedHomeViewModel(syntheticCatalogs, "zz-ZZ");
+  const second = createLocalizedHomeViewModel(syntheticCatalogs, "ZZ-zz");
+
+  assert.deepEqual(second, first);
+  assert.equal(first.locale, "en");
+  assert.equal(first.version, "home.v1");
+  assert.deepEqual(first.navigation, [{ label: "Home", href: "/" }]);
+});
+
+test("preserves the typed presentation shape after fallback normalization", () => {
+  const model = createLocalizedHomeViewModel(syntheticCatalogs, "FR-ca");
+  assert.deepEqual(model, {
+    version: "home.v1",
+    locale: "fr",
+    siteTitle: "PHPRetro",
+    welcome: "Vue de démarrage synthétique",
+    navigation: [{ label: "Accueil", href: "/" }]
+  });
 });
