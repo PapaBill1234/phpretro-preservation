@@ -1,10 +1,53 @@
 # Agent orchestration
 
-Sol (`gpt-6.1-sol`) is the coordinator and final verifier. The project uses the
-durable Hermes Kanban board `phpretro-preservation` with six named profiles:
-`coordinator` (Sol), `backend` (Luna), `frontend` (Luna), `reviewer` (Sol),
-`visual` (Luna), and `approver` (Sol). Main-model traffic uses A6API; Jev handles
-evidence-backed typed judgments through `jev_judge` and Hermes Nerve.
+The `coordinator` profile runs `deepseek-v4.1-flash` and owns integration and
+final verification; `gpt-6.1-sol` is reserved for escalated review and final
+verification of escalated work. The project uses the durable Hermes Kanban board
+`phpretro-preservation` with six named profiles: `coordinator`, `backend`,
+`frontend` and `visual` on `deepseek-v4.1-flash`, and `reviewer` and `approver`
+on `gpt-6.1-sol`. Main-model traffic uses A6API; Jev handles evidence-backed
+typed judgments through `jev_judge` and Hermes Nerve.
+
+## Model policy
+
+`deepseek-v4.1-flash` carries the routine work: watchdog and polling, state
+digests, CI and diff-verification checks, brief-writing, F31-F60 design
+synthesis, first-pass PR review, and the `backend`, `frontend` and `visual`
+workers.
+
+`gpt-6.1-sol` is reserved for exactly three uses: escalated review
+(authentication, session or schema diffs, diffs over 400 lines, or a flagged
+concern), a single escalation attempt after two failures on the cheaper model,
+and design synthesis for units whose scope is unclear (for example F28 and F30).
+Escalate one card at a time with `hermes kanban set-model <id> gpt-6.1-sol`, and
+record the reason for the escalation in that card.
+
+A reviewer must never share the model family of the candidate's author. An
+independent review of a `deepseek-v4.1-flash` candidate therefore runs on
+`gpt-6.1-sol`, and a review of a `gpt-6.1-sol` candidate runs on
+`deepseek-v4.1-flash`.
+
+## Card chain
+
+A routine unit is one worker card. It writes the tests first, implements, runs
+the checks, opens the PR, and performs the first-pass review as a step inside
+the same card. CI auto-merges on green. The worker creates its own successor
+from `depends_on` rather than waiting for a planner. Workers read one generated
+digest instead of re-reading `AGENTS.md`, `DECISIONS.md`, `tasks/queue.md` and
+`docs/ai-run-state.md` for every unit.
+
+The `approver` is used only for scope changes, never for a routine unit.
+Independent review, an approver verdict, and the coordinator's separate
+reviewed-PR merge authority still apply to anything that changes scope, schema,
+authentication or sessions, security, or the project's own gates.
+
+## Protected instruction files
+
+`AGENTS.md`, `CLAUDE.md`, `SOUL.md`, skills and templates are never edited by a
+headless worker. The protected-instruction-file gate always asks a human and
+fails closed when no interactive user or gateway channel can answer, and the
+tool forbids retrying the write through another path. Route those edits to the
+coordinator surface.
 
 ## Required flow
 
@@ -110,3 +153,9 @@ implementation card is never treated as the project loop.
 ## Economics
 
 Every measured unit records A6API model IDs, reasoning effort, input tokens, cached-input tokens, output tokens, retries, Jev calls/cost, wall time, result, and acceptance status. Compare matched Sol-only and Jev/Luna runs before claiming savings. If delegation adds a second context without reducing total accepted-unit cost, stop using it for that unit class.
+
+A scheduled digest appends tokens per role, tokens per delivered unit, cards per
+delivered unit, and escalation counts to `tasks/queue.md` every six hours. It
+reports raw token counts, writes `unavailable` for anything local telemetry does
+not expose rather than estimating, and claims no saving without matched
+telemetry.

@@ -72,3 +72,36 @@ exactly real credentials/secrets/key material, real user data, live outside
 systems, merge itself, and any weakening of review, CI, branch-protection or
 approval rules. Correction, review, approval and CI token usage per gate
 unavailable (not measured).
+
+## Model and chain policy, 2026-10-04
+
+`deepseek-v4.1-flash` now carries the routine work: the watchdog, state digests,
+CI and diff-verification checks, brief-writing, F31-F60 design synthesis,
+first-pass PR review, and the `backend`, `frontend` and `visual` workers. The
+`coordinator` profile moved from `gpt-6.1-sol` to `deepseek-v4.1-flash`; the
+`reviewer` and `approver` profiles stay on `gpt-6.1-sol`, which is what keeps a
+reviewer on a different model family from a `deepseek-v4.1-flash` author.
+
+`gpt-6.1-sol` is reserved for escalated review (authentication, session or schema
+diffs, diffs over 400 lines, a flagged concern), one escalation attempt after two
+failures on the cheaper model, and design synthesis for unclear units such as F28
+and F30. Escalate one card at a time with `hermes kanban set-model <id>
+gpt-6.1-sol` and record the reason in the card.
+
+After PR35 delivers, a routine unit is one worker card: tests first, implement,
+run the checks, open the PR, first-pass review as a step inside the same card, CI
+auto-merge on green, and a successor the worker creates itself from `depends_on`.
+Workers read one generated digest instead of re-reading the policy files. The
+approver is used only for scope changes.
+
+Two standing constraints from the same instruction:
+
+- **Merge hold.** Until PR #35 delivers, nothing else merges to `main`. PR #37
+  (worktree leftovers) is open and waits.
+- **Protected instruction files.** `AGENTS.md`, `CLAUDE.md`, `SOUL.md`, skills
+  and templates are edited only on the coordinator surface. A headless worker
+  cannot satisfy the protected-instruction-file gate, so such a card fails closed.
+
+A scheduled digest appends tokens per role, tokens per delivered unit, cards per
+delivered unit and escalation counts to this file every six hours, reporting
+`unavailable` rather than estimating.
