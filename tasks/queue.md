@@ -108,8 +108,7 @@ approver is used only for scope changes.
 
 Two standing constraints from the same instruction:
 
-- **Merge hold.** Until PR #35 delivers, nothing else merges to `main`. PR #37
-  (worktree leftovers) is open and waits.
+- **Merge hold (lifted).** PR #35 delivered at `2df4094` and PR #37 merged with it at `4eb025e`, so the hold that paused other merges to `main` until PR35 delivered no longer applies. New merges follow the normal gates.
 - **Protected instruction files.** `AGENTS.md`, `CLAUDE.md`, `SOUL.md`, skills
   and templates are edited only on the coordinator surface. A headless worker
   cannot satisfy the protected-instruction-file gate, so such a card fails closed.
