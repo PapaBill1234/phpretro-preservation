@@ -72,3 +72,17 @@ exactly real credentials/secrets/key material, real user data, live outside
 systems, merge itself, and any weakening of review, CI, branch-protection or
 approval rules. Correction, review, approval and CI token usage per gate
 unavailable (not measured).
+
+F18 profile read/presentation model (t_25ca3e24) started on base
+2df409465458fbd6df273d6ba535b79209149eaf: new read-only
+internal/profile/view.go and view_test.go implement Tab 1-5 selection with
+absent or invalid input falling back to 1, preserving the six-field F3
+Profile; token usage per gate unavailable (not measured) in this worker
+session.
+
+F18 profile read/presentation model (t_25ca3e24) finished: focused
+go test/vet ./internal/profile/... and gofmt -l internal/profile clean under
+Go 1.25.13, full go test ./... green, changed paths exactly
+internal/profile/view.go, internal/profile/view_test.go and this status
+line; go test -race ./... unverified locally (no C compiler for cgo) and left
+to CI; token usage per gate unavailable (not measured).
