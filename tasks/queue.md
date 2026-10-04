@@ -1,8 +1,9 @@
 # Supervised work queue
 
 F0-F7 are accepted foundation units. The F8 localization boundary, F14
-evidence/test candidate, and F15 public-route evidence/test slice are on `main`
-through PR #26. The user authorized successive source-backed first-release
+evidence/tests, and F15-F17 public-route evidence/synthetic-test slices are on
+`main` through PR #30 at `b398da5aa65e7835689e1e9166bff3b7173d06f3`.
+The user authorized successive source-backed first-release
 route evidence and synthetic tests, with no production behavior or schema
 changes. The durable Hermes Kanban board is `phpretro-preservation`.
 
@@ -19,8 +20,11 @@ changes. The durable Hermes Kanban board is `phpretro-preservation`.
 | F8 | merged boundary | Localization contract | `frontend/src/localization/**`, `frontend/tests/localization.test.ts`, `internal/localization/**`, locale-varying `internal/cache/**`, evidence, `tasks/F8.md` | Synthetic boundary is on `main` at `031a336`; F14 evidence/tests were later delivered. |
 | F14 | delivered | Localization evidence and tests | The seven exact evidence/test paths in PR #24 | Candidate `cdab34c` passed independent retry `t_0f7c80e0`, pinned Go matrix, and foundation CI; PR #24 merged at `c522930`. No production changes. |
 | F15 | delivered | First-release public `GET /` route evidence and synthetic tests | `tasks/F15.md`, `docs/evidence/F15-public-route.md`, `tests/golden/public_route_test.go` | Independently accepted candidate `650ba41` was delivered by PR #26 at `f60470b`; unavailable response metadata remains explicit in the F15 record. |
-| F16 | authorized next | Public `GET /login_popup.php` route evidence and synthetic tests | `tasks/F16.md`, `docs/evidence/F16-public-login.md`, `tests/golden/login_route_test.go` | The retained disposable capture's 7,940-byte body matches accepted F4 login hash `500ebc4`; retained headers show final 200, no Location/Set-Cookie, and `text/html; charset=UTF-8`. Original `login_popup.php` matches the source manifest. Verify local raw files and hashes before assertions; no auth/session implementation, production behavior, schema, real data, or credential changes. |
-| F17+ route evidence | conditionally authorized | Successive source-backed first-release route evidence and synthetic tests | Each new brief must name exact evidence/test paths and an accepted base SHA before dispatch | Continue only while fresh exact source and capture evidence support a bounded unit; create a reviewer and successor coordinator card or record the hard dependency. |
+| F16 | delivered | Public `GET /login_popup.php` route evidence and synthetic tests | `tasks/F16.md`, `docs/evidence/F16-public-login.md`, `tests/golden/login_route_test.go` | Reviewed candidate `8fb3b10a2153cbd9198de533a04fb82b5ea76242` was delivered by PR #29 at `0e3721c857e5d2e069c7b2c9ed07eb84e88f170b`. The retained disposable capture's 7,940-byte body matches accepted F4 login hash `500ebc4`; retained headers show final 200, no Location/Set-Cookie, and `text/html; charset=UTF-8`. Original `login_popup.php` matches the source manifest. No auth/session implementation, production behavior, schema, real data, or credential changes. |
+| F17 | delivered | Public `GET /articles/archive` route evidence and synthetic tests | `tasks/F17.md`, `docs/evidence/F17-public-archive.md`, `tests/golden/archive_route_test.go` | Exact candidate `9cf13c75dae8028d53096493e619e91625034c48` received explicit independent ACCEPTED review from `t_510fc369`; PR #30 delivered it at `b398da5aa65e7835689e1e9166bff3b7173d06f3` after exact-head foundation run `37220609598` succeeded. Evidence/synthetic tests only; all recorded UNKNOWNs remain. |
+| Successive route evidence | authorized boundary; hard stop | Further distinct source-backed first-release route evidence and synthetic tests | Each new brief must name exact evidence/test paths and an accepted base SHA before dispatch; no next F number selected | Existing checkpoint `t_aed9f2eb` found no distinct retained response authority for the inspected help/tag/groups/discussions routes. Exact source alone cannot establish response method/status/headers/cookies/markers; dispatch no next unit until both exact source and retained response authority support it. |
+| F18-F30 proposal | owner approval pending; no implementation authorization | Separate scope-approval lane | `docs/roadmap/F18-F30-feature-approval.md` under `t_a0d1b1de` / `t_d77c8293` | Proposal correctness review is not owner scope approval. Explicit owner approval on the scope PR and required delivery gates remain prerequisites; no Batch A implementation dispatch. |
+| F31-F60 design | provisional design only | Separate design-document delivery lane | Three roadmap documents under `t_ed119ebc` | Design review/delivery does not approve feature scope or implementation and does not override the F18-F30 owner gate. |
 | F9+ implementation | deferred | Later features and production gates | No product or schema files approved by this queue | Feature, CMS mutation, production, security, and runner gates remain closed. |
 
 Every unit brief must state its base SHA, exact allowed paths, evidence, tests, acceptance criteria, stop conditions, token cap, assignee profile, and worktree boundary. Any security, schema, production, or runner decision stays with the coordinator. Coordinator cards must leave successor cards queued before completion or document why the authorized queue is stopped.
@@ -29,3 +33,12 @@ F16 and its successors are evidence/test-only authorization. Do not turn the
 historical F9-F14 identifiers into permission for their deferred implementation
 work. Stop and record the missing source or capture when a route cannot be
 specified without guessing.
+
+The evidence lane's missing-capture stop is separate from the proposal lane's
+owner gate. Reuse `t_aed9f2eb`; do not duplicate the planner/proposal, acquire
+new captures, or select another F number as part of this reconciliation.
+F17's CMS `news` schema, row provenance/content, runtime/database semantics
+beyond the captured response, request-cookie/session provenance, and uncited
+or unobserved behavior remain UNKNOWN. Raw captures remain local. Neither
+lane grants product, schema, authentication/session, security, runner,
+production, credential, or real-data approval.
