@@ -91,3 +91,5 @@ F18 profile read/presentation model delivered: PR #39 merged normally at
 7b3f47cb4bb31a0a20d8c4c1dc32778ce9889b97 from reviewed head dd2e33c; exact-head
 foundation CI passed including race and govulncheck; token usage per gate
 unavailable (not measured).
+
+F19 personal-home read/presentation model finished locally at f8cc6364caf9133993c1028a3342a46d2b484ae1: synthetic guest ID/name lookup and explicit hidden-home boundary, with unknown private fields omitted; token usage per gate unavailable (not measured). Go and frontend focused/full gates are unavailable locally (gofmt/go/npm dependencies missing); exact-head CI and independent review remain required.
