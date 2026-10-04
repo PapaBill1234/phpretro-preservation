@@ -8,7 +8,7 @@ This unit records the original public `GET /login_popup.php` source and one reta
 
 ## Source verification
 
-Read-only original source: `stage3-original-phpretro/login_popup.php`, SHA-256 `c813f9634aab1f82be117b0e13465d1916d944fa6efdbe624032875e82799f7c`; it matches the corresponding entry in `docs/stage3-original-phpretro-sha256.csv` (manifest SHA-256 `aa72ca4d73794df6d17e704d532c8efb6330bfbfdb727ad85ec748b28dc75081`). Relevant source lines:
+Read-only original source: `stage3-original-phpretro/login_popup.php`, SHA-256 `c813f9634aab1f82be117b0e13465d1916d944fa6efdbe624032875e82799f7c`; it matches the corresponding entry in `docs/stage3-original-phpretro-sha256.csv`. The manifest's CRLF-byte SHA-256 is `aa72ca4d73794df6d17e704d532c8efb6330bfbfdb727ad85ec748b28dc75081`; the same tracked Git blob checked out with LF line endings has SHA-256 `2a995ca39bb10c37d0e9ea4349f072382dce9e476f01acf0027eb93b6fc215eb`. These hashes differ only because of CRLF/LF line endings; the tracked blob and source entry are unchanged. Relevant source lines:
 
 - Line 18 requires `./includes/core.php`.
 - Lines 24-27 initialize `$_SESSION['login']['enabled']` and `tries` only when `$_SESSION['login']` is unset.
