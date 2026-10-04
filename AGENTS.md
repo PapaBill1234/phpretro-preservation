@@ -1,9 +1,9 @@
 # Agent orchestration
 
 Sol (`gpt-6.1-sol`) is the coordinator and final verifier. The project uses the
-durable Hermes Kanban board `phpretro-preservation` with five named profiles:
+durable Hermes Kanban board `phpretro-preservation` with six named profiles:
 `coordinator` (Sol), `backend` (Luna), `frontend` (Luna), `reviewer` (Sol),
-and `visual` (Luna). Main-model traffic uses A6API; Jev handles
+`visual` (Luna), and `approver` (Sol). Main-model traffic uses A6API; Jev handles
 evidence-backed typed judgments through `jev_judge` and Hermes Nerve.
 
 ## Required flow
@@ -13,8 +13,9 @@ evidence-backed typed judgments through `jev_judge` and Hermes Nerve.
 3. The gateway dispatcher activates the assigned profile; no two active cards may edit the same files.
 4. Hermes Nerve supervises active Kanban runs through hooks, with Jev as the authoritative Reflex backend when ROI/cooldown policy permits.
 5. `reviewer` independently checks implementation cards; `coordinator` verifies source, diff, tests, and delivery before completion.
-6. The coordinator may continue bounded work autonomously; production, schema ownership, security, and runner decisions remain coordinator-owned.
-7. **Continuation is mandatory:** a coordinator card may not complete while the roadmap has an authorized next unit and the board has no successor planning card. Before completion it must create the next bounded implementation/review cards, link dependencies, and create or hand off a successor coordinator card. It may stop only for an explicit stop condition, exhausted authorized scope, a hard dependency, or an operator-owned gate.
+6. `approver` decides the bounded development-scope and routine technical gates the owner has delegated (see Approval delegation); `coordinator` still owns schema, authentication/session, security, production, runner, and merge decisions.
+7. The coordinator may continue bounded work autonomously; production, schema ownership, security, and runner decisions remain coordinator-owned.
+8. **Continuation is mandatory:** a coordinator card may not complete while the roadmap has an authorized next unit and the board has no successor planning card. Before completion it must create the next bounded implementation/review cards, link dependencies, and create or hand off a successor coordinator card. It may stop only for an explicit stop condition, exhausted authorized scope, a hard dependency, or an operator-owned gate.
 
 ## Jev policy
 
@@ -26,16 +27,39 @@ Jev may perform advisory reviews of authentication, authorization, schema owners
 
 ## Kanban agent policy
 
-Do not create a card for an exact lookup or tiny edit. Use the five profiles for
+Do not create a card for an exact lookup or tiny edit. Use the six profiles for
 bounded parallel work only when isolated file scope and acceptance gates make
 the second context worthwhile. Prefer `backend` for Go/contracts, `frontend`
-for React/TypeScript, `visual` for theme and presentation fixtures, and
-`reviewer` for independent verification. `coordinator` owns integration,
-schema/ownership, security-sensitive, production, and runner work.
+for React/TypeScript, `visual` for theme and presentation fixtures,
+`reviewer` for independent verification, and `approver` for delegated scope
+decisions. `coordinator` owns integration, schema/ownership, security-sensitive,
+production, and runner work.
 
 Workers may not expand file scope, infer unknown schema, access production
 data, change rulesets, push `main`, or approve their own work. High-risk
 security and runner criteria remain coordinator-only.
+
+## Approval delegation
+
+The owner is not a programmer and has delegated bounded development-scope and
+routine technical gate decisions to the `approver` profile. For each decision
+the approver reads the exact current repository policy, source evidence, card,
+candidate commit, independent review result, CI, and PR, then records one
+explicit APPROVE, REJECT, or NEEDS_EVIDENCE verdict on the board and the
+relevant PR. The verdict names the exact SHA, the approved unit IDs and paths,
+an explicit not-approved list, the verified facts with their identifiers, the
+retained unknowns, the remaining gates, and any evidence gap.
+
+The approver never authors, reviews, or merges a change it approves. Its verdict
+never grants merge, schema, authentication/session, security, production,
+runner, credential, real-data, or irreversible-change authority; those stay
+coordinator-owned and owner-gated, as do payments, emulator writes, client
+handoff, staff operations, rule changes, and branch-protection policy.
+Approval of a roadmap proposal permits planning and per-unit card creation only
+where the proposal's own text keeps implementation separately gated. Every
+implementation unit still needs its own exact base, named paths, evidence,
+tests, cap, stop conditions, assignee profile, and independent review, and the
+coordinator still merges under its separate reviewed-PR authority.
 
 ## Continuation invariant
 
