@@ -88,6 +88,12 @@ line; go test -race ./... unverified locally (no C compiler for cgo) and left
 to CI; token usage per gate unavailable (not measured).
 
 F18 profile read/presentation model delivered: PR #39 merged normally at
-7b3f47cb4bb31a0a20d8c4c1dc32778ce9889b97 from reviewed head dd2e33c; exact-head
-foundation CI passed including race and govulncheck; token usage per gate
+7b3f47cb4bb31a0a20d8c4c1dc32778ce9889b97 from reviewed head dd2e33c;
+exact-head foundation CI passed including race and govulncheck; token usage per gate
+unavailable (not measured).
+
+F18 frontend profile presentation delivered: PR #42 merged normally at
+bbd27a821071fd0a80d1d40ac15fbe201c9c33d2 from reviewed head
+2047d1b7f0072a99b022285b4d9023221c09bb63; foundation CI passed; frontend
+checks passed (npm ci, typecheck, 19/19 tests, build); token usage per gate
 unavailable (not measured).
