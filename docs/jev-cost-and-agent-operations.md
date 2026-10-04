@@ -6,9 +6,11 @@ Use `mcp__jev__jev_judge` only for typed judgments over facts already gathered: 
 
 Accept a low-risk Jev selection only at confidence `>= 0.80` when source verification agrees. Between `0.60` and `0.80`, Sol reviews. Below `0.60`, on `escalate`, unavailable output, or disagreement, Sol decides and delegation stops. Keep credentials, personal data, full files, and unrelated context out of calls.
 
-## Current five-profile Kanban handoff
+## Current six-profile Kanban handoff
 
-Sol (`gpt-6.1-sol`) owns discovery, ambiguous decisions, security-sensitive criteria, schema/ownership, runner configuration, acceptance briefs, integration, and final verification. The durable profiles are `backend`, `frontend`, and `visual` (`gpt-6-luna`) plus `reviewer` (`gpt-6.1-sol`). Cards use separate worktrees and exact scopes; the reviewer never approves its own implementation. Hermes Nerve supervises active Kanban runs through hooks and may route typed decisions to Jev when the configured ROI/cooldown policy permits.
+Sol (`gpt-6.1-sol`) owns discovery, ambiguous decisions, security-sensitive criteria, schema/ownership, runner configuration, acceptance briefs, integration, and final verification. The durable profiles are `backend`, `frontend`, and `visual` (`gpt-6-luna`) plus `reviewer` (`gpt-6.1-sol`) and `approver` (`gpt-6.1-sol`). Cards use separate worktrees and exact scopes; the reviewer never approves its own implementation. Hermes Nerve supervises active Kanban runs through hooks and may route typed decisions to Jev when the configured ROI/cooldown policy permits.
+
+`approver` decides the bounded development-scope and routine technical gates the owner has delegated, recording one evidence-backed APPROVE, REJECT, or NEEDS_EVIDENCE verdict on the board and the relevant PR. It never authors, reviews, or merges a change it approves, and its verdict grants no merge, schema, authentication/session, security, production, runner, credential, real-data, or irreversible-change authority. Its procedure is the `phpretro-scope-approval` skill.
 
 ## Cost evidence
 
