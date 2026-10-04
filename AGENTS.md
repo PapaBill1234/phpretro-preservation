@@ -1,37 +1,49 @@
 # Agent orchestration
 
-The `coordinator` profile runs `deepseek-v4.1-flash` and owns integration and
-final verification; `gpt-6.1-sol` is reserved for escalated review and final
-verification of escalated work. The project uses the durable Hermes Kanban board
+The `coordinator` profile runs `gpt-6-luna` and owns integration and final
+verification. The project uses the durable Hermes Kanban board
 `phpretro-preservation` with six named profiles: `coordinator`, `backend`,
-`frontend` and `visual` on `deepseek-v4.1-flash`, and `reviewer` and `approver`
-on `gpt-6.1-sol`. Main-model traffic uses A6API; Jev handles evidence-backed
-typed judgments through `jev_judge` and Hermes Nerve.
+`frontend` and `visual` on `gpt-6-luna`, `reviewer` on `deepseek-v4.1-flash`,
+and `approver` on `gpt-6.1-sol`. Main-model traffic uses A6API; Jev handles
+evidence-backed typed judgments through `jev_judge` and Hermes Nerve.
 
 ## Model policy
 
-`deepseek-v4.1-flash` carries the routine work: watchdog and polling, state
-digests, CI and diff-verification checks, brief-writing, F31-F60 design
-synthesis, first-pass PR review, and the `backend`, `frontend` and `visual`
-workers.
+Only three models are usable through A6API: `gpt-6-luna`,
+`deepseek-v4.1-flash` and `gpt-6.1-sol`. Gemini and GLM are not usable and are
+never used.
 
-`gpt-6.1-sol` is reserved for exactly three uses: escalated review
+`gpt-6-luna` carries the routine work: the `backend`, `frontend` and `visual`
+workers, the watchdog, state digests, CI and diff-verification checks, and
+brief-writing.
+
+First-pass PR review runs on `deepseek-v4.1-flash` when the author was
+`gpt-6-luna`, and on `gpt-6-luna` when the author was `deepseek-v4.1-flash`. The
+reviewer is always a different model family from the author, so a review of a
+`gpt-6.1-sol` candidate also runs on `gpt-6-luna` or `deepseek-v4.1-flash`.
+
+`gpt-6.1-sol` is reserved for exactly four uses: escalated review
 (authentication, session or schema diffs, diffs over 400 lines, or a flagged
-concern), a single escalation attempt after two failures on the cheaper model,
-and design synthesis for units whose scope is unclear (for example F28 and F30).
-Escalate one card at a time with `hermes kanban set-model <id> gpt-6.1-sol`, and
-record the reason for the escalation in that card.
+concern), scope-change approvals, the stuck-unit ladder's last attempt, and
+design synthesis for units whose scope is unclear (for example F28 and F30).
+Escalate one card at a time with `hermes kanban set-model <id> gpt-6.1-sol` and
+record the reason in that card. For escalated review of `gpt-6-luna`-authored
+code, run the `deepseek-v4.1-flash` first-pass review first, then `gpt-6.1-sol`.
 
-A reviewer must never share the model family of the candidate's author. An
-independent review of a `deepseek-v4.1-flash` candidate therefore runs on
-`gpt-6.1-sol`, and a review of a `gpt-6.1-sol` candidate runs on
-`deepseek-v4.1-flash`.
+## Stuck-unit ladder
+
+A failing unit moves down one rung at a time and no rung is skipped: two
+attempts on `gpt-6-luna`, then one attempt on `deepseek-v4.1-flash`, then one
+attempt on `gpt-6.1-sol`, then the unit is marked cut down to what is already
+accepted and the board moves to the next unit. The ladder position is recorded
+on the card, and a cut-down unit is not retried or re-dispatched.
 
 ## Card chain
 
 A routine unit is one worker card. It writes the tests first, implements, runs
 the checks, opens the PR, and performs the first-pass review as a step inside
-the same card. CI auto-merges on green. The worker creates its own successor
+the same card; that step runs on the model the model policy assigns for the
+author's family. CI auto-merges on green. The worker creates its own successor
 from `depends_on` rather than waiting for a planner. Workers read one generated
 digest instead of re-reading `AGENTS.md`, `DECISIONS.md`, `tasks/queue.md` and
 `docs/ai-run-state.md` for every unit.
@@ -154,8 +166,10 @@ implementation card is never treated as the project loop.
 
 Every measured unit records A6API model IDs, reasoning effort, input tokens, cached-input tokens, output tokens, retries, Jev calls/cost, wall time, result, and acceptance status. Compare matched Sol-only and Jev/Luna runs before claiming savings. If delegation adds a second context without reducing total accepted-unit cost, stop using it for that unit class.
 
-A scheduled digest appends tokens per role, tokens per delivered unit, cards per
-delivered unit, and escalation counts to `tasks/queue.md` every six hours. It
-reports raw token counts, writes `unavailable` for anything local telemetry does
-not expose rather than estimating, and claims no saving without matched
-telemetry.
+A scheduled digest appends per-role model, tokens and failure, retry and
+cut-down counts, tokens and cards per delivered unit, and escalation counts to
+`tasks/queue.md` every six hours. It reports raw token counts, writes
+`unavailable` for anything local telemetry does not expose rather than
+estimating, claims no saving without matched telemetry, and compares each
+role's failure rate with the previous digest, flagging any role that got worse
+as a revert candidate for the coordinator.

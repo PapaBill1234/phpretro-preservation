@@ -75,18 +75,30 @@ unavailable (not measured).
 
 ## Model and chain policy, 2026-10-04
 
-`deepseek-v4.1-flash` now carries the routine work: the watchdog, state digests,
-CI and diff-verification checks, brief-writing, F31-F60 design synthesis,
-first-pass PR review, and the `backend`, `frontend` and `visual` workers. The
-`coordinator` profile moved from `gpt-6.1-sol` to `deepseek-v4.1-flash`; the
-`reviewer` and `approver` profiles stay on `gpt-6.1-sol`, which is what keeps a
-reviewer on a different model family from a `deepseek-v4.1-flash` author.
+Only three models are usable through A6API: `gpt-6-luna`,
+`deepseek-v4.1-flash` and `gpt-6.1-sol`. Gemini and GLM are not usable and are
+never used.
+
+`gpt-6-luna` carries the routine work: the `backend`, `frontend` and `visual`
+workers, the watchdog, state digests, CI and diff-verification checks, and
+brief-writing. The `coordinator` profile runs `gpt-6-luna`, the `reviewer`
+profile runs `deepseek-v4.1-flash`, and the `approver` stays on `gpt-6.1-sol`.
+
+First-pass PR review runs on `deepseek-v4.1-flash` when the author was
+`gpt-6-luna`, and on `gpt-6-luna` when the author was `deepseek-v4.1-flash`, so
+the reviewer is always a different model family from the author.
 
 `gpt-6.1-sol` is reserved for escalated review (authentication, session or schema
-diffs, diffs over 400 lines, a flagged concern), one escalation attempt after two
-failures on the cheaper model, and design synthesis for unclear units such as F28
-and F30. Escalate one card at a time with `hermes kanban set-model <id>
-gpt-6.1-sol` and record the reason in the card.
+diffs, diffs over 400 lines, a flagged concern), scope-change approvals, the
+stuck-unit ladder's last attempt, and design synthesis for unclear units such as
+F28 and F30. For escalated review of `gpt-6-luna`-authored code, run the
+`deepseek-v4.1-flash` first-pass review first, then `gpt-6.1-sol`.
+
+The stuck-unit ladder: two attempts on `gpt-6-luna`, then one attempt on
+`deepseek-v4.1-flash`, then one attempt on `gpt-6.1-sol`, then mark the unit cut
+down to what is already accepted and move to the next unit. Escalate one card at
+a time with `hermes kanban set-model <id> gpt-6.1-sol` and record the ladder
+position in the card.
 
 After PR35 delivers, a routine unit is one worker card: tests first, implement,
 run the checks, open the PR, first-pass review as a step inside the same card, CI
@@ -102,6 +114,7 @@ Two standing constraints from the same instruction:
   and templates are edited only on the coordinator surface. A headless worker
   cannot satisfy the protected-instruction-file gate, so such a card fails closed.
 
-A scheduled digest appends tokens per role, tokens per delivered unit, cards per
-delivered unit and escalation counts to this file every six hours, reporting
-`unavailable` rather than estimating.
+A scheduled digest appends per-role model, tokens and failure, retry and
+cut-down counts, tokens and cards per delivered unit, and escalation counts to
+this file every six hours, reporting `unavailable` rather than estimating and
+flagging any role whose failure rate worsened as a revert candidate.
