@@ -118,3 +118,22 @@ A scheduled digest appends per-role model, tokens and failure, retry and
 cut-down counts, tokens and cards per delivered unit, and escalation counts to
 this file every six hours, reporting `unavailable` rather than estimating and
 flagging any role whose failure rate worsened as a revert candidate.
+
+F18 profile read/presentation model (t_25ca3e24) started on base
+2df409465458fbd6df273d6ba535b79209149eaf: new read-only
+internal/profile/view.go and view_test.go implement Tab 1-5 selection with
+absent or invalid input falling back to 1, preserving the six-field F3
+Profile; token usage per gate unavailable (not measured) in this worker
+session.
+
+F18 profile read/presentation model (t_25ca3e24) finished: focused
+go test/vet ./internal/profile/... and gofmt -l internal/profile clean under
+Go 1.25.13, full go test ./... green, changed paths exactly
+internal/profile/view.go, internal/profile/view_test.go and this status
+line; go test -race ./... unverified locally (no C compiler for cgo) and left
+to CI; token usage per gate unavailable (not measured).
+
+F18 profile read/presentation model delivered: PR #39 merged normally at
+7b3f47cb4bb31a0a20d8c4c1dc32778ce9889b97 from reviewed head dd2e33c; exact-head
+foundation CI passed including race and govulncheck; token usage per gate
+unavailable (not measured).
