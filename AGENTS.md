@@ -43,7 +43,11 @@ on the card, and a cut-down unit is not retried or re-dispatched.
 A routine unit is one worker card. It writes the tests first, implements, runs
 the checks, opens the PR, and performs the first-pass review as a step inside
 the same card; that step runs on the model the model policy assigns for the
-author's family. CI auto-merges on green. The worker creates its own successor
+author's family. CI auto-merges on green. Where branch protection or the
+repository's own merge rules require an explicit merge, the coordinator performs
+it under its reviewed-PR authority; the auto-merge applies only to a routine unit
+whose required checks and first-pass review are green. The worker creates its own
+successor
 from `depends_on` rather than waiting for a planner. Workers read one generated
 digest instead of re-reading `AGENTS.md`, `DECISIONS.md`, `tasks/queue.md` and
 `docs/ai-run-state.md` for every unit.
@@ -70,7 +74,7 @@ coordinator surface.
 
 ## Required flow
 
-1. Sol runs exact search, tests, and source inspection first, then creates bounded Kanban cards.
+1. The coordinator runs exact search, tests, and source inspection first, then creates bounded Kanban cards.
 2. Cards use isolated worktrees and name their base SHA, exact file scope, evidence, tests, done criteria, stop conditions, and token cap.
 3. The gateway dispatcher activates the assigned profile; no two active cards may edit the same files.
 4. Hermes Nerve supervises active Kanban runs through hooks, with Jev as the authoritative Reflex backend when ROI/cooldown policy permits.
