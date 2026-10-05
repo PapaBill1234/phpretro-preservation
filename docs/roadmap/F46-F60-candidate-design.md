@@ -91,7 +91,7 @@ Status: provisional design only. This document does not itself dispatch implemen
 - Proposed paths: `frontend/src/content/public/**`, `frontend/tests/public-content-contract.test.ts`, `docs/evidence/F54-public-content.md`.
 - Missing decisions: exact website-owned schema, row provenance, rich-text policy, image ownership, pagination/order, browser captures, and relation to F17.
 - Negative tests: reject unescaped HTML/script, unknown columns, arbitrary image paths, private/draft leakage, and unauthorized mutation.
-- Readiness: evidence-needed; owner/schema gate, with explicit non-overlap review against F24/F29. Owner `frontend` for synthetic read model, `coordinator` for schema; reviewer `reviewer`.
+- Readiness: evidence-needed; schema/source/technical ownership evidence gate, with explicit non-overlap review against F24/F29. `frontend` may prepare a synthetic read model only from an exact brief; the coordinator retains schema/ownership decisions; reviewer `reviewer`.
 - Acceptance: no duplicate F17 archive, F24 community, F29 article/category, or F40 FAQ endpoint contract; synthetic fixtures must identify fields and unknowns. Stop on missing response facts or schema inference.
 
 ### F55 - Publication, preview, and rollback boundary

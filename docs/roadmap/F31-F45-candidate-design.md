@@ -81,5 +81,5 @@ Public/support research reconciliation (`t_88da52c3`)
 Explicitly unfilled or deferred scope
 
 - No additional F31-F45 slot is available for registration writes, password-reset mail/account enumeration, CMS/admin mutations, client handoff, emulator writes, Pixel63, Atom, SWF, or runner changes. Those topics require separate source-backed proposals or remain outside development scope; live-system work remains closed.
-- The observed legacy guestbook delete-by-entry-ID behavior is not accepted as a desired contract. It is a security finding and a stop condition until owner, widget, and entry authorization are independently specified.
+- The observed legacy guestbook delete-by-entry-ID behavior is not accepted as a desired contract. It is a security finding and a stop condition until schema/source/technical ownership of the widget and entry authorization are independently evidenced and specified.
 - Runtime database rows, deployed schema variants, session-cookie provenance, direct security-check responses, profile/guestbook captures, staff records, and audit-table ownership remain `UNKNOWN` where not cited above.

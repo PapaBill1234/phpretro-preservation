@@ -166,7 +166,7 @@ The scope check and oversized-deletion guard run in CI from a policy file stored
 
 ### Batch scope approval
 
-Before autonomous work, Sol writes one plain-language list of the next 5–10 units, each with exact file scope, evidence inputs, tests, done criteria, stop conditions, and its unit token cap. Sol opens one scope-approval pull request to `main`. The user reviews and merges that PR. Agents may work only on units listed in the merged approval; a new unit or changed file scope requires another batch PR to `main`. Agents cannot push that PR to `main`, edit the policy, or approve their own scope. The policy file records the approved unit identifiers and exact path globs; CI rejects work outside the merged list.
+Before autonomous work, Sol writes one plain-language list of the next 5–10 units, each with exact file scope, evidence inputs, tests, done criteria, stop conditions, and its unit token cap. Sol opens one scope-approval pull request to `main` under the repository's existing review and CI protections. The documented independent delegated technical-policy approval, independent ACCEPTED review, and exact-head required CI remain separate gates; no owner wait or message is used. Agents may work only on units listed in the approved scope; a new unit or changed file scope requires another protected pull request. Agents cannot push that PR to `main`, edit the policy, or approve their own scope. The policy file records the approved unit identifiers and exact path globs; CI rejects work outside the merged list.
 
 ## 11. Agent roles and delegation
 
