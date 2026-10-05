@@ -369,6 +369,16 @@ def usage_tokens(usage: dict) -> int:
     return int(usage.get("input_tokens", 0)) + int(usage.get("output_tokens", 0))
 
 
+def normalize_verdict(raw) -> str:
+    """The skill says pass|fix|block; models also emit approve/reject/ok."""
+    v = str(raw or "pass").strip().lower()
+    if v in ("block", "blocked", "reject", "rejected", "fail", "failed"):
+        return "block"
+    if v in ("fix", "fixes", "needs_fix", "changes_requested", "revise"):
+        return "fix"
+    return "pass"
+
+
 def reviewer_model_for(author: str) -> str:
     """A reviewer never shares the author's model family."""
     return MODEL["deepseek"] if author in (MODEL["luna"], MODEL["sol"]) else MODEL["luna"]
@@ -584,7 +594,7 @@ def run_review(unit: dict, wt: Path, state: dict, author_model: str) -> tuple[st
     if m:
         try:
             data = json.loads(m.group(0))
-            verdict = str(data.get("verdict", "pass")).lower()
+            verdict = normalize_verdict(data.get("verdict"))
             blockers = [f for f in data.get("findings", [])
                         if str(f.get("severity", "")).lower() == "blocker"]
             findings = "\n".join(
@@ -610,7 +620,7 @@ def run_second_review(unit: dict, wt: Path, state: dict) -> tuple[str, str, int]
         return "pass", "", tokens
     try:
         data = json.loads(m.group(0))
-        verdict = str(data.get("verdict", "pass")).lower()
+        verdict = normalize_verdict(data.get("verdict"))
         blockers = [f for f in data.get("findings", [])
                     if str(f.get("severity", "")).lower() == "blocker"]
         findings = "\n".join(f"- {f.get('file','')}:{f.get('line',0)} {f.get('issue','')}"
@@ -790,6 +800,56 @@ def adopt_branch_unit(unit: dict, state: dict) -> bool:
     return True
 
 
+HISTORY_JSON = STATE_DIR / "history.json"
+
+
+def load_history() -> dict:
+    return read_json(HISTORY_JSON, {})
+
+
+def record_history(unit: dict, outcome: str) -> None:
+    hist = load_history()
+    hist[unit["id"]] = {"outcome": outcome, "attempt": int(unit.get("attempts", 0)),
+                        "ts": now()}
+    write_json(HISTORY_JSON, hist)
+
+
+def recover_branch(unit: dict, history: dict, state: dict) -> bool:
+    """Reuse a branch a previous cycle left behind instead of rebuilding it.
+
+    If the unit's branch exists on origin with commits ahead of BASE_REF and the
+    last recorded attempt was not 'no-change', the work is re-gated and requeued
+    for the merge queue. Nothing is rebuilt, so a cycle that died between commit
+    and merge costs no tokens on the retry.
+    """
+    branch = unit_branch(unit)
+    git("fetch", "origin")
+    ahead = git_out("rev-list", "--count", f"{BASE_REF}..refs/remotes/origin/{branch}")
+    if not ahead or ahead == "0":
+        return False
+    wt = attach_worktree(unit)
+    rc, out = run_check(wt)
+    (LOG_DIR / f"{unit['id']}-recover.check.log").write_text(out)
+    if rc != 0:
+        # The branch does not pass the gate; hand it back with the tail as
+        # feedback so the next builder attempt repairs it.
+        unit["feedback"] = "scripts/check.sh failed on the recovered branch:\n" + tail(out, 60)
+        record_history(unit, "recovered-fail")
+        event(state, f"{unit['id']}: recovered branch fails check.sh; rebuilding")
+        return False
+    unit["reason"] = f"recovered existing branch {branch} ({ahead} commits ahead)"
+    record_history(unit, "recovered")
+    if unit.get("pr"):
+        unit["status"] = "queued"
+        event(state, f"{unit['id']}: recovered PR #{unit['pr']} into the merge queue")
+    else:
+        pr = push_and_open_pr(unit, wt, out, state)
+        unit["pr"] = pr
+        unit["status"] = "pr_open"
+        event(state, f"{unit['id']}: recovered branch, opened PR #{pr}")
+    return True
+
+
 def attach_worktree(unit: dict) -> Path:
     """Worktree for a unit whose branch already exists on origin (resume path)."""
     path = worktree_path(unit)
@@ -912,6 +972,7 @@ def finish_build(job, roadmap: dict, state: dict) -> None:
     commit_if_dirty(wt, unit)
     ahead = git_out("rev-list", "--count", f"{BASE_REF}..HEAD", cwd=wt)
     if not ahead or ahead == "0":
+        record_history(unit, "no-change")
         unit["feedback"] = "The previous attempt produced no committed change."
         unit["status"] = "todo"
         if unit["attempts"] >= MAX_ATTEMPTS or unit["tokens"] >= PER_UNIT_TOKEN_CAP:
@@ -1157,6 +1218,17 @@ def cycle() -> None:
         for u in roadmap.values():
             if u.get("status") == "building":
                 u["status"] = "todo"
+        history = load_history()
+        # A cycle that died between commit and merge would otherwise re-run the
+        # whole build. Recover it instead: re-gate the branch and requeue.
+        for u in roadmap.values():
+            if u.get("status") != "todo" or int(u.get("attempts", 0)) == 0:
+                continue
+            entry = history.get(u["id"])
+            if entry and entry.get("outcome") == "no-change":
+                continue
+            if recover_branch(u, history, state):
+                continue
         resume_open_prs(roadmap, state)
         dispatch(roadmap, state)
         maybe_plan(roadmap, state)
