@@ -133,6 +133,16 @@ line; go test -race ./... unverified locally (no C compiler for cgo) and left
 to CI; token usage per gate unavailable (not measured).
 
 F18 profile read/presentation model delivered: PR #39 merged normally at
-7b3f47cb4bb31a0a20d8c4c1dc32778ce9889b97 from reviewed head dd2e33c; exact-head
-foundation CI passed including race and govulncheck; token usage per gate
+7b3f47cb4bb31a0a20d8c4c1dc32778ce9889b97 from reviewed head dd2e33c;
+exact-head foundation CI passed including race and govulncheck; token usage per gate
 unavailable (not measured).
+
+F18 frontend profile presentation delivered: PR #42 merged normally at
+bbd27a821071fd0a80d1d40ac15fbe201c9c33d2 from reviewed head
+2047d1b7f0072a99b022285b4d9023221c09bb63; foundation CI passed; frontend
+checks passed (npm ci, typecheck, 19/19 tests, build); token usage per gate
+unavailable (not measured).
+
+F19 personal-home read/presentation model finished locally at f8cc6364caf9133993c1028a3342a46d2b484ae1: synthetic guest ID/name lookup and explicit hidden-home boundary, with unknown private fields omitted; token usage per gate unavailable (not measured). Go and frontend focused/full gates are unavailable locally (gofmt/go/npm dependencies missing); exact-head CI and independent review remain required.
+
+F19-F24 code-wave reconciliation (2026-10-05): PR #45 F20 account read model merged normally at 75d8a3e76d0acc893cc086631e937b88816ce284 from exact head a2ace870d3bd42c13c3a34b0ed631686a6317d5f; focused Go test, vet, and gofmt passed locally under Go 1.25.13 and foundation CI passed. PRs #46, #47, and #48 remained open after PR #45 advanced main and made their exact heads behind; their prior foundation CI was green and focused local Go/frontend checks passed, but current-head CI was not rerun and normal merge was correctly refused. PR #44 and #49 remained open: exact-head foundation CI failed gofmt, and both also changed out-of-envelope frontend profile paths; no merge attempted. Token usage per gate unavailable (not measured).
