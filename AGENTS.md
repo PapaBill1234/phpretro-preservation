@@ -13,8 +13,8 @@ evidence-backed typed judgments through `jev_judge` and Hermes Nerve.
 3. The gateway dispatcher activates the assigned profile; no two active cards may edit the same files.
 4. Hermes Nerve supervises active Kanban runs through hooks, with Jev as the authoritative Reflex backend when ROI/cooldown policy permits.
 5. `reviewer` independently checks implementation cards; `coordinator` verifies source, diff, tests, and delivery before completion.
-6. `approver` decides the bounded development-scope and routine technical gates the owner has delegated (see Approval delegation); `coordinator` still owns schema, authentication/session, security, production, runner, and merge decisions.
-7. The coordinator may continue bounded work autonomously; production, schema ownership, security, and runner decisions remain coordinator-owned.
+6. `approver` decides the bounded development-scope and routine technical gates the owner has delegated (see Approval delegation); `coordinator` still owns schema, authentication/session, security, runner, and merge decisions.
+7. The coordinator may continue bounded work autonomously; schema ownership, security, and runner decisions remain coordinator-owned.
 8. **Continuation is mandatory:** a coordinator card may not complete while the roadmap has an authorized next unit and the board has no successor planning card. Before completion it must create the next bounded implementation/review cards, link dependencies, and create or hand off a successor coordinator card. It may stop only for an explicit stop condition, exhausted authorized scope, a hard dependency, or an operator-owned gate.
 
 ## Jev policy
@@ -23,7 +23,7 @@ Jev is a typed judgment engine over supplied evidence, not a search engine. When
 
 Batch independent questions into one call; do not call Jev once per candidate. Use candidate reduction before Jev for sets larger than 20. Record candidate count, batch size, Jev call count, latency, input/output tokens, selected candidates, confidence, and verification result.
 
-Jev may perform advisory reviews of authentication, authorization, schema ownership, production enablement, security, merge, and runner questions when the state contains the relevant evidence. Record verdicts and confidence; a verdict does not grant permissions or replace required source and test evidence. The installed and trusted `jev_gate` PreToolUse hook checks proposed Codex tool actions automatically: only an explicit `deny` blocks, while `allow`, `escalate`, unavailable, and hook failure leave ordinary Codex permissions in force. Hermes Kanban workers use a separate Nerve action gate in selective `block_only` mode. It checks potentially mutating tool calls automatically and blocks only a confident `BLOCK`; other outcomes leave Hermes permissions and card boundaries in force. Never treat either gate as authorization for production, schema, security, or merge decisions.
+Jev may perform advisory reviews of authentication, authorization, schema ownership, security, merge, and runner questions when the state contains the relevant evidence. Record verdicts and confidence; a verdict does not grant permissions or replace required source and test evidence. The installed and trusted `jev_gate` PreToolUse hook checks proposed Codex tool actions automatically: only an explicit `deny` blocks, while `allow`, `escalate`, unavailable, and hook failure leave ordinary Codex permissions in force. Hermes Kanban workers use a separate Nerve action gate in selective `block_only` mode. It checks potentially mutating tool calls automatically and blocks only a confident `BLOCK`; other outcomes leave Hermes permissions and card boundaries in force. Never treat either gate as authorization for schema, security, or merge decisions.
 
 ## Kanban agent policy
 
@@ -33,11 +33,11 @@ the second context worthwhile. Prefer `backend` for Go/contracts, `frontend`
 for React/TypeScript, `visual` for theme and presentation fixtures,
 `reviewer` for independent verification, and `approver` for delegated scope
 decisions. `coordinator` owns integration, schema/ownership, security-sensitive,
-production, and runner work.
+and runner work.
 
-Workers may not expand file scope, infer unknown schema, access production
-data, change rulesets, push `main`, or approve their own work. High-risk
-security and runner criteria remain coordinator-only.
+Workers may not expand file scope, infer unknown schema, access real user data,
+change rulesets, push `main`, or approve their own work. High-risk security and
+runner criteria remain coordinator-only.
 
 ## Approval delegation
 
@@ -55,9 +55,10 @@ never grants merge or runner/ruleset authority: merging stays with the
 `coordinator` under the reviewed-PR authority recorded above. As of the
 2026-10-04 development-only owner decision, authentication, sessions, cookies,
 CSRF, audit-event design, schema and migrations, and the units that depend on
-them are open for development use under the normal card, review, and CI gates;
-production enablement, real credentials, real user data, and live outside
-systems remain closed until a new owner decision.
+them are open for development use under the normal card, review, and CI gates.
+This project has no production environment, so there is no production gate and
+nothing is deferred to a future production decision; real credentials, secrets
+or key material, real user data, and live outside systems remain closed.
 Approval of a roadmap proposal permits planning and per-unit card creation only
 where the proposal's own text keeps implementation separately gated. Every
 implementation unit still needs its own exact base, named paths, evidence,
@@ -76,13 +77,14 @@ narrow the unit to the part that works; obtain a second independent reviewer or
 a different model; split the unit, or move to the next unit and return later.
 Never stall the board on one unit.
 
-Three limits stay in force and need no input: never commit secrets, real
-credentials, or key material, and use obvious development placeholders and
-environment variables; do not touch live outside systems such as the original
-sites or third-party services, and work only from disposable captures and local
-fixtures; do not weaken the project's own gates, because changes to review, CI,
-branch protection, or approval rules go through a normal reviewed PR with
-independent review and approval.
+The closed list stays in force and needs no input: real credentials, secrets or
+key material (use obvious development placeholders and environment variables
+instead); real user data; live outside systems such as the original sites or
+third-party services, so work only from disposable captures and local fixtures;
+merge itself, which stays with the reviewed-PR authority above; and any
+weakening of the project's own gates, because changes to review, CI, branch
+protection, or approval rules go through a normal reviewed PR with independent
+review and approval.
 
 Never invent expected responses or hashes. Where a capture is missing, build
 from disposable fixtures and label the unit's fidelity limit in its
