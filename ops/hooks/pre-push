@@ -25,7 +25,7 @@ protected_paths() {
   grep -E '(^|/)(ops/|\.github/workflows/|\.agents/skills/|skills/)|^AGENTS\.md$|^scripts/check\.sh$'
 }
 
-while read -r local_ref local_sha remote_ref remote_sha; do
+while read -r local_ref local_sha remote_ref remote_sha || [ -n "${remote_ref:-}" ]; do
   [ -n "${remote_ref:-}" ] || continue
   for p in $protected; do
     if [ "$remote_ref" = "$p" ]; then
@@ -49,16 +49,22 @@ while read -r local_ref local_sha remote_ref remote_sha; do
       ;;
   esac
 
-  # Protected-path guard. --root covers the first commit of a new branch; the
-  # range otherwise covers exactly what this push adds.
-  if [ "$remote_sha" = "$zero" ]; then
-    range="$local_sha"
-    diff_args="--root"
-  else
-    range="$remote_sha..$local_sha"
-    diff_args=""
+  # Protected-path guard: what does THIS BRANCH add relative to main? Anchoring
+  # on the merge-base with origin/main keeps main's own ops/ commits out of the
+  # range, so a rebase (which the merge queue force-pushes) is never blocked by
+  # a change main itself made. Without origin/main, fall back to what the push
+  # actually transfers.
+  base=""
+  if git rev-parse -q --verify origin/main >/dev/null 2>&1; then
+    base="$(git merge-base origin/main "$local_sha" 2>/dev/null || true)"
   fi
-  touched="$(git diff --name-only $diff_args "$range" 2>/dev/null | protected_paths)"
+  if [ -n "$base" ]; then
+    touched="$(git diff --name-only "$base..$local_sha" 2>/dev/null | protected_paths)"
+  elif [ "$remote_sha" = "$zero" ]; then
+    touched="$(git diff --name-only --root "$local_sha" 2>/dev/null | protected_paths)"
+  else
+    touched="$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null | protected_paths)"
+  fi
   if [ -n "$touched" ]; then
     echo "pre-push: refusing to publish protected paths on $remote_ref:" >&2
     printf '  %s\n' $touched >&2
