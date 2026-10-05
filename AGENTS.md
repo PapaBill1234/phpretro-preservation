@@ -1,18 +1,84 @@
 # Agent orchestration
 
-Sol (`gpt-6.1-sol`) is the coordinator and final verifier. The project uses the
-durable Hermes Kanban board `phpretro-preservation` with six named profiles:
-`coordinator` (Sol), `backend` (Luna), `frontend` (Luna), `reviewer` (Sol),
-`visual` (Luna), and `approver` (Sol). Main-model traffic uses A6API; Jev handles
+The `coordinator` profile runs `gpt-6-luna` and owns integration and final
+verification. The project uses the durable Hermes Kanban board
+`phpretro-preservation` with six named profiles: `coordinator`, `backend`,
+`frontend` and `visual` on `gpt-6-luna`, `reviewer` on `deepseek-v4.1-flash`,
+and `approver` on `gpt-6.1-sol`. Main-model traffic uses A6API; Jev handles
 evidence-backed typed judgments through `jev_judge` and Hermes Nerve.
+
+## Model policy
+
+Only three models are usable through A6API: `gpt-6-luna`,
+`deepseek-v4.1-flash` and `gpt-6.1-sol`. Gemini and GLM are not usable and are
+never used.
+
+`gpt-6-luna` carries the routine work: the `backend`, `frontend` and `visual`
+workers, the watchdog, state digests, CI and diff-verification checks, and
+brief-writing.
+
+First-pass PR review runs on `deepseek-v4.1-flash` when the author was
+`gpt-6-luna`, and on `gpt-6-luna` when the author was `deepseek-v4.1-flash`. The
+reviewer is always a different model family from the author, so a review of a
+`gpt-6.1-sol` candidate also runs on `gpt-6-luna` or `deepseek-v4.1-flash`.
+
+`gpt-6.1-sol` is reserved for exactly four uses: escalated review
+(authentication, session or schema diffs, diffs over 400 lines, or a flagged
+concern), scope-change approvals, the stuck-unit ladder's last attempt, and
+design synthesis for units whose scope is unclear (for example F28 and F30).
+Escalate one card at a time with `hermes kanban set-model <id> gpt-6.1-sol` and
+record the reason in that card. For escalated review of `gpt-6-luna`-authored
+code, run the `deepseek-v4.1-flash` first-pass review first, then `gpt-6.1-sol`.
+
+## Stuck-unit ladder
+
+A failing unit moves down one rung at a time and no rung is skipped: two
+attempts on `gpt-6-luna`, then one attempt on `deepseek-v4.1-flash`, then one
+attempt on `gpt-6.1-sol`, then the unit is marked cut down to what is already
+accepted and the board moves to the next unit. The ladder position is recorded
+on the card, and a cut-down unit is not retried or re-dispatched.
+
+## Card chain
+
+A routine unit is one worker card. It writes the tests first, implements, runs
+the checks, opens the PR, and performs the first-pass review as a step inside
+the same card; that step runs on the model the model policy assigns for the
+author's family. CI auto-merges on green. Where branch protection or the
+repository's own merge rules require an explicit merge, the coordinator performs
+it under its reviewed-PR authority; the auto-merge applies only to a routine unit
+whose required checks and first-pass review are green. The worker creates its own
+successor
+from `depends_on` rather than waiting for a planner. Workers read one generated
+digest instead of re-reading `AGENTS.md`, `DECISIONS.md`, `tasks/queue.md` and
+`docs/ai-run-state.md` for every unit.
+
+The `approver` is used only for scope changes, never for a routine unit.
+Independent review, an approver verdict, and the coordinator's separate
+reviewed-PR merge authority still apply to anything that changes scope, schema,
+authentication or sessions, security, or the project's own gates.
+
+This routine chain is the deliberate, bounded exception to the universal
+independent-review rule: a routine unit is reviewed inside its own card by the
+model policy's cross-family first-pass reviewer, while every unit listed in the
+previous paragraph keeps its separate reviewer, approver and coordinator merge
+gates. Nothing else in this file's review, approval or merge authority is
+relaxed by it.
+
+## Protected instruction files
+
+`AGENTS.md`, `CLAUDE.md`, `SOUL.md`, skills and templates are never edited by a
+headless worker. The protected-instruction-file gate always asks a human and
+fails closed when no interactive user or gateway channel can answer, and the
+tool forbids retrying the write through another path. Route those edits to the
+coordinator surface.
 
 ## Required flow
 
-1. Sol runs exact search, tests, and source inspection first, then creates bounded Kanban cards.
+1. The coordinator runs exact search, tests, and source inspection first, then creates bounded Kanban cards.
 2. Cards use isolated worktrees and name their base SHA, exact file scope, evidence, tests, done criteria, stop conditions, and token cap.
 3. The gateway dispatcher activates the assigned profile; no two active cards may edit the same files.
 4. Hermes Nerve supervises active Kanban runs through hooks, with Jev as the authoritative Reflex backend when ROI/cooldown policy permits.
-5. `reviewer` independently checks implementation cards; `coordinator` verifies source, diff, tests, and delivery before completion.
+5. `reviewer` independently checks implementation cards that are outside the routine chain; for a routine unit the first-pass review is a step inside the worker card itself. `coordinator` verifies source, diff, tests, and delivery before completion.
 6. `approver` decides the bounded development-scope and routine technical gates the owner has delegated (see Approval delegation); `coordinator` still owns schema, authentication/session, security, runner, and merge decisions.
 7. The coordinator may continue bounded work autonomously; schema ownership, security, and runner decisions remain coordinator-owned.
 8. **Continuation is mandatory:** a coordinator card may not complete while the roadmap has an authorized next unit and the board has no successor planning card. Before completion it must create the next bounded implementation/review cards, link dependencies, and create or hand off a successor coordinator card. It may stop only for an explicit stop condition, exhausted authorized scope, a hard dependency, or an operator-owned gate.
@@ -61,9 +127,12 @@ nothing is deferred to a future production decision; real credentials, secrets
 or key material, real user data, and live outside systems remain closed.
 Approval of a roadmap proposal permits planning and per-unit card creation only
 where the proposal's own text keeps implementation separately gated. Every
-implementation unit still needs its own exact base, named paths, evidence,
-tests, cap, stop conditions, assignee profile, and independent review, and the
-coordinator still merges under its separate reviewed-PR authority.
+implementation unit outside the routine chain described under Card chain still
+needs its own exact base, named paths, evidence, tests, cap, stop conditions,
+assignee profile, and independent review, and the coordinator still merges under
+its separate reviewed-PR authority. A routine unit follows the Card chain rules
+instead: one worker card carrying the first-pass review, with CI auto-merge on
+green.
 
 ## Standing owner instruction
 
@@ -110,3 +179,11 @@ implementation card is never treated as the project loop.
 ## Economics
 
 Every measured unit records A6API model IDs, reasoning effort, input tokens, cached-input tokens, output tokens, retries, Jev calls/cost, wall time, result, and acceptance status. Compare matched Sol-only and Jev/Luna runs before claiming savings. If delegation adds a second context without reducing total accepted-unit cost, stop using it for that unit class.
+
+A scheduled digest appends per-role model, tokens and failure, retry and
+cut-down counts, tokens and cards per delivered unit, and escalation counts to
+`tasks/queue.md` every six hours. It reports raw token counts, writes
+`unavailable` for anything local telemetry does not expose rather than
+estimating, claims no saving without matched telemetry, and compares each
+role's failure rate with the previous digest, flagging any role that got worse
+as a revert candidate for the coordinator.

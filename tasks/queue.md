@@ -73,6 +73,51 @@ systems, merge itself, and any weakening of review, CI, branch-protection or
 approval rules. Correction, review, approval and CI token usage per gate
 unavailable (not measured).
 
+## Model and chain policy, 2026-10-04
+
+Only three models are usable through A6API: `gpt-6-luna`,
+`deepseek-v4.1-flash` and `gpt-6.1-sol`. Gemini and GLM are not usable and are
+never used.
+
+`gpt-6-luna` carries the routine work: the `backend`, `frontend` and `visual`
+workers, the watchdog, state digests, CI and diff-verification checks, and
+brief-writing. The `coordinator` profile runs `gpt-6-luna`, the `reviewer`
+profile runs `deepseek-v4.1-flash`, and the `approver` stays on `gpt-6.1-sol`.
+
+First-pass PR review runs on `deepseek-v4.1-flash` when the author was
+`gpt-6-luna`, and on `gpt-6-luna` when the author was `deepseek-v4.1-flash`, so
+the reviewer is always a different model family from the author.
+
+`gpt-6.1-sol` is reserved for escalated review (authentication, session or schema
+diffs, diffs over 400 lines, a flagged concern), scope-change approvals, the
+stuck-unit ladder's last attempt, and design synthesis for unclear units such as
+F28 and F30. For escalated review of `gpt-6-luna`-authored code, run the
+`deepseek-v4.1-flash` first-pass review first, then `gpt-6.1-sol`.
+
+The stuck-unit ladder: two attempts on `gpt-6-luna`, then one attempt on
+`deepseek-v4.1-flash`, then one attempt on `gpt-6.1-sol`, then mark the unit cut
+down to what is already accepted and move to the next unit. Escalate one card at
+a time with `hermes kanban set-model <id> gpt-6.1-sol` and record the ladder
+position in the card.
+
+After PR35 delivers, a routine unit is one worker card: tests first, implement,
+run the checks, open the PR, first-pass review as a step inside the same card, CI
+auto-merge on green, and a successor the worker creates itself from `depends_on`.
+Workers read one generated digest instead of re-reading the policy files. The
+approver is used only for scope changes.
+
+Two standing constraints from the same instruction:
+
+- **Merge hold (lifted).** PR #35 delivered at `2df4094` and PR #37 merged with it at `4eb025e`, so the hold that paused other merges to `main` until PR35 delivered no longer applies. New merges follow the normal gates.
+- **Protected instruction files.** `AGENTS.md`, `CLAUDE.md`, `SOUL.md`, skills
+  and templates are edited only on the coordinator surface. A headless worker
+  cannot satisfy the protected-instruction-file gate, so such a card fails closed.
+
+A scheduled digest appends per-role model, tokens and failure, retry and
+cut-down counts, tokens and cards per delivered unit, and escalation counts to
+this file every six hours, reporting `unavailable` rather than estimating and
+flagging any role whose failure rate worsened as a revert candidate.
+
 F18 profile read/presentation model (t_25ca3e24) started on base
 2df409465458fbd6df273d6ba535b79209149eaf: new read-only
 internal/profile/view.go and view_test.go implement Tab 1-5 selection with
@@ -101,3 +146,15 @@ unavailable (not measured).
 F19 personal-home read/presentation model finished locally at f8cc6364caf9133993c1028a3342a46d2b484ae1: synthetic guest ID/name lookup and explicit hidden-home boundary, with unknown private fields omitted; token usage per gate unavailable (not measured). Go and frontend focused/full gates are unavailable locally (gofmt/go/npm dependencies missing); exact-head CI and independent review remain required.
 
 F19-F24 code-wave reconciliation (2026-10-05): PR #45 F20 account read model merged normally at 75d8a3e76d0acc893cc086631e937b88816ce284 from exact head a2ace870d3bd42c13c3a34b0ed631686a6317d5f; focused Go test, vet, and gofmt passed locally under Go 1.25.13 and foundation CI passed. PRs #46, #47, and #48 remained open after PR #45 advanced main and made their exact heads behind; their prior foundation CI was green and focused local Go/frontend checks passed, but current-head CI was not rerun and normal merge was correctly refused. PR #44 and #49 remained open: exact-head foundation CI failed gofmt, and both also changed out-of-envelope frontend profile paths; no merge attempted. Token usage per gate unavailable (not measured).
+
+
+## Economics digest 2026-10-05T03:34:08Z
+- Window: live board snapshot; 54 cards completed since 2026-10-05T00:00:00Z (17 coordinator, 17 reviewer, 8 approver, 9 backend, 2 frontend, 1 visual).
+- Role models: coordinator unavailable; reviewer unavailable; approver unavailable; backend unavailable; frontend unavailable; visual unavailable.
+- Raw tokens by role (input / cached-input / output): coordinator unavailable / unavailable / unavailable; reviewer unavailable / unavailable / unavailable; approver unavailable / unavailable / unavailable; backend unavailable / unavailable / unavailable; frontend unavailable / unavailable / unavailable; visual unavailable / unavailable / unavailable.
+- Role failures / retries / cut-down: coordinator unavailable / unavailable / unavailable; reviewer unavailable / unavailable / unavailable; approver unavailable / unavailable / unavailable; backend unavailable / unavailable / unavailable; frontend unavailable / unavailable / unavailable; visual unavailable / unavailable / unavailable.
+- Delivered units: per-unit token totals unavailable; cards consumed including review/approval unavailable.
+- Escalations: gpt-6.1-sol 1 card; gpt-6-luna 7 cards; deepseek-v4.1-flash 1 card; profile-default model resolution unavailable for 45 cards.
+- Telemetry: local cron usage exposes this digest job only (gpt-6-luna, input 299815, cached-input unavailable, output 848); it does not expose Kanban per-card role attribution.
+- Revert check: no comparable previous digest exists in the checked queue history; failure-rate comparison unavailable. No revert candidate asserted.
+- Savings: no claim; matched telemetry is unavailable.
