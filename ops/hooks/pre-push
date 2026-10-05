@@ -49,21 +49,26 @@ while read -r local_ref local_sha remote_ref remote_sha || [ -n "${remote_ref:-}
       ;;
   esac
 
-  # Protected-path guard: what does THIS BRANCH add relative to main? Anchoring
-  # on the merge-base with origin/main keeps main's own ops/ commits out of the
-  # range, so a rebase (which the merge queue force-pushes) is never blocked by
-  # a change main itself made. Without origin/main, fall back to what the push
-  # actually transfers.
+  # Protected-path guard: what does THIS BRANCH add relative to the branch it
+  # targets? Anchor on the merge-base with main (origin/main first, then the
+  # local main), so main's own ops/ commits are never attributed to the branch
+  # and a merge-queue rebase is not blocked. Fall back to the range the push
+  # transfers, and refuse outright when no base can be determined - this guard
+  # must never fail open.
   base=""
-  if git rev-parse -q --verify origin/main >/dev/null 2>&1; then
-    base="$(git merge-base origin/main "$local_sha" 2>/dev/null || true)"
-  fi
+  for ref in refs/remotes/origin/main origin/main refs/heads/main main; do
+    rev="$(git rev-parse -q --verify "$ref" 2>/dev/null || true)"
+    [ -n "$rev" ] || continue
+    mb="$(git merge-base "$rev" "$local_sha" 2>/dev/null || true)"
+    [ -n "$mb" ] && { base="$mb"; break; }
+  done
   if [ -n "$base" ]; then
     touched="$(git diff --name-only "$base..$local_sha" 2>/dev/null | protected_paths)"
-  elif [ "$remote_sha" = "$zero" ]; then
-    touched="$(git diff --name-only --root "$local_sha" 2>/dev/null | protected_paths)"
-  else
+  elif [ "$remote_sha" != "$zero" ]; then
     touched="$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null | protected_paths)"
+  else
+    echo "pre-push: cannot determine the base of $remote_ref to verify protected paths" >&2
+    touched="<undeterminable base>"
   fi
   if [ -n "$touched" ]; then
     echo "pre-push: refusing to publish protected paths on $remote_ref:" >&2
