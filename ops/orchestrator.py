@@ -651,34 +651,42 @@ def run_second_review(unit: dict, wt: Path, state: dict) -> tuple[str, str, int]
 
 
 def wait_for_checks(pr: int, timeout: int = CI_TIMEOUT) -> tuple[bool, str]:
+    """Wait for the required CI checks on the PR's CURRENT head commit.
+
+    ``gh pr view --json statusCheckRollup`` keeps reporting the previous head's
+    result for a while after a force-push (the merge queue rebases), and the
+    merge then fails with 'Required status check "foundation" is expected'. So
+    this asks the check-runs API for the exact head SHA instead.
+    """
     deadline = time.time() + timeout
     last = ""
     while time.time() < deadline:
         rc, out = sh(["gh", "pr", "view", str(pr), "--repo", GH_REPO, "--json",
-                      "statusCheckRollup,mergeable,mergeStateStatus"], timeout=120)
+                      "headRefOid,mergeStateStatus"], timeout=120)
         if rc != 0:
             time.sleep(20)
             continue
         last = out
         try:
-            data = json.loads(out)
+            sha = json.loads(out)["headRefOid"]
         except Exception:
             time.sleep(20)
             continue
-        checks = data.get("statusCheckRollup") or []
-        if not checks:
+        rc, out = sh(["gh", "api", f"repos/{GH_REPO}/commits/{sha}/check-runs",
+                      "--jq", '[.check_runs[] | "\(.name) \(.status) \(.conclusion)"] | join("\\n")'],
+                     timeout=120)
+        if rc != 0 or not out.strip():
             time.sleep(20)
             continue
-        pending = [c for c in checks
-                   if (c.get("status") or "").upper() not in ("COMPLETED",)
-                   or (c.get("conclusion") or "").upper() in ("", "PENDING", "QUEUED", "IN_PROGRESS")]
+        runs = [ln for ln in out.strip().splitlines() if ln.strip()]
+        pending = [r for r in runs if r.split()[1].lower() not in ("completed",)]
         if pending:
             time.sleep(20)
             continue
-        bad = [c for c in checks
-               if (c.get("conclusion") or "").upper() not in ("SUCCESS", "NEUTRAL", "SKIPPED")]
+        bad = [r for r in runs if r.split()[2].lower() not in ("success", "neutral", "skipped")]
+        last = f"head {sha[:12]}\n" + "\n".join(runs)
         return (not bad), last
-    return False, f"timed out waiting for checks\n{last}"
+    return False, f"timed out waiting for checks on the current head\n{last}"
 
 
 def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
