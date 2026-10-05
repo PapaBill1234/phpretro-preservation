@@ -235,22 +235,42 @@ def parse_yaml(text: str) -> dict:
     return doc
 
 
+STATE_KEYS = ("status", "pr", "attempts", "tokens", "wall_s", "model", "reason",
+              "review_rounds", "conflict_rounds", "planner_retries", "branch")
+DEF_KEYS = ("title", "depends_on", "paths", "tests", "acceptance", "fixtures",
+            "fidelity_notes", "size", "design_doc", "unclear_semantics")
+
+
 def dump_unit_yaml(unit: dict) -> str:
+    """Serialise one unit. State keys are written too - dropping them would lose
+    a unit's PR number and attempt count between cycles."""
     lines = [f"  - id: {unit.get('id','')}"]
-    for key in ("title", "status", "depends_on", "paths", "tests", "acceptance",
-                "fixtures", "fidelity_notes", "size", "design_doc"):
+    for key in DEF_KEYS + STATE_KEYS:
         if key not in unit:
             continue
         val = unit[key]
         if isinstance(val, list):
-            items = ", ".join(json.dumps(v) if isinstance(v, str) and "," in v else str(v)
-                              for v in val)
-            lines.append(f"    {key}: [{items}]")
+            lines.append(f"    {key}: [{', '.join(_flow_item(v) for v in val)}]")
         elif isinstance(val, str):
-            lines.append(f'    {key}: "{val}"')
+            lines.append(f'    {key}: {_quote(val)}')
+        elif isinstance(val, bool):
+            lines.append(f"    {key}: {'true' if val else 'false'}")
         else:
             lines.append(f"    {key}: {val}")
     return "\n".join(lines)
+
+
+def _quote(s: str) -> str:
+    escaped = s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+    return f'"{escaped}"'
+
+
+def _flow_item(v) -> str:
+    if isinstance(v, str):
+        return _quote(v)
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    return str(v)
 
 
 # --------------------------------------------------------------------------
@@ -1279,6 +1299,16 @@ units:
     assert units[0]["depends_on"] == []
     assert units[1]["depends_on"] == ["F1"]
     assert units[1]["attempts"] == 3
+    # runtime state survives a save/load round trip (PR number, attempts, reason)
+    units[1].update({"pr": 61, "tokens": 1234, "reason": "check.sh failed: x | y",
+                     "model": "gpt-6-luna", "review_rounds": 1})
+    round_trip = parse_yaml("version: 1\nunits:\n" + dump_unit_yaml(units[1]) + "\n")
+    got = round_trip["units"][0]
+    assert got["pr"] == 61, got
+    assert got["tokens"] == 1234, got
+    assert got["reason"] == "check.sh failed: x | y", got
+    assert got["review_rounds"] == 1, got
+    assert got["depends_on"] == ["F1"], got
     assert paths_overlap(["internal/home/**"], ["internal/home/home.go"])
     assert not paths_overlap(["internal/home/**"], ["internal/account/**"])
     assert reviewer_model_for(MODEL["luna"]) == MODEL["deepseek"]
