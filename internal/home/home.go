@@ -38,9 +38,9 @@ type Viewer struct {
 }
 
 type View struct {
-	OwnerID        int64
-	Username       string
-	PublicContent  string
+	OwnerID       int64
+	Username      string
+	PublicContent string
 }
 
 type Service struct{ Store Store }

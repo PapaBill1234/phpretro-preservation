@@ -5,9 +5,24 @@ import (
 	"testing"
 )
 
-type syntheticStore struct{ record Record; err error; byID, byUsername Record }
-func (s syntheticStore) FindByID(int64) (Record, error) { if s.byID.OwnerID != 0 { return s.byID, s.err }; return s.record, s.err }
-func (s syntheticStore) FindByUsername(string) (Record, error) { if s.byUsername.OwnerID != 0 { return s.byUsername, s.err }; return s.record, s.err }
+type syntheticStore struct {
+	record           Record
+	err              error
+	byID, byUsername Record
+}
+
+func (s syntheticStore) FindByID(int64) (Record, error) {
+	if s.byID.OwnerID != 0 {
+		return s.byID, s.err
+	}
+	return s.record, s.err
+}
+func (s syntheticStore) FindByUsername(string) (Record, error) {
+	if s.byUsername.OwnerID != 0 {
+		return s.byUsername, s.err
+	}
+	return s.record, s.err
+}
 
 func publicRecord() Record {
 	return Record{OwnerID: 7, Username: "synthetic-user", ShowHome: true, PublicContent: "public"}
@@ -51,10 +66,14 @@ func TestRejectsMalformedLookupAndUnknownOwner(t *testing.T) {
 		}
 	}
 	_, err := (Service{Store: syntheticStore{err: ErrNotFound}}).Read(Lookup{ID: 7}, Viewer{})
-	if !errors.Is(err, ErrNotFound) { t.Fatalf("error = %v", err) }
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("error = %v", err)
+	}
 }
 
 func TestRejectsUnsupportedRecordState(t *testing.T) {
 	_, err := (Service{Store: syntheticStore{record: Record{OwnerID: 7}}}).Read(Lookup{ID: 7}, Viewer{})
-	if !errors.Is(err, ErrNotFound) { t.Fatalf("error = %v", err) }
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("error = %v", err)
+	}
 }
