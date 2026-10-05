@@ -389,12 +389,20 @@ def worktree_path(unit: dict) -> Path:
 def ensure_worktree(unit: dict) -> Path:
     path = worktree_path(unit)
     branch = unit_branch(unit)
+    git("fetch", "origin")
     if path.exists() and (path / ".git").exists():
-        git("fetch", "origin", cwd=path)
+        # Reused worktree. A retry continues from the previous attempt's commits
+        # when there are any; with none, re-point the branch at the current base
+        # so the worktree actually contains the pipeline (scripts/check.sh).
+        ahead = git_out("rev-list", "--count", f"{BASE_REF}..HEAD", cwd=path)
+        head = git_out("rev-parse", "HEAD", cwd=path)
+        base = git_out("rev-parse", BASE_REF)
+        if ahead == "0" and head != base:
+            git("checkout", "-B", branch, BASE_REF, cwd=path)
+            log(f"{unit['id']}: re-pointed stale worktree at {BASE_REF}")
         return path
     if path.exists():
         shutil.rmtree(path)
-    git("fetch", "origin")
     rc, out = git("worktree", "add", "-B", branch, str(path), BASE_REF)
     if rc != 0:
         raise RuntimeError(f"cannot create worktree for {unit['id']}: {out}")
@@ -709,6 +717,17 @@ def paths_overlap(a, b) -> bool:
     return False
 
 
+_ADOPT_CHECK_CACHE: dict = {}
+
+
+def _check_main_cached(head: str) -> tuple[int, str]:
+    """check.sh on the repo checkout, once per HEAD. Adoption runs it for every
+    already-delivered unit, which would otherwise cost one full gate per unit."""
+    if head not in _ADOPT_CHECK_CACHE:
+        _ADOPT_CHECK_CACHE[head] = run_check(REPO)
+    return _ADOPT_CHECK_CACHE[head]
+
+
 def adopt_branch_unit(unit: dict, state: dict) -> bool:
     """Adopt a unit whose delivery is already merged into origin/main.
 
@@ -738,7 +757,7 @@ def adopt_branch_unit(unit: dict, state: dict) -> bool:
     elif git("merge-base", "--is-ancestor", f"origin/{branch}", "origin/main")[0] != 0:
         return False
     head = git_out("rev-parse", "origin/main")
-    rc, out = run_check(REPO)
+    rc, out = _check_main_cached(head)
     (LOG_DIR / f"{unit['id']}-adopt.check.log").write_text(out)
     if rc != 0:
         unit["reason"] = "delivery is in main but check.sh fails on main"
