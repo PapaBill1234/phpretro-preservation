@@ -1,0 +1,42 @@
+[
+ {
+  "id": 1,
+  "task_id": "t_e130505a",
+  "filename": "F17-PR30-publication-audit.txt",
+  "stored_path": "C:\\Users\\Karim\\AppData\\Local\\hermes-phpretro\\kanban\\boards\\phpretro-preservation\\attachments\\t_e130505a\\F17-PR30-publication-audit.txt",
+  "content_type": "text/plain",
+  "size": 669,
+  "uploaded_by": "agent",
+  "created_at": 1791135077
+ },
+ {
+  "id": 2,
+  "task_id": "t_87e5b77d",
+  "filename": "pr41-six-path-audit.md",
+  "stored_path": "C:\\Users\\Karim\\AppData\\Local\\hermes-phpretro\\kanban\\boards\\phpretro-preservation\\attachments\\t_87e5b77d\\pr41-six-path-audit.md",
+  "content_type": null,
+  "size": 4250,
+  "uploaded_by": "kanban_complete",
+  "created_at": 1791203831
+ },
+ {
+  "id": 3,
+  "task_id": "t_f9baf248",
+  "filename": "candidate-sha-verification.md",
+  "stored_path": "C:\\Users\\Karim\\AppData\\Local\\hermes-phpretro\\kanban\\boards\\phpretro-preservation\\attachments\\t_f9baf248\\candidate-sha-verification.md",
+  "content_type": null,
+  "size": 3936,
+  "uploaded_by": "kanban_complete",
+  "created_at": 1791203834
+ },
+ {
+  "id": 4,
+  "task_id": "t_8fbca69f",
+  "filename": "review-disposition.md",
+  "stored_path": "C:\\Users\\Karim\\AppData\\Local\\hermes-phpretro\\kanban\\boards\\phpretro-preservation\\attachments\\t_8fbca69f\\review-disposition.md",
+  "content_type": null,
+  "size": 5277,
+  "uploaded_by": "kanban_complete",
+  "created_at": 1791204227
+ }
+]
