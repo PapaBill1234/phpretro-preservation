@@ -108,3 +108,10 @@ func TestCatalogValidationRejectsMalformedLocaleShapes(t *testing.T) {
 		}
 	}
 }
+
+func TestCatalogValidationRejectsMissingMessages(t *testing.T) {
+	// Evidence: docs/roadmap/F18-F30-feature-approval.md:54 requires malformed view data rejection and data-only localization catalogs.
+	if err := ValidateCatalog(Catalog{Version: CatalogVersion, Locale: "en-US"}); err == nil {
+		t.Fatal("accepted catalog with missing messages")
+	}
+}
