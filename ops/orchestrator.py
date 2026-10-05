@@ -66,6 +66,13 @@ MAX_MERGE_PER_DAY = int(os.environ.get("PHPRETRO_MAX_MERGE_PER_DAY", "12"))
 MAX_ATTEMPTS = 4            # luna x2, deepseek x1, sol x1, then parked
 PLANNER_RETRIES = 2
 DIFF_LINE_CAP = 700
+# Quality safeguards (see ops/quality.py).
+COVERAGE_FLOOR = float(os.environ.get("PHPRETRO_COVERAGE_FLOOR", "60"))
+TOOLBIN = os.environ.get("PHPRETRO_TOOLBIN", str(HOME / ".local" / "go-bin"))
+# One refactor unit per this many merged units (item 5).
+REFACTOR_EVERY = int(os.environ.get("PHPRETRO_REFACTOR_EVERY", "8"))
+# Weekly audit cap (item 4); the audit is a single read-only agent run.
+AUDIT_TOKEN_CAP = int(os.environ.get("PHPRETRO_AUDIT_TOKEN_CAP", "3000000"))
 # A run we had to kill is charged this much when the real usage cannot be
 # recovered, so a unit that repeatedly times out still trips its token cap.
 TIMEOUT_FALLBACK_TOKENS = int(os.environ.get("PHPRETRO_TIMEOUT_FALLBACK_TOKENS", "1000000"))
@@ -97,7 +104,7 @@ MODEL = {
 }
 LADDER = ["luna", "luna", "deepseek", "sol"]
 PROFILE_HOME = {name: HOME / ".hermes" / "profiles" / name
-                for name in ("builder", "reviewer", "planner")}
+                for name in ("builder", "reviewer", "planner", "auditor")}
 HERMES = shutil.which("hermes") or str(HOME / ".local" / "bin" / "hermes")
 
 # Paths whose diff escalates to a Sol second review (auth / session / schema).
@@ -229,50 +236,81 @@ def _scalar(s: str):
 
 
 def parse_yaml(text: str) -> dict:
-    """Parse the units.yaml subset: top-level scalars, and ``units:`` as a list
-    of mappings whose values are scalars or flow lists. Indentation-2."""
+    """Parse the units.yaml subset.
+
+    Top-level scalars, and ``units:`` as a list of mappings. A mapping's value
+    is a scalar, an inline flow list (``[a, b]``), or a block list::
+
+        acceptance:
+          - one
+          - two
+
+    Indentation separates the three levels (unit, key, list item) but the exact
+    widths are inferred from the document, because a model that emits block
+    lists tends to indent them differently from the hand-written roadmap. The
+    earlier version treated every ``- `` line as a new unit, which silently
+    turned a block list into bogus units.
+    """
     doc: dict = {}
+    units: list = []
     current = None
     in_units = False
+    unit_indent = None
+    pending_key = None
     for raw in text.splitlines():
         if not raw.strip() or raw.lstrip().startswith("#"):
             continue
         indent = len(raw) - len(raw.lstrip())
         line = raw.strip()
-        if indent == 0:
+        if not in_units:
             m = re.match(r"^([A-Za-z_][\w-]*):\s*(.*)$", line)
             if not m:
                 continue
             key, val = m.group(1), m.group(2)
-            if val == "" and key == "units":
-                doc["units"] = []
+            if key == "units" and val == "":
+                doc["units"] = units
                 in_units = True
-                current = None
                 continue
-            in_units = False
             doc[key] = _scalar(val) if val else {}
             continue
-        if not in_units:
-            continue
-        m = re.match(r"^-\s*(.*)$", line)
-        if m:
-            current = {}
-            doc["units"].append(current)
-            rest = m.group(1).strip()
-            if rest:
-                km = re.match(r"^([\w-]+):\s*(.*)$", rest)
-                if km:
-                    current[km.group(1)] = _scalar(km.group(2))
+        if line.startswith("-"):
+            if unit_indent is None or indent <= unit_indent:
+                # A new unit starts only at the unit-list indent.
+                unit_indent = indent
+                current = {}
+                units.append(current)
+                pending_key = None
+                rest = line[1:].strip()
+                if rest:
+                    km = re.match(r"^([\w-]+):\s*(.*)$", rest)
+                    if km:
+                        current[km.group(1)] = _scalar(km.group(2))
+                continue
+            # A deeper `- item` is a value of the key that opened the list.
+            item = line[1:].strip()
+            if pending_key is not None and current is not None and item:
+                if not isinstance(current.get(pending_key), list):
+                    current[pending_key] = []
+                current[pending_key].append(_scalar(item))
             continue
         km = re.match(r"^([\w-]+):\s*(.*)$", line)
         if km and current is not None:
-            current[km.group(1)] = _scalar(km.group(2))
+            key, val = km.group(1), km.group(2)
+            if val == "":
+                current[key] = []
+                pending_key = key
+            else:
+                current[key] = _scalar(val)
+                pending_key = None
+    if in_units:
+        doc["units"] = units
     return doc
 
 
 STATE_KEYS = ("status", "pr", "attempts", "tokens", "wall_s", "model", "reason",
               "review_rounds", "conflict_rounds", "planner_retries", "branch",
-              "feedback", "split_requested", "fixes_route")
+              "feedback", "split_requested", "fixes_route", "audit_finding",
+              "kind", "fidelity", "severity")
 DEF_KEYS = ("title", "depends_on", "paths", "tests", "acceptance", "fixtures",
             "fidelity_notes", "size", "design_doc", "unclear_semantics")
 
@@ -380,13 +418,62 @@ def add_tokens(state: dict, unit: dict, tokens: int) -> None:
 
 
 # --------------------------------------------------------------------------
+# Quality safeguards (ops/quality.py)
+# --------------------------------------------------------------------------
+
+def _load_quality():
+    """Import ops/quality.py lazily. It is a sibling of this file."""
+    try:
+        import importlib.util
+        qpath = Path(__file__).with_name("quality.py")
+        spec = importlib.util.spec_from_file_location("phpretro_quality", qpath)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"cannot load {qpath}")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception as exc:
+        log(f"quality module unavailable: {exc}")
+        return None
+
+
+def go_pin() -> str:
+    try:
+        return (REPO / ".go-version").read_text().strip()
+    except Exception:
+        return ""
+
+
+def quality_gate(wt: Path, unit: dict, state: dict, base: str) -> dict:
+    """Run items 1-3 for the attempt in ``wt``. Never raises.
+
+    Returns the quality report (``{"ok", "reason", "checks", "coverage",
+    "fidelity"}``), or a permissive stub if the module is missing so a broken
+    import cannot wedge the pipeline.
+    """
+    mod = _load_quality()
+    if mod is None:
+        return {"ok": True, "reason": "quality module unavailable; not judged",
+                "checks": {}, "coverage": None, "fidelity": "unknown"}
+    env = {"PATH": f"{TOOLBIN}:{os.environ.get('PATH','')}"}
+    pin = go_pin()
+    if pin:
+        env["GOTOOLCHAIN"] = f"go{pin}"
+    try:
+        return mod.evaluate(wt, base, unit, env=env, floor=COVERAGE_FLOOR)
+    except Exception as exc:
+        return {"ok": True, "reason": f"quality gate error, not judged: {exc}",
+                "checks": {}, "coverage": None, "fidelity": "unknown"}
+
+
+# --------------------------------------------------------------------------
 # Hermes agent calls
 # --------------------------------------------------------------------------
 
 # Skill names as registered (Hermes resolves -s by plain name in the active
 # profile's skills/ dir, not by path).
 SKILL_NAME = {"builder": "unit-builder", "reviewer": "unit-reviewer",
-              "planner": "unit-planner"}
+              "planner": "unit-planner", "auditor": "unit-auditor"}
 
 
 def hermes_run(profile: str, model: str, prompt: str, toolsets: str,
@@ -595,6 +682,17 @@ Write `docs/units/{unit['id']}.md` (30 lines maximum): what works, what is
 guessed, how to run it. Where evidence is missing, build from fixtures and
 label it "fidelity: guessed". Never edit AGENTS.md, skills, CI or ops/.
 Never ask questions; choose the safest reasonable option and record it.
+
+## Quality safeguards (the pipeline enforces these; a failure re-runs the unit)
+1. Tests must exercise the change: with your implementation removed the new
+   tests must FAIL. A test that passes without the code is rejected as
+   "tests do not exercise the change".
+2. Coverage: `go test -cover` on the changed files must reach {COVERAGE_FLOOR:.0f}%. Below
+   that, add a line to the unit doc beginning `coverage-exempt:` saying why it
+   cannot be covered, or extend the tests.
+3. Evidence: every new test cites the evidence file or fixture its expected
+   values came from, in a comment. Tests built on guessed behaviour are allowed
+   only when the unit doc says "fidelity: guessed".
 Finish with exactly one JSON line: {{"status":"done|partial","notes":"..."}}
 """
 
@@ -1220,6 +1318,42 @@ def record_history(unit: dict, outcome: str) -> None:
     write_json(HISTORY_JSON, hist)
 
 
+QUALITY_JSON = STATE_DIR / "quality.json"
+
+
+def rec_quality(unit: dict) -> None:
+    """Record one unit's quality outcome for the STATE.md Quality section.
+
+    Kept in its own store, separate from units.state.json, so the numbers
+    survive a roadmap rewrite and can be aggregated across all units.
+    """
+    q = read_json(QUALITY_JSON, {})
+    uid = unit["id"]
+    prev = q.get(uid, {})
+    coverages = list(prev.get("coverages", []))
+    cov = (unit.get("quality") or {}).get("coverage")
+    if cov is not None:
+        coverages.append(cov)
+    q[uid] = {
+        "fidelity": (unit.get("quality") or {}).get("fidelity") or unit.get("fidelity", ""),
+        "coverages": coverages[-20:],
+        "ok": (unit.get("quality") or {}).get("ok"),
+        "reason": (unit.get("quality") or {}).get("reason", ""),
+        "status": unit.get("status", ""),
+        "updated": now(),
+    }
+    q[uid].setdefault("failed_by", prev.get("failed_by", []))
+    if (unit.get("quality") or {}).get("ok") is False:
+        reason = str((unit.get("quality") or {}).get("reason", ""))
+        items = []
+        if "exercise the change" in reason:
+            items.append("item1")
+        if "coverage" in reason.lower() or "evidence" in reason.lower():
+            items.append("item3" if "cite" in reason else "item2")
+        q[uid]["failed_by"] = list(dict.fromkeys(q[uid]["failed_by"] + items))
+    write_json(QUALITY_JSON, q)
+
+
 def recover_branch(unit: dict, history: dict, state: dict) -> bool:
     """Reuse a branch a previous cycle left behind instead of rebuilding it.
 
@@ -1457,6 +1591,36 @@ def finish_build(job, roadmap: dict, state: dict) -> None:
         return
 
     event(state, f"{uid}: check.sh PASSED on attempt {unit['attempts']}")
+
+    # --- quality safeguards: items 1-3, before anything is published ------
+    # A quality failure is an attempt failure: fix it in the worktree and retry,
+    # so no PR is opened and nothing reaches the merge queue.
+    qreport = quality_gate(wt, unit, state, BASE_REF)
+    unit["quality"] = {k: qreport.get(k) for k in ("ok", "reason", "coverage", "fidelity")}
+    if qreport.get("coverage") is not None:
+        unit.setdefault("coverages", []).append(qreport["coverage"])
+    if qreport.get("fidelity"):
+        unit["fidelity"] = qreport["fidelity"]
+    unit["quality_detail"] = (qreport.get("detail") or "")[:2000]
+    rec_quality(unit)
+    log(f"{uid}: quality ok={qreport['ok']} coverage={qreport.get('coverage')} "
+        f"fidelity={qreport.get('fidelity')} ({qreport.get('reason','')[:80]})")
+    if not qreport.get("ok"):
+        unit["feedback"] = ("Quality safeguards rejected the attempt:\n"
+                            + (qreport.get("detail") or qreport.get("reason", ""))
+                            + "\n\nRepair the tests, not the check. Every new test must fail "
+                              "when the implementation is removed (item 1); changed files must "
+                              "reach the coverage floor or the unit doc must carry a "
+                              "`coverage-exempt:` line (item 2); every new test must cite the "
+                              "evidence file or fixture it uses, or the unit doc must say "
+                              "`fidelity: guessed` (item 3).")
+        unit["reason"] = "quality: " + str(qreport.get("reason", ""))[:280]
+        unit["attempts"] = int(unit.get("attempts", 0)) + 1
+        unit["status"] = "todo" if unit["attempts"] < MAX_ATTEMPTS else "parked"
+        event(state, f"{uid}: QUALITY rejected the attempt "
+                     f"({qreport.get('reason')}) -> {unit['status']}")
+        return
+
     try:
         pr = push_and_open_pr(unit, wt, out, state)
     except Exception as exc:
@@ -1510,7 +1674,9 @@ def apply_planner_output(roadmap: dict, state: dict, unit: dict, out: str,
         return False
     entries = doc.get("units") or []
     if not entries:
-        return False
+        # An audit may legitimately find nothing. An empty block is valid only
+        # in audit mode; every other mode treats it as a rejected output.
+        return mode == "audit"
     if mode == "split" and len(entries) > SPLIT_MAX_UNITS:
         return False
     for e in entries:
@@ -1794,6 +1960,223 @@ Open one bounded fix unit that makes this route work again. Rules:
     return True
 
 
+AUDIT_STATE = STATE_DIR / "audit.json"
+
+
+def audit_bundle(roadmap: dict, limit: int = 10, char_cap: int = 60000) -> str:
+    """A read-only text bundle of the last ``limit`` merged units.
+
+    For each unit: its entry, its unit doc, and its diff against the commit
+    before its merge. Nothing is written and no branch is touched. Capped at
+    ``char_cap`` characters so the audit prompt cannot grow without bound.
+    """
+    merged = sorted([u for u in roadmap.values() if u.get("status") == "merged"],
+                    key=lambda u: u.get("updated", ""))
+    recent = merged[-limit:]
+    parts = [f"# Last {len(recent)} merged units (read-only audit input)", ""]
+    for u in recent:
+        pr = int(u.get("pr") or 0)
+        parts.append(f"## {u['id']} - {u.get('title','')} (PR #{pr or '?'})")
+        parts.append(unit_block(u))
+        doc = REPO / "docs" / "units" / f"{u['id']}.md"
+        if doc.exists():
+            parts.append("### unit doc\n" + doc.read_text()[:1200])
+        if pr:
+            rc, out = sh(["gh", "pr", "diff", str(pr), "--repo", GH_REPO], timeout=120)
+            if rc == 0:
+                parts.append("### diff vs its base\n```diff\n" + tail(out, 250) + "\n```")
+        else:
+            # Adopted units have no PR recorded, so there is no diff to fetch.
+            # Give the auditor the actual current code under the unit's paths
+            # instead, or it would be reviewing titles with no code at all.
+            listing = _paths_listing(str(u.get("paths") or []), char_cap=4000)
+            if listing:
+                parts.append("### current code under its paths\n```go\n"
+                             + listing + "\n```")
+        parts.append("")
+        if sum(len(p) for p in parts) > char_cap:
+            parts.append("... [bundle truncated at the size cap]")
+            break
+    return "\n".join(parts)[:char_cap]
+
+
+def _paths_listing(paths, char_cap: int = 4000) -> str:
+    """Concatenated, size-capped contents of the .go files under ``paths``."""
+    out, used = [], 0
+    for pat in paths:
+        if not str(pat).startswith("internal/"):
+            continue
+        base = REPO / str(pat).rstrip("*").rstrip("/")
+        files = []
+        if base.is_file():
+            files = [base]
+        elif base.is_dir():
+            files = sorted(base.rglob("*.go"))
+        for f in files:
+            try:
+                rel = f.relative_to(REPO)
+            except ValueError:
+                continue
+            text = f.read_text(errors="replace")
+            chunk = f"\n// ---- {rel} ----\n{text}"
+            if used + len(chunk) > char_cap:
+                return "\n".join(out)
+            out.append(chunk)
+            used += len(chunk)
+    return "\n".join(out)
+
+
+def run_audit(roadmap: dict, state: dict) -> dict:
+    """Item 4: read-only weekly audit by gpt-6.1-sol; findings become units.
+
+    Never edits code: it only reads diffs and docs, and writes roadmap entries.
+    Capped at AUDIT_TOKEN_CAP tokens; a capped or failed run is recorded and
+    retried next week rather than retried immediately.
+    """
+    model = MODEL["sol"]
+    bundle = audit_bundle(roadmap)
+    prompt = (f"WEEKLY QUALITY AUDIT\n\nThe last merged units, read-only:\n\n{bundle}\n\n"
+              "Report findings as roadmap entries following your skill. One entry per "
+              "finding, most severe first. Output ONLY the YAML block: the first line "
+              "must be `units:` and nothing may precede or follow it. If there is "
+              "nothing worth changing, output exactly `units: []`.")
+    (BRIEF_DIR / "weekly-audit.md").write_text(prompt)
+    event(state, f"audit: weekly read-only audit ({model})")
+    rc, out, usage = hermes_run("auditor", model, prompt, "file", REPO, "weekly-audit", 1200)
+    tokens = usage_tokens(usage)
+    # Keep the raw output: a rejected audit must be diagnosable, not just lost.
+    with_suppress(lambda: (LOG_DIR / "weekly-audit.out").write_text(
+        f"rc={rc} tokens={tokens}\n\n{out}"))
+    state["tokens_today"] = int(state.get("tokens_today", 0)) + tokens
+    findings = []
+    capped = tokens >= AUDIT_TOKEN_CAP
+    if rc == 0 and not capped:
+        before = set(roadmap)
+        # mode="audit" allows `units: []` (nothing to fix) as a valid result.
+        if apply_planner_output(roadmap, state, {"id": "AUDIT"}, out, mode="audit"):
+            for uid in set(roadmap) - before:
+                roadmap[uid].setdefault("kind", "audit-fix")
+                findings.append(uid)
+        else:
+            event(state, "audit: output rejected (no YAML block); see "
+                         "logs/weekly-audit.out")
+    elif capped:
+        event(state, f"audit: hit the {AUDIT_TOKEN_CAP} token cap; findings not parsed")
+    else:
+        event(state, f"audit: agent run failed rc={rc}")
+    aud = read_json(AUDIT_STATE, {})
+    aud["last_run"] = now()
+    aud["tokens"] = tokens
+    aud["findings_open"] = _audit_open(roadmap)
+    aud["added"] = findings
+    aud["capped"] = capped
+    write_json(AUDIT_STATE, aud)
+    event(state, f"audit: done, {len(findings)} finding(s) turned into units "
+                 f"({tokens} tokens)")
+    return aud
+
+
+def _audit_open(roadmap: dict) -> int:
+    """Audit findings still open: audit-fix units not yet merged."""
+    return sum(1 for u in roadmap.values()
+               if u.get("kind") == "audit-fix"
+               and u.get("status") not in ("merged", "parked-final"))
+
+
+def audit_due(state: dict) -> bool:
+    aud = read_json(AUDIT_STATE, {})
+    last = aud.get("last_run", "")
+    if not last:
+        return True
+    try:
+        age = (datetime.now(timezone.utc)
+               - datetime.strptime(last, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+               ).total_seconds()
+    except Exception:
+        return True
+    return age >= 7 * 24 * 3600
+
+
+def maybe_audit(roadmap: dict, state: dict) -> bool:
+    """Run the audit if a week has passed and the board is not busy."""
+    if not audit_due(state):
+        return False
+    active = [u for u in roadmap.values()
+              if u.get("status") in ("building", "pr_open", "queued")]
+    if active:
+        return False
+    run_audit(roadmap, state)
+    return True
+
+
+# --------------------------------------------------------------------------
+# Item 5: a periodic consistency/refactor unit
+# --------------------------------------------------------------------------
+
+def maybe_refactor_unit(roadmap: dict, state: dict) -> bool:
+    """After every REFACTOR_EVERY merged units, add one refactor unit.
+
+    The refactor unit fixes the open audit findings and keeps package structure
+    consistent. It is a normal roadmap entry, so it goes through check.sh and
+    the same quality safeguards.
+    """
+    merged = [u for u in roadmap.values() if u.get("status") == "merged"]
+    # Consumed counter: how many merges the pipeline has already accounted for.
+    consumed = int(state.get("refactor_consumed", 0))
+    open_refactors = [u for u in roadmap.values()
+                      if u.get("kind") == "refactor"
+                      and u.get("status") not in ("merged", "parked-final")]
+    if open_refactors:
+        return False
+    if len(merged) - consumed < REFACTOR_EVERY:
+        return False
+    state["refactor_consumed"] = len(merged)
+    aud = read_json(AUDIT_STATE, {})
+    findings = [u for u in roadmap.values() if u.get("kind") == "audit-fix"
+                and u.get("status") not in ("merged", "parked-final")]
+    rid = next_free_id(roadmap, "RF")
+    paths = sorted({p for u in findings for p in (u.get("paths") or [])})
+    if not paths:
+        # Nothing from the audit: a structure-only pass over the packages the
+        # recent units touched.
+        recent = sorted([u for u in merged], key=lambda u: u.get("updated", ""))[-REFACTOR_EVERY:]
+        paths = sorted({p for u in recent for p in (u.get("paths") or [])
+                        if str(p).startswith("internal/")})[:8]
+    if not paths:
+        state["refactor_consumed"] = len(merged)
+        return False
+    tgt = list(dict.fromkeys(paths))[:8]
+    unit = {
+        "id": rid,
+        "title": "Consistency pass: fix the open audit findings and align package structure",
+        "status": "todo",
+        "kind": "refactor",
+        "severity": "medium",
+        "audit_finding": ("open audit findings: "
+                          + ", ".join(u["id"] for u in findings) if findings
+                          else "structure-only consistency pass"),
+        "depends_on": [],
+        "paths": tgt + [f"docs/units/{rid}.md"],
+        "tests": ["go test ./...", "bash scripts/check.sh"],
+        "acceptance": ["the open audit findings are fixed or explicitly ruled out",
+                       "package layout and naming follow the neighbours' convention",
+                       "no behaviour changes; existing tests still pass"],
+        "size": "M",
+        "attempts": 0,
+    }
+    roadmap[rid] = unit
+    event(state, f"{rid}: refactor unit queued after {len(merged)} merged units "
+                 f"({len(findings)} open audit finding(s))")
+    return True
+
+
+def next_free_id(roadmap: dict, prefix: str) -> str:
+    n = 1
+    while f"{prefix}{n}" in roadmap:
+        n += 1
+    return f"{prefix}{n}"
+
+
 def read_env_var(name: str) -> str:
     """Read a variable from ``~/.hermes/.env`` (the documented ntfy setup)."""
     val = os.environ.get(name, "").strip()
@@ -1837,6 +2220,53 @@ def alerts_lines() -> list:
                      "`NTFY_TOPIC=<your-topic>` and `NTFY_PUBLISH_TOPIC=<your-topic>` to "
                      "`~/.hermes/.env`; subscribe to that topic in the app. Verify with "
                      "`hermes send --to ntfy:<your-topic> \"test\"`.")
+    return lines
+
+
+def quality_lines(roadmap: dict) -> list:
+    """Item 6: the Quality section - guessed count, median coverage, audit
+    findings open, units failed by items 1-2."""
+    q = read_json(QUALITY_JSON, {})
+    # Guessed-fidelity: from the ledger and from the units themselves, so a
+    # unit merged before the ledger existed still counts.
+    guessed = set()
+    for uid, rec in q.items():
+        if str(rec.get("fidelity", "")).lower() == "guessed":
+            guessed.add(uid)
+    for uid, u in roadmap.items():
+        if str(u.get("fidelity", "")).lower() == "guessed":
+            guessed.add(uid)
+    # Median coverage over the last recorded coverage per merged unit.
+    covs = []
+    for uid, u in roadmap.items():
+        if u.get("status") == "merged":
+            series = (q.get(uid) or {}).get("coverages") or []
+            if series:
+                covs.append(series[-1])
+    med_cov = _median(covs)
+    aud = read_json(AUDIT_STATE, {})
+    findings_open = _audit_open(roadmap)
+    # Units failed by items 1-2, from the quality ledger's reason text.
+    failed1 = sorted(uid for uid, rec in q.items()
+                     if "exercise the change" in str(rec.get("reason", "")))
+    failed2 = sorted(uid for uid, rec in q.items()
+                     if "coverage" in str(rec.get("reason", "")).lower()
+                     and "cite" not in str(rec.get("reason", "")))
+    failed3 = sorted(uid for uid, rec in q.items()
+                     if "cite" in str(rec.get("reason", "")))
+    lines = [
+        f"- guessed fidelity: {len(guessed)}"
+        + (f" ({', '.join(sorted(guessed))})" if guessed else ""),
+        f"- median coverage (merged units, changed files): {med_cov}% (n={len(covs)})",
+        f"- audit findings open: {findings_open}"
+        + (f" (last audit {aud.get('last_run')}, {aud.get('tokens', 0)} tokens)"
+           if aud.get("last_run") else " (no audit yet)"),
+        f"- units failed by the quality checks: item1 {len(failed1)}, "
+        f"item2 {len(failed2)}, item3 {len(failed3)}",
+    ]
+    if failed1 or failed2 or failed3:
+        lines.append(f"- failed units: item1={','.join(failed1) or '-'}, "
+                     f"item2={','.join(failed2) or '-'}, item3={','.join(failed3) or '-'}")
     return lines
 
 
@@ -1925,6 +2355,8 @@ def write_state_md(roadmap: dict, state: dict) -> None:
         "",
     ]
     lines += report_lines(roadmap, state)
+    lines += ["", "## Quality", ""]
+    lines += quality_lines(roadmap)
     lines += ["", "## Nightly checks", ""]
     lines += nightly_lines()
     lines += ["", "## Alerts", ""]
@@ -1933,14 +2365,19 @@ def write_state_md(roadmap: dict, state: dict) -> None:
     for k in sorted(counts):
         lines.append(f"- {k}: {counts[k]}")
     lines += ["", "## Units", "",
-              "| id | status | attempts | model | tokens | wall_s | pr | reason |",
-              "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+              "| id | kind | sev | status | attempts | model | tokens | pr | coverage | fidelity | reason |",
+              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+    q = read_json(QUALITY_JSON, {})
     for uid in sorted(roadmap):
         u = roadmap[uid]
-        reason = str(u.get("reason", "")).replace("|", "/")[:120]
-        lines.append(f"| {uid} | {u.get('status','')} | {u.get('attempts',0)} | "
+        reason = str(u.get("reason", "")).replace("|", "/")[:100]
+        series = (q.get(uid) or {}).get("coverages") or []
+        cov = f"{series[-1]}%" if series else "-"
+        fid = (u.get("fidelity") or (q.get(uid) or {}).get("fidelity") or "-")
+        lines.append(f"| {uid} | {u.get('kind','') or '-'} | {u.get('severity','') or '-'} | "
+                     f"{u.get('status','')} | {u.get('attempts',0)} | "
                      f"{u.get('model','') or '-'} | {u.get('tokens',0)} | "
-                     f"{u.get('wall_s',0)} | {u.get('pr',0) or '-'} | {reason} |")
+                     f"{u.get('pr',0) or '-'} | {cov} | {fid} | {reason} |")
     lines += ["", "## Last 20 events", ""]
     for e in state["events"][-20:]:
         lines.append(f"- {e['ts']}  {e['msg']}")
@@ -1981,11 +2418,17 @@ def cycle() -> None:
                 continue
         resume_open_prs(roadmap, state)
         dispatch(roadmap, state)
-        # A failed nightly integration route becomes a planner fix unit. Run it
-        # in place of the normal planner pass so a cycle makes at most one
-        # planner call.
+        # Board upkeep, then at most ONE agent call per cycle. A failed nightly
+        # integration route becomes a planner fix unit; a periodic consistency
+        # unit is added after every REFACTOR_EVERY merges (no agent call); the
+        # weekly read-only audit and the normal planner pass are the two
+        # possible agent calls, and only one of them runs.
         queue_nightly_fixes(roadmap, state)
-        if not maybe_plan_nightly_fix(roadmap, state):
+        maybe_refactor_unit(roadmap, state)
+        used_agent = maybe_plan_nightly_fix(roadmap, state)
+        if not used_agent:
+            used_agent = maybe_audit(roadmap, state)
+        if not used_agent:
             maybe_plan(roadmap, state)
         save_roadmap(roadmap)
         write_json(STATE_JSON, state)
@@ -2034,6 +2477,42 @@ units:
     assert units[0]["depends_on"] == []
     assert units[1]["depends_on"] == ["F1"]
     assert units[1]["attempts"] == 3
+    # block-list values (a model's natural YAML) must not become units
+    block = parse_yaml('''
+units:
+  - id: QA1
+    title: "one"
+    acceptance:
+      - first bullet
+      - second bullet
+    paths: [a/b.go]
+    size: M
+  - id: QA2
+    title: "two"
+    paths: [c/d.go]
+''')
+    assert len(block["units"]) == 2, block["units"]
+    assert block["units"][0]["id"] == "QA1", block["units"][0]
+    assert block["units"][0]["acceptance"] == ["first bullet", "second bullet"], \
+        block["units"][0]["acceptance"]
+    assert block["units"][0]["size"] == "M"
+    assert block["units"][1]["id"] == "QA2", block["units"][1]
+    assert block["units"][1]["title"] == "two", block["units"][1]
+    # a mix of flow and block lists in one entry
+    mixed = parse_yaml('''
+units:
+  - id: X1
+    title: t
+    paths:
+      - internal/a
+      - internal/b
+    depends_on: [F1]
+    acceptance:
+      - one
+''')
+    assert mixed["units"][0]["paths"] == ["internal/a", "internal/b"], mixed["units"][0]
+    assert mixed["units"][0]["depends_on"] == ["F1"], mixed["units"][0]
+    assert mixed["units"][0]["acceptance"] == ["one"], mixed["units"][0]
     # runtime state survives a save/load round trip (PR number, attempts, reason)
     units[1].update({"pr": 61, "tokens": 1234, "reason": "check.sh failed: x | y",
                      "model": "gpt-6-luna", "review_rounds": 1})

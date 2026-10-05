@@ -11,11 +11,53 @@ SHA-bound approvals.
 | `ops/orchestrator.py` | One dispatch/verify/merge cycle. systemd timer, every 2 min, `flock`ed. |
 | `scripts/check.sh` | The only gate: gofmt, go build, go vet, staticcheck, go test, go test -race, gosec, govulncheck. |
 | `units.yaml` | The roadmap: one entry per unit (`id`, `title`, `status`, `depends_on`, `paths`, `tests`, `acceptance`, `fixtures`, `fidelity_notes`, `attempts`). |
-| `ops/skills/{builder,reviewer,planner}/` | The three agent roles. Loaded with `-s`. |
+| `ops/skills/{builder,reviewer,planner,auditor}/` | The four agent roles. Loaded with `-s`. |
 | `ops/hooks/pre-push` | Safety outside the model: rejects pushes to `main`/`integration` and any force push. Activated with `git config core.hooksPath ops/hooks`. |
 | `ops/nightly.py` | Nightly integration check, pipeline self-check, and failure alerts. systemd timer, `--all` at 03:15. |
+| `ops/quality.py` | The per-attempt quality safeguards: the tests must exercise the change, coverage on changed files, evidence tie. |
 | `ops/setup/configure-profiles.sh` | Configures the headless Hermes profiles. |
-| `ops/systemd/` | `phpretro-orchestrator.{service,timer}`, `phpretro-nightly.{service,timer}`. |
+| `ops/systemd/` | `phpretro-orchestrator.{service,timer}`, `phpretro-nightly.{service,timer}`, `phpretro-alerts.{service,timer}`. |
+
+## Quality safeguards
+
+Run in the worktree after `scripts/check.sh` passes and before any PR is
+opened, so a failed attempt is repaired in place and nothing invalid is
+published. `ops/quality.py` is pure and takes a worktree, so it is testable
+without the orchestrator; `ops/quality.py --selftest` checks its parsers.
+
+| # | Check | Failure |
+| --- | --- | --- |
+| 1 | With the unit's implementation files reverted to base, the unit's `go test` commands must FAIL. | "tests do not exercise the change" |
+| 2 | `go test -cover` on the changed files must be >= `PHPRETRO_COVERAGE_FLOOR` (60%). A unit doc line `coverage-exempt: <why>` accepts a lower number. | "coverage on changed files below N%" |
+| 3 | Every changed `_test.go` must cite its evidence file or fixture; a unit with uncited tests must be labelled `fidelity: guessed` in its unit doc, and is counted as guessed. | "tests do not cite their evidence" |
+
+A quality failure increments the attempt and returns the unit to the ladder -
+it does not have its own retry budget. The unit's quality record (coverage,
+fidelity, failure reason) is kept in `~/phpretro-ops/state/quality.json`.
+
+## Weekly audit and the consistency unit
+
+- **Item 4 - the audit.** Once a week (when no build is in flight), the
+  orchestrator runs `gpt-6.1-sol` read-only on the `auditor` profile with the
+  last 10 merged units (entries, unit docs, diffs). It looks for duplicate
+  code, dead code, inconsistent naming/structure, security issues and mirror
+  tests, and writes findings as roadmap entries (`kind: audit-fix`, with a
+  `severity`). It never edits code. Capped at `PHPRETRO_AUDIT_TOKEN_CAP` (3M);
+  the raw output is kept at `~/phpretro-ops/logs/weekly-audit.out`.
+- **Item 5 - the consistency unit.** After every `PHPRETRO_REFACTOR_EVERY` (8)
+  merged units, a `kind: refactor` unit is added: it fixes the open audit
+  findings and aligns package structure. It is a normal roadmap entry and goes
+  through `check.sh` and the quality safeguards like any other.
+
+The orchestrator makes **at most one agent call per cycle**: a nightly fix, an
+audit, or the ordinary planner pass - in that priority order.
+
+## The Quality section in STATE.md
+
+The report carries: the guessed-fidelity count, the median coverage over
+merged units, the number of open audit findings, and how many units the
+quality checks have failed (by item 1 / 2 / 3). The per-unit table gains
+`kind`, `severity`, `coverage` and `fidelity` columns.
 
 ## Nightly checks and alerts (`ops/nightly.py`)
 

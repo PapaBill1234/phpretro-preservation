@@ -24,7 +24,7 @@
 #   * secrets live in ~/.hermes/.env, outside every worktree.
 set -euo pipefail
 
-PROFILES=(builder reviewer planner)
+PROFILES=(builder reviewer planner auditor)
 REPO="${PHPRETRO_REPO:-$HOME/phpretro-preservation}"
 
 DENY='["git push --force*", "git push -f *", "git push --delete*", "git push *refs/heads/main*", "git reset --hard*", "git checkout main*", "git update-ref -d*", "git filter-branch*", "git branch -D main*", "rm -rf /*", "rm -rf ~*", "rm -rf $HOME*", "rm -rf ..*", "rm -rf /home/ubuntu*", "gh auth*", "gh repo delete*", "gh api *-X DELETE*", "sudo*", "dd *of=/dev/*", "chmod -R 777*"]'
@@ -52,12 +52,15 @@ done
 install -d "$HOME/.hermes/profiles/builder/skills/unit-builder"
 install -d "$HOME/.hermes/profiles/reviewer/skills/unit-reviewer"
 install -d "$HOME/.hermes/profiles/planner/skills/unit-planner"
+install -d "$HOME/.hermes/profiles/auditor/skills/unit-auditor"
 install -m 0644 "$REPO/ops/skills/builder/SKILL.md" \
   "$HOME/.hermes/profiles/builder/skills/unit-builder/SKILL.md"
 install -m 0644 "$REPO/ops/skills/reviewer/SKILL.md" \
   "$HOME/.hermes/profiles/reviewer/skills/unit-reviewer/SKILL.md"
 install -m 0644 "$REPO/ops/skills/planner/SKILL.md" \
   "$HOME/.hermes/profiles/planner/skills/unit-planner/SKILL.md"
+install -m 0644 "$REPO/ops/skills/auditor/SKILL.md" \
+  "$HOME/.hermes/profiles/auditor/skills/unit-auditor/SKILL.md"
 echo "role skills installed"
 
 echo "profiles configured: ${PROFILES[*]}"
