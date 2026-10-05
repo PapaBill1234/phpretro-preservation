@@ -62,10 +62,11 @@ Delivered via PR #55 (merged).
 
 - All required packages were already installed; nothing needed `apt`.
 - Go 1.24.6 already matches the toolchain declared in `go.mod`.
-- **`ufw` was inactive → now active.** Rule: allow `22/tcp` only, default deny
-  incoming, allow outgoing. SSH was confirmed still reachable immediately after
-  enabling. Note this also blocks the pre-existing xrdp listener on 3389, which
-  is the intended consequence of "allow 22 only".
+- **`ufw` was inactive → now active.** Rules: allow `22/tcp` and `3389/tcp`
+  (xrdp), default deny incoming, allow outgoing. SSH was confirmed still
+  reachable immediately after enabling. 3389 was re-allowed on request after
+  the initial "allow 22 only" pass; the xrdp listener is confirmed up on
+  `*:3389`.
 - **Hermes updated.** It was on a canary commit; `main` is the only published
   channel (`stable` is not published — `releases/channels/stable.json` does not
   exist). Updated forward on `main`: `v0.21.5+6980.g8d5e3e4.dirty` →
@@ -220,9 +221,10 @@ owner to run.
 - **Hermes reports `.dirty` on both installs** because of pre-existing local
   modifications to `agent/auxiliary_client.py` (Windows) and one file on the
   server. These predate the migration and were not touched.
-- **`ufw` now blocks xrdp (3389).** Intended per "allow 22 only", but the
-  desktop session over RDP will stop working. Re-allow it if that was not
-  wanted: `sudo ufw allow 3389/tcp`.
+- **`ufw` rules are 22 and 3389.** The initial pass was "allow 22 only", which
+  took RDP down; 3389 was re-allowed on request and the xrdp listener is up on
+  `*:3389`. Any further port (for example a public HTTP port for the dev server)
+  needs its own `sudo ufw allow <port>/tcp`.
 - **The server's Hermes approval policy is the safe default**, not the Windows
   fast-mode policy. Starting agents there will hit approval prompts and the
   protected-instruction-file gate.
