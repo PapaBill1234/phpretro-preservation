@@ -1,0 +1,25 @@
+[Unit]
+Description=PHP-Retro autonomous unit pipeline (one dispatch/verify cycle)
+Documentation=file:/home/ubuntu/phpretro-preservation/ops/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/phpretro-preservation
+Environment=HOME=/home/ubuntu
+Environment=HERMES_ACCEPT_HOOKS=1
+Environment=PATH=/home/ubuntu/.local/bin:/home/ubuntu/.local/go-bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/python3 /home/ubuntu/phpretro-preservation/ops/orchestrator.py --once
+Restart=always
+RestartSec=120
+StartLimitIntervalSec=0
+KillMode=mixed
+TimeoutStopSec=180
+StandardOutput=append:/home/ubuntu/phpretro-ops/logs/orchestrator.log
+StandardError=append:/home/ubuntu/phpretro-ops/logs/orchestrator.log
+
+[Install]
+WantedBy=multi-user.target

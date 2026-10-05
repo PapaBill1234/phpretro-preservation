@@ -1,0 +1,13 @@
+[Unit]
+Description=Keep the PHP-Retro unit pipeline running every 2 minutes
+Documentation=file:/home/ubuntu/phpretro-preservation/ops/README.md
+
+[Timer]
+Unit=phpretro-orchestrator.service
+OnBootSec=90
+OnUnitActiveSec=2min
+AccuracySec=15s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -27,7 +27,7 @@ type fixtureRows struct {
 	at      int
 }
 
-func (d fixtureDriver) Open(string) (driver.Conn, error)  { return fixtureConn{d.f}, nil }
+func (d fixtureDriver) Open(string) (driver.Conn, error)  { return fixtureConn(d), nil }
 func (c fixtureConn) Prepare(string) (driver.Stmt, error) { return nil, errors.New("prepare not used") }
 func (c fixtureConn) Close() error                        { return nil }
 func (c fixtureConn) Begin() (driver.Tx, error)           { return nil, errors.New("writes unavailable") }
