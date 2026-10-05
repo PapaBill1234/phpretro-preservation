@@ -73,6 +73,51 @@ systems, merge itself, and any weakening of review, CI, branch-protection or
 approval rules. Correction, review, approval and CI token usage per gate
 unavailable (not measured).
 
+## Model and chain policy, 2026-10-04
+
+Only three models are usable through A6API: `gpt-6-luna`,
+`deepseek-v4.1-flash` and `gpt-6.1-sol`. Gemini and GLM are not usable and are
+never used.
+
+`gpt-6-luna` carries the routine work: the `backend`, `frontend` and `visual`
+workers, the watchdog, state digests, CI and diff-verification checks, and
+brief-writing. The `coordinator` profile runs `gpt-6-luna`, the `reviewer`
+profile runs `deepseek-v4.1-flash`, and the `approver` stays on `gpt-6.1-sol`.
+
+First-pass PR review runs on `deepseek-v4.1-flash` when the author was
+`gpt-6-luna`, and on `gpt-6-luna` when the author was `deepseek-v4.1-flash`, so
+the reviewer is always a different model family from the author.
+
+`gpt-6.1-sol` is reserved for escalated review (authentication, session or schema
+diffs, diffs over 400 lines, a flagged concern), scope-change approvals, the
+stuck-unit ladder's last attempt, and design synthesis for unclear units such as
+F28 and F30. For escalated review of `gpt-6-luna`-authored code, run the
+`deepseek-v4.1-flash` first-pass review first, then `gpt-6.1-sol`.
+
+The stuck-unit ladder: two attempts on `gpt-6-luna`, then one attempt on
+`deepseek-v4.1-flash`, then one attempt on `gpt-6.1-sol`, then mark the unit cut
+down to what is already accepted and move to the next unit. Escalate one card at
+a time with `hermes kanban set-model <id> gpt-6.1-sol` and record the ladder
+position in the card.
+
+After PR35 delivers, a routine unit is one worker card: tests first, implement,
+run the checks, open the PR, first-pass review as a step inside the same card, CI
+auto-merge on green, and a successor the worker creates itself from `depends_on`.
+Workers read one generated digest instead of re-reading the policy files. The
+approver is used only for scope changes.
+
+Two standing constraints from the same instruction:
+
+- **Merge hold (lifted).** PR #35 delivered at `2df4094` and PR #37 merged with it at `4eb025e`, so the hold that paused other merges to `main` until PR35 delivered no longer applies. New merges follow the normal gates.
+- **Protected instruction files.** `AGENTS.md`, `CLAUDE.md`, `SOUL.md`, skills
+  and templates are edited only on the coordinator surface. A headless worker
+  cannot satisfy the protected-instruction-file gate, so such a card fails closed.
+
+A scheduled digest appends per-role model, tokens and failure, retry and
+cut-down counts, tokens and cards per delivered unit, and escalation counts to
+this file every six hours, reporting `unavailable` rather than estimating and
+flagging any role whose failure rate worsened as a revert candidate.
+
 F18 profile read/presentation model (t_25ca3e24) started on base
 2df409465458fbd6df273d6ba535b79209149eaf: new read-only
 internal/profile/view.go and view_test.go implement Tab 1-5 selection with
