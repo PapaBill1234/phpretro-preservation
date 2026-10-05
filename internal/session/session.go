@@ -5,10 +5,22 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
 )
+
+const LogoutReason = "logout"
+
+var ErrWrongLogoutReason = errors.New("wrong logout reason")
+
+// PublicPage is the post-logout public projection. PrivateField is deliberately
+// empty: the public transition does not carry authenticated state.
+type PublicPage struct {
+	Confirmation string
+	PrivateField string
+}
 
 type Record struct {
 	UserID    string
@@ -74,6 +86,24 @@ func (m *Manager) Logout(token string) {
 	delete(m.sessions, hash)
 	m.mu.Unlock()
 }
+
+// LogoutTransition invalidates only the supplied synthetic session and returns
+// the logout confirmation. The explicit reason prevents another transition
+// from being treated as logout.
+func (m *Manager) LogoutTransition(token, reason string) (PublicPage, error) {
+	if reason != LogoutReason {
+		return PublicPage{}, ErrWrongLogoutReason
+	}
+	m.Logout(token)
+	return PublicPage{Confirmation: "logged out"}, nil
+}
+
+// PostLogoutPage is public even if the caller retains the old cookie. Cookie
+// names and replacement semantics are unknown; no private field is exposed.
+func (m *Manager) PostLogoutPage(token string) PublicPage {
+	return PublicPage{}
+}
+
 func NewCookie(name, token string, secure bool, now time.Time) *http.Cookie {
 	return &http.Cookie{Name: name, Value: token, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: secure, Expires: now.Add(30 * time.Minute), MaxAge: 1800}
 }
