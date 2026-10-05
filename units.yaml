@@ -1,0 +1,469 @@
+# units.yaml - the pipeline roadmap.
+#
+# One entry per unit. Read by ops/orchestrator.py; the live copy with runtime
+# state is ~/phpretro-ops/state/units.live.yaml and STATE.md.
+#
+#   status:    todo | building | pr_open | queued | merged | parked | design
+#   depends_on: unit ids that must be `merged` before this unit is dispatched
+#   paths:     repo-relative paths the builder may touch (max 8); two units
+#              whose paths overlap never run at the same time
+#   tests:     the focused commands the builder runs
+#   acceptance: at most 5 bullets, all of which must hold
+#   fixtures:  synthetic fixtures or evidence files the tests cite
+#   size:      S | M | L (an L must be split by the planner before dispatch)
+#
+# F0-F17 were delivered before the pipeline existed and are recorded as merged.
+# F18 is adopted from the delivered f18/profile-read-model branch. F19-F30 come
+# from docs/roadmap/F18-F30-feature-approval.md. F31-F60 are design placeholders
+# from docs/roadmap/F31-F45-candidate-design.md and F46-F60-candidate-design.md.
+version: 1
+units:
+  - id: F0
+    title: "Repository and CI baseline"
+    status: merged
+    depends_on: []
+    paths: [.github/workflows/go-security.yml, go.mod]
+    tests: []
+    acceptance: ["foundation CI green on main"]
+    fixtures: []
+    fidelity_notes: "historical foundation unit"
+    attempts: 0
+  - id: F1
+    title: "PolarIS password-scheme evidence"
+    status: merged
+    depends_on: []
+    paths: [docs/evidence, tasks/F1.md]
+    tests: ["go test ./internal/polaris/..."]
+    acceptance: ["pinned original source hash recorded"]
+    fixtures: []
+    fidelity_notes: "runtime row contents remain an explicit UNKNOWN"
+    attempts: 0
+  - id: F2
+    title: "Account and session contract"
+    status: merged
+    depends_on: [F1]
+    paths: [internal/account, internal/session]
+    tests: ["go test ./internal/account/... ./internal/session/..."]
+    acceptance: ["PolarIS BCrypt/$2y verifier is source-backed"]
+    fixtures: []
+    fidelity_notes: "runtime row contents UNKNOWN"
+    attempts: 0
+  - id: F3
+    title: "Profile read"
+    status: merged
+    depends_on: [F2]
+    paths: [internal/profile]
+    tests: ["go test ./internal/profile/..."]
+    acceptance: ["bounded read contract with synthetic tests"]
+    fixtures: []
+    fidelity_notes: ""
+    attempts: 0
+  - id: F4
+    title: "Golden capture harness"
+    status: merged
+    depends_on: []
+    paths: [tests/golden]
+    tests: ["go test ./tests/golden/..."]
+    acceptance: ["deterministic comparator with synthetic mismatch tests"]
+    fixtures: []
+    fidelity_notes: "capture hashes are provenance, never expected hashes"
+    attempts: 0
+  - id: F5
+    title: "Content read"
+    status: merged
+    depends_on: [F3]
+    paths: [internal/content]
+    tests: ["go test ./internal/content/..."]
+    acceptance: ["source-backed hotelview_news contract"]
+    fixtures: []
+    fidelity_notes: ""
+    attempts: 0
+  - id: F6
+    title: "PolarIS adapter boundary"
+    status: merged
+    depends_on: [F2]
+    paths: [internal/polaris]
+    tests: ["go test ./internal/polaris/..."]
+    acceptance: ["synthetic read-only adapter boundary"]
+    fixtures: []
+    fidelity_notes: ""
+    attempts: 0
+  - id: F7
+    title: "React and Redis boundary"
+    status: merged
+    depends_on: [F3]
+    paths: [frontend/src, internal/cache]
+    tests: ["go test ./internal/cache/..."]
+    acceptance: ["typed view models; themes cannot select routes or identity"]
+    fixtures: []
+    fidelity_notes: ""
+    attempts: 0
+  - id: F8
+    title: "Localization contract"
+    status: merged
+    depends_on: [F7]
+    paths: [internal/localization, frontend/src/localization]
+    tests: ["go test ./internal/localization/..."]
+    acceptance: ["catalogs are data-only; locale is presentation metadata"]
+    fixtures: []
+    fidelity_notes: ""
+    attempts: 0
+  - id: F14
+    title: "Localization evidence and tests"
+    status: merged
+    depends_on: [F8]
+    paths: [docs/evidence, internal/localization, frontend/tests]
+    tests: ["go test ./internal/localization/..."]
+    acceptance: ["evidence and tests only; no product change"]
+    fixtures: []
+    fidelity_notes: ""
+    attempts: 0
+  - id: F15
+    title: "Public GET / route evidence and synthetic tests"
+    status: merged
+    depends_on: [F4]
+    paths: [tests/golden/public_route_test.go, docs/evidence/F15-public-route.md]
+    tests: ["go test ./tests/golden/..."]
+    acceptance: ["synthetic route tests with labelled UNKNOWNs"]
+    fixtures: []
+    fidelity_notes: "unavailable response metadata remains explicit"
+    attempts: 0
+  - id: F16
+    title: "Public GET /login_popup.php evidence and tests"
+    status: merged
+    depends_on: [F15]
+    paths: [tests/golden/login_route_test.go, docs/evidence/F16-public-login.md]
+    tests: ["go test ./tests/golden/..."]
+    acceptance: ["no auth or session implementation"]
+    fixtures: []
+    fidelity_notes: "disposable capture body matches accepted F4 hash"
+    attempts: 0
+  - id: F17
+    title: "Public GET /articles/archive evidence and tests"
+    status: merged
+    depends_on: [F16]
+    paths: [tests/golden/archive_route_test.go, docs/evidence/F17-public-archive.md]
+    tests: ["go test ./tests/golden/..."]
+    acceptance: ["evidence and synthetic tests only"]
+    fixtures: []
+    fidelity_notes: "all recorded UNKNOWNs remain"
+    attempts: 0
+  - id: F18
+    title: "Profile presentation and read model"
+    status: todo
+    depends_on: [F3]
+    branch: f18/profile-read-model
+    paths: [internal/profile, frontend/src/profile, docs/units/F18.md]
+    tests: ["go test ./internal/profile/...", "bash scripts/check.sh"]
+    acceptance: ["tabs 1-5 render profile state", "an invalid or absent tab falls back to tab 1", "the six-field F3 Profile is preserved", "negative tests cover a missing user and malformed state"]
+    fixtures: ["docs/roadmap/F18-profile-read-planning.md"]
+    fidelity_notes: "adopted from the delivered f18/profile-read-model branch; no retained response manifest exists, so the unit documents what is verified rather than re-deriving it"
+    attempts: 0
+  - id: F19
+    title: "Personal-home read boundary and presentation model"
+    status: todo
+    branch: wt/t_f980f2fb
+    depends_on: [F18]
+    paths: [internal/home, frontend/src/home, frontend/tests/home.test.ts, docs/units/F19.md]
+    tests: ["go test ./internal/home/...", "bash scripts/check.sh"]
+    acceptance: ["name and ID lookup are equivalent", "an unknown owner is handled explicitly", "an owner sees their own hidden home", "an unauthorized viewer receives no private fields"]
+    fixtures: ["docs/roadmap/F18-F30-feature-approval.md"]
+    fidelity_notes: "no retained home capture; fixtures are synthetic and the visibility matrix is a source-backed guess. The planning doc orders F19 after F18; no F3 field contract changes are needed here."
+    attempts: 0
+  - id: F20
+    title: "Account dashboard read model with principal boundary"
+    status: todo
+    branch: wt/f20-backend
+    depends_on: [F18]
+    paths: [internal/accountview, frontend/src/account, frontend/tests/account.test.ts, docs/units/F20.md]
+    tests: ["go test ./internal/accountview/...", "bash scripts/check.sh"]
+    acceptance: ["one synthetic principal cannot read another principal's dashboard", "absent optional widgets do not fabricate state", "the field list stays read-only"]
+    fixtures: ["docs/roadmap/F18-F30-feature-approval.md"]
+    fidelity_notes: "no independently retained response capture; synthetic fixtures only. Read-only, no auth or session implementation."
+    attempts: 0
+  - id: F21
+    title: "Profile appearance and preference mutations"
+    status: todo
+    branch: wt/t_92149aef
+    depends_on: [F18]
+    paths: [internal/profile/settings.go, internal/profile/settings_test.go, frontend/src/profile, frontend/tests/profile.test.ts, docs/units/F21.md]
+    tests: ["go test ./internal/profile/...", "bash scripts/check.sh"]
+    acceptance: ["invalid gender or figure is rejected", "an overlong motto is rejected", "an unauthorized principal cannot write", "a validation failure causes no synthetic write"]
+    fixtures: ["docs/roadmap/F18-F30-feature-approval.md"]
+    fidelity_notes: "mutation semantics are source-only; legacy SQL is not an approved contract, so the write contract is a labelled guess"
+    attempts: 0
+  - id: F22
+    title: "Authenticated public login result transition"
+    status: todo
+    branch: wt/f22-backend
+    depends_on: [F18]
+    paths: [internal/authflow, internal/authflow/authflow_test.go, docs/units/F22.md]
+    tests: ["go test ./internal/authflow/...", "bash scripts/check.sh"]
+    acceptance: ["the failed-login response contract is asserted", "the redirect to security-check is asserted", "wrong method, status and location negatives are covered", "no assertion of identity absent evidence"]
+    fixtures: ["docs/roadmap/F18-F30-feature-approval.md"]
+    fidelity_notes: "captures prove the failed response and the redirect only; identity establishment is NOT proven. No real credential fixtures."
+    attempts: 0
+  - id: F23
+    title: "Logout and post-logout public state transition"
+    status: todo
+    branch: wt/f23-backend
+    depends_on: [F18]
+    paths: [internal/session, internal/session/session_test.go, docs/units/F23.md]
+    tests: ["go test ./internal/session/...", "bash scripts/check.sh"]
+    acceptance: ["logout invalidates only the synthetic session", "the post-logout page exposes no private fields", "a retained-cookie negative case is covered"]
+    fixtures: ["docs/roadmap/F18-F30-feature-approval.md"]
+    fidelity_notes: "cookie values and provenance are unknown; the invalidation contract is a labelled guess. The planning doc orders F23 after F22; both are already implemented on main, so they run in parallel here."
+    attempts: 0
+  - id: F24
+    title: "Public community read model"
+    status: todo
+    branch: wt/f24-backend
+    depends_on: [F18]
+    paths: [internal/community, frontend/src/community, frontend/tests/community.test.ts, docs/units/F24.md]
+    tests: ["go test ./internal/community/...", "bash scripts/check.sh"]
+    acceptance: ["bounded lists and an empty state are asserted", "private or unapproved fields are rejected", "malformed pagination is rejected"]
+    fixtures: ["docs/roadmap/F18-F30-feature-approval.md"]
+    fidelity_notes: "no dedicated retained community capture; synthetic bounded lists only"
+    attempts: 0
+  - id: F25
+    title: "Account registration validation and creation"
+    status: todo
+    depends_on: [F20]
+    paths: [internal/registration, docs/units/F25.md]
+    tests: ["go test ./internal/registration/...", "bash scripts/check.sh"]
+    acceptance: ["validation rejects malformed input", "creation is atomic and audited in the synthetic store", "no real email or credentials are used"]
+    fixtures: ["docs/roadmap/F18-F30-feature-approval.md"]
+    fidelity_notes: "no registration capture exists; validation rules are a labelled guess built from fixtures"
+    attempts: 0
+  - id: F26
+    title: "Password recovery and account-list behaviour"
+    status: todo
+    depends_on: [F25]
+    paths: [internal/recovery, docs/units/F26.md]
+    tests: ["go test ./internal/recovery/...", "bash scripts/check.sh"]
+    acceptance: ["anti-enumeration responses are identical", "the reset token is single-use in the synthetic store", "synthetic mail and identity fixtures only"]
+    fixtures: ["docs/roadmap/F18-F30-feature-approval.md"]
+    fidelity_notes: "no dynamic capture; reset-token and rate-limit contracts are labelled guesses"
+    attempts: 0
+  - id: F27
+    title: "Remember-token reauthentication and session expiry"
+    status: todo
+    depends_on: [F23]
+    paths: [internal/session/token.go, internal/session/token_test.go, docs/units/F27.md]
+    tests: ["go test ./internal/session/...", "bash scripts/check.sh"]
+    acceptance: ["an expired token is rejected", "a replayed token is rejected", "an IP transition is handled explicitly", "synthetic tokens only"]
+    fixtures: ["docs/roadmap/F18-F30-feature-approval.md"]
+    fidelity_notes: "no security-check or token capture exists; storage and replay semantics are labelled guesses"
+    attempts: 0
+  - id: F28
+    title: "Guestbook privacy read, write and delete"
+    status: todo
+    depends_on: [F24]
+    unclear_semantics: true
+    paths: [internal/guestbook, docs/units/F28.md]
+    tests: ["go test ./internal/guestbook/...", "bash scripts/check.sh"]
+    acceptance: ["the list privacy gate is enforced server-side", "delete requires a widget-owner predicate", "no private field leaks to a non-owner"]
+    fixtures: ["docs/roadmap/F18-F30-feature-approval.md"]
+    fidelity_notes: "no captures and helper/schema semantics are incomplete; the legacy delete query has no widget-owner predicate. Scope is unclear, so the planner may need to split this unit."
+    attempts: 0
+  - id: F29
+    title: "Public article and category projection"
+    status: todo
+    depends_on: [F18]
+    paths: [internal/articles, docs/units/F29.md]
+    tests: ["go test ./internal/articles/...", "bash scripts/check.sh"]
+    acceptance: ["the archive route reserved by F17 is excluded", "text rendering escapes hostile input", "image URLs are allowlisted", "no CMS mutations"]
+    fixtures: ["docs/roadmap/F18-F30-feature-approval.md"]
+    fidelity_notes: "no distinct public-content capture; the text and image contract is a labelled guess"
+    attempts: 0
+  - id: F30
+    title: "Theme and localization contract extension"
+    status: todo
+    depends_on: [F24]
+    unclear_semantics: true
+    paths: [frontend/src/themeManifest.ts, internal/localization, docs/units/F30.md]
+    tests: ["go test ./internal/localization/...", "bash scripts/check.sh"]
+    acceptance: ["the presentation-only theme.v1/home.v1 boundary is preserved", "capability expansion is rejected", "malformed view models are rejected"]
+    fixtures: ["docs/roadmap/F18-F30-feature-approval.md"]
+    fidelity_notes: "the readiness summary concludes the broad theme/localization/CMS idea is not one defensible unit; scope is unclear and the planner should split it into bounded entries"
+    attempts: 0
+  - id: F31
+    title: "Design: account lookup and hash verification"
+    status: design
+    design_doc: docs/roadmap/F31-F45-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F32
+    title: "Design: profile and content adapters"
+    status: design
+    design_doc: docs/roadmap/F31-F45-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F33
+    title: "Design: CSRF criteria"
+    status: design
+    design_doc: docs/roadmap/F31-F45-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F34
+    title: "Design: return-target validation"
+    status: design
+    design_doc: docs/roadmap/F31-F45-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F35
+    title: "Design: atomic website-owned mutation with audit"
+    status: design
+    design_doc: docs/roadmap/F31-F45-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F36
+    title: "Design: staff secret enrollment"
+    status: design
+    design_doc: docs/roadmap/F31-F45-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F37
+    title: "Design: per-staff TOTP step-up"
+    status: design
+    design_doc: docs/roadmap/F31-F45-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F38
+    title: "Design: durable TOTP replay prevention"
+    status: design
+    design_doc: docs/roadmap/F31-F45-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F39
+    title: "Design: audit redaction"
+    status: design
+    design_doc: docs/roadmap/F31-F45-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F40
+    title: "Design: legacy FAQ category and search read projection"
+    status: design
+    design_doc: docs/roadmap/F31-F45-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F41
+    title: "Design: mutation and audit-event behaviour"
+    status: design
+    design_doc: docs/roadmap/F31-F45-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F42
+    title: "Design: staff TOTP subdivision"
+    status: design
+    design_doc: docs/roadmap/F31-F45-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F43
+    title: "Design: CSRF and redirect criteria"
+    status: design
+    design_doc: docs/roadmap/F31-F45-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F44
+    title: "Design: core backend and security contract"
+    status: design
+    design_doc: docs/roadmap/F31-F45-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F45
+    title: "Design: guestbook authorization concern"
+    status: design
+    design_doc: docs/roadmap/F31-F45-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F46
+    title: "Design: typed view-model boundary"
+    status: design
+    design_doc: docs/roadmap/F46-F60-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F47
+    title: "Design: theme package acceptance"
+    status: design
+    design_doc: docs/roadmap/F46-F60-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F48
+    title: "Design: modern theme package and provenance-checked assets"
+    status: design
+    design_doc: docs/roadmap/F46-F60-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F49
+    title: "Design: versioned locale catalog package boundary"
+    status: design
+    design_doc: docs/roadmap/F46-F60-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F50
+    title: "Design: locale-aware cache integration and invalidation"
+    status: design
+    design_doc: docs/roadmap/F46-F60-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F51
+    title: "Design: housekeeping React capability shell"
+    status: design
+    design_doc: docs/roadmap/F46-F60-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F52
+    title: "Design: website-owned pages and safe slugs"
+    status: design
+    design_doc: docs/roadmap/F46-F60-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F53
+    title: "Design: navigation and button management"
+    status: design
+    design_doc: docs/roadmap/F46-F60-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F54
+    title: "Design: FAQ, banner and landing composition models"
+    status: design
+    design_doc: docs/roadmap/F46-F60-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F55
+    title: "Design: publication, preview and rollback boundary"
+    status: design
+    design_doc: docs/roadmap/F46-F60-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F56
+    title: "Design: media metadata and safe asset selection"
+    status: design
+    design_doc: docs/roadmap/F46-F60-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F57
+    title: "Design: status, maintenance and audit views"
+    status: design
+    design_doc: docs/roadmap/F46-F60-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F58
+    title: "Design: browser contracts for themes and housekeeping"
+    status: design
+    design_doc: docs/roadmap/F46-F60-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F59
+    title: "Design: release candidate verification matrix"
+    status: design
+    design_doc: docs/roadmap/F46-F60-candidate-design.md
+    depends_on: []
+    attempts: 0
+  - id: F60
+    title: "Design: first-release readiness packet"
+    status: design
+    design_doc: docs/roadmap/F46-F60-candidate-design.md
+    depends_on: []
+    attempts: 0
