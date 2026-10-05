@@ -146,3 +146,15 @@ unavailable (not measured).
 F19 personal-home read/presentation model finished locally at f8cc6364caf9133993c1028a3342a46d2b484ae1: synthetic guest ID/name lookup and explicit hidden-home boundary, with unknown private fields omitted; token usage per gate unavailable (not measured). Go and frontend focused/full gates are unavailable locally (gofmt/go/npm dependencies missing); exact-head CI and independent review remain required.
 
 F19-F24 code-wave reconciliation (2026-10-05): PR #45 F20 account read model merged normally at 75d8a3e76d0acc893cc086631e937b88816ce284 from exact head a2ace870d3bd42c13c3a34b0ed631686a6317d5f; focused Go test, vet, and gofmt passed locally under Go 1.25.13 and foundation CI passed. PRs #46, #47, and #48 remained open after PR #45 advanced main and made their exact heads behind; their prior foundation CI was green and focused local Go/frontend checks passed, but current-head CI was not rerun and normal merge was correctly refused. PR #44 and #49 remained open: exact-head foundation CI failed gofmt, and both also changed out-of-envelope frontend profile paths; no merge attempted. Token usage per gate unavailable (not measured).
+
+
+## Economics digest 2026-10-05T03:34:08Z
+- Window: live board snapshot; 54 cards completed since 2026-10-05T00:00:00Z (17 coordinator, 17 reviewer, 8 approver, 9 backend, 2 frontend, 1 visual).
+- Role models: coordinator unavailable; reviewer unavailable; approver unavailable; backend unavailable; frontend unavailable; visual unavailable.
+- Raw tokens by role (input / cached-input / output): coordinator unavailable / unavailable / unavailable; reviewer unavailable / unavailable / unavailable; approver unavailable / unavailable / unavailable; backend unavailable / unavailable / unavailable; frontend unavailable / unavailable / unavailable; visual unavailable / unavailable / unavailable.
+- Role failures / retries / cut-down: coordinator unavailable / unavailable / unavailable; reviewer unavailable / unavailable / unavailable; approver unavailable / unavailable / unavailable; backend unavailable / unavailable / unavailable; frontend unavailable / unavailable / unavailable; visual unavailable / unavailable / unavailable.
+- Delivered units: per-unit token totals unavailable; cards consumed including review/approval unavailable.
+- Escalations: gpt-6.1-sol 1 card; gpt-6-luna 7 cards; deepseek-v4.1-flash 1 card; profile-default model resolution unavailable for 45 cards.
+- Telemetry: local cron usage exposes this digest job only (gpt-6-luna, input 299815, cached-input unavailable, output 848); it does not expose Kanban per-card role attribution.
+- Revert check: no comparable previous digest exists in the checked queue history; failure-rate comparison unavailable. No revert candidate asserted.
+- Savings: no claim; matched telemetry is unavailable.
