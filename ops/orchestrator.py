@@ -673,7 +673,8 @@ def wait_for_checks(pr: int, timeout: int = CI_TIMEOUT) -> tuple[bool, str]:
             time.sleep(20)
             continue
         rc, out = sh(["gh", "api", f"repos/{GH_REPO}/commits/{sha}/check-runs",
-                      "--jq", '[.check_runs[] | "\(.name) \(.status) \(.conclusion)"] | join("\\n")'],
+                      "--jq",
+                      r'[.check_runs[] | "\(.name) \(.status) \(.conclusion)"] | join("\n")'],
                      timeout=120)
         if rc != 0 or not out.strip():
             time.sleep(20)
