@@ -686,9 +686,23 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
         if not ok:
             event(state, f"{unit['id']}: foundation check not green: {tail(detail, 6)}")
             return False
-        rc, out = sh(["gh", "pr", "merge", str(pr), "--repo", GH_REPO, "--merge"], timeout=300)
-        if rc != 0:
+        for attempt in range(3):
+            rc, out = sh(["gh", "pr", "merge", str(pr), "--repo", GH_REPO,
+                          "--merge", "--delete-branch"], timeout=300)
+            if rc == 0:
+                break
+            if "queued" in out or "pending" in out or "in progress" in out.lower():
+                # a required check re-queued between the wait and the merge
+                ok, detail = wait_for_checks(pr, timeout=600)
+                if not ok:
+                    event(state, f"{unit['id']}: check not green before merge: "
+                                 f"{tail(detail, 4)}")
+                    return False
+                continue
             event(state, f"{unit['id']}: gh pr merge failed: {out[-400:]}")
+            return False
+        else:
+            event(state, f"{unit['id']}: merge gave up after 3 attempts")
             return False
         unit["status"] = "merged"
         unit["updated"] = now()
@@ -770,10 +784,49 @@ def adopt_branch_unit(unit: dict, state: dict) -> bool:
     unit["updated"] = now()
     unit["reason"] = (f"adopted: PR #{pr or '?'} ({branch}) merged into origin/main "
                       f"at {head[:12]}; check.sh green on main (no merge re-run)")
-    state["merged_today"] = int(state.get("merged_today", 0)) + 1
+    # Adoption does NOT consume the daily merge budget: nothing was merged here.
     event(state, f"{unit['id']}: ADOPTED {branch} (PR #{pr or '?'} already in main "
                  f"{head[:12]})")
     return True
+
+
+def attach_worktree(unit: dict) -> Path:
+    """Worktree for a unit whose branch already exists on origin (resume path)."""
+    path = worktree_path(unit)
+    branch = unit_branch(unit)
+    git("fetch", "origin")
+    if path.exists() and (path / ".git").exists():
+        return path
+    if path.exists():
+        shutil.rmtree(path)
+    rc, out = git("worktree", "add", str(path), branch)
+    if rc != 0:
+        rc, out = git("worktree", "add", str(path), f"origin/{branch}")
+    if rc != 0:
+        raise RuntimeError(f"cannot attach worktree for {unit['id']}: {out}")
+    return path
+
+
+def resume_open_prs(roadmap: dict, state: dict) -> None:
+    """Re-enter the merge queue for units left queued or with an open PR.
+
+    A cycle that ends between 'PR opened' and 'merged' must not lose the PR: the
+    next cycle picks it up here, re-runs the gate on the rebased head and merges
+    it, one at a time under the same lock.
+    """
+    for uid in sorted(roadmap):
+        u = roadmap[uid]
+        if u.get("status") not in ("queued", "pr_open") or not u.get("pr"):
+            continue
+        if int(state.get("merged_today", 0)) >= MAX_MERGE_PER_DAY:
+            event(state, f"{uid}: daily merge cap reached; PR left open")
+            return
+        try:
+            wt = attach_worktree(u)
+            event(state, f"{uid}: resuming merge queue for PR #{u['pr']}")
+            merge_queue(u, wt, state)
+        except Exception as exc:
+            event(state, f"{uid}: resume failed: {exc}")
 
 
 def deps_merged(unit: dict, roadmap: dict) -> bool:
@@ -1104,6 +1157,7 @@ def cycle() -> None:
         for u in roadmap.values():
             if u.get("status") == "building":
                 u["status"] = "todo"
+        resume_open_prs(roadmap, state)
         dispatch(roadmap, state)
         maybe_plan(roadmap, state)
         save_roadmap(roadmap)
