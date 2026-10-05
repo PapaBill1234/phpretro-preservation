@@ -30,6 +30,9 @@ func ValidateCatalog(c Catalog) error {
 	if !isSupported(c.Locale) {
 		return fmt.Errorf("unsupported locale: %q", c.Locale)
 	}
+	if c.Messages == nil {
+		return fmt.Errorf("malformed messages: nil")
+	}
 	for key, value := range c.Messages {
 		if _, ok := messageKeys[key]; !ok || strings.TrimSpace(value) == "" {
 			return fmt.Errorf("malformed message: %q", key)
