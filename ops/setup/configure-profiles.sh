@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ops/setup/configure-profiles.sh
 #
-# Configure the headless builder/reviewer/planner profiles so no run can ever
-# wait on a prompt. Idempotent; run as the repo user.
+# Configure the headless builder/reviewer/planner/auditor profiles so no run can
+# ever wait on a prompt. Idempotent; run as the repo user.
 #
 #   approvals.single_query_mode deny   headless -z runs can never hang: a
 #                                      dangerous command is refused instantly
@@ -47,8 +47,8 @@ for p in "${PROFILES[@]}"; do
   echo "configured $p"
 done
 
-# Hermes resolves `-s <name>` in the active profile's skills dir, so the three
-# role skills are installed there under their registered names.
+# Hermes resolves `-s <name>` in the active profile's skills dir, so each role
+# skill is installed there under its registered name.
 install -d "$HOME/.hermes/profiles/builder/skills/unit-builder"
 install -d "$HOME/.hermes/profiles/reviewer/skills/unit-reviewer"
 install -d "$HOME/.hermes/profiles/planner/skills/unit-planner"
