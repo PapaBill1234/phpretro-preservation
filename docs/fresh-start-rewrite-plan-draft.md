@@ -77,7 +77,7 @@ Named services include `AccountService`, `SessionService`, `ProfileService`, `Co
 - IDOR and arbitrary profile targeting; identity and ownership derive from the authenticated session and explicit policy.
 - Session fixation, unsafe cookie attributes, plaintext/weak password storage, token leakage, open redirects, unsafe file/media paths, privilege confusion, and sensitive data in logs.
 
-Every sensitive mutation has validation, authorization, CSRF, prepared SQL, context-safe rendering, and an audit row in the same database transaction. No documented failure contract substitutes for atomic write plus audit. Production enablement is prohibited for registration, payments, client handoff, staff operations, or any emulator write until its decision gate, negative tests, audit behavior, and independent review requirements pass.
+- Every sensitive mutation has validation, authorization, CSRF, prepared SQL, context-safe rendering, and an audit row in the same database transaction. No documented failure contract substitutes for atomic write plus audit. Registration, payments, client handoff, staff operations, and emulator writes remain outside the current bounded work until their decision gates, negative tests, audit behavior, and independent review requirements pass.
 
 ## 4. First-release slices and automated golden contracts
 
@@ -146,7 +146,7 @@ Stop immediately for missing credentials/authority, a payment/quota/auth failure
 
 ## 10. Delivery and decision gates
 
-1. Approve the new repository name `phpretro-preservation`, owner, visibility, access, and evidence transfer list.
+- 1. Record the repository name `phpretro-preservation`, visibility, access, and evidence transfer list.
 2. Run the capped Go foundation slice and review its measured result; confirm or reject Go.
 3. Complete the first-release security and golden-contract slices.
 4. Add PHPRetro and modern themes after provenance review; defer Atom until separately approved.

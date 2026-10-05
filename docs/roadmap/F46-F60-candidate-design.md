@@ -1,6 +1,6 @@
 # F46-F60 Candidate Design
 
-Status: provisional design only. This document does not itself dispatch implementation. Development-only implementation, schema work, CMS writes, authentication/authorization work, and dependent security work may proceed only from exact bounded briefs with independent review and CI; production enablement, credentials, real data, live outside systems, runner changes, and security exceptions remain closed. All identifiers are reserved for this document's planning horizon and must be reconciled by the F31-F60 synthesis coordinator against the live board before dispatch.
+Status: provisional design only. This document does not itself dispatch implementation. Development-only implementation, schema work, CMS writes, authentication/authorization work, and dependent security work may proceed only from exact bounded briefs with independent review and CI; credentials, real data, live outside systems, runner changes, and security exceptions remain closed. All identifiers are reserved for this document's planning horizon and must be reconciled by the F31-F60 synthesis coordinator against the live board before dispatch.
 
 ## Shared decision record
 
@@ -8,8 +8,8 @@ Status: provisional design only. This document does not itself dispatch implemen
 - Current presentation authority is the synthetic React boundary in `frontend/src/themeManifest.ts:1-33`, `frontend/src/viewModel.ts:1-24`, and `frontend/src/StarterShell.tsx:1-6`; F7 evidence requires typed view models and a presentation-only capability. F8 requires data-only catalogs, deterministic fallback, locale-varying cache keys, and no route/auth/CSRF/audit/schema effects.
 - Original-source claims below rely on the read-only F18-F30 research result. Verified source hashes: `housekeeping/index.php` `35437309c6d55af4893034db5ae329b51000836bdff9b3b1c2fe3e086a4cb905`; `housekeeping/news.php` `685f147ec6db963d6bb8796c291d72a2bdd0e84c64ba804f40637108beacdaf7`; `housekeeping/settings.php` `3307a95980161774ee746d038efca3f96f4adc6bfd9382de9856aed5de77a2cf`; `housekeeping/logs.php` `b57ed095c7fd37f43e3da21a6081b93e7d91ec37cc502c63f69f4667bde34d35`; `templates/community_header.php` `131991d4d5db23d3cb537ddcb07931efc2191c04e4aa2ef46d46ae88efa5cd17`; `templates/housekeeping_header.php` `4c7c34ce1d190c58e0590c0eac70438af6dacb21a4a488d42d97d0242454a092`.
 - `community.php` (`113fcfcbf177f357bc6a4204bf1db31c473319db4c6c79b8bf14b9b326d16ef0`) and `articles.php` (`041fd442b696c12d0f3ce2bdfdd2312fb7fe44ac4d94c8244cafe74ccb02a893`) are cross-reference only and do not duplicate F17 archive evidence.
-- No housekeeping/admin/theme-production browser capture is retained. CMS schema, row provenance, staff permissions, locale storage, asset provenance, publication/rollback semantics, and production rendering are UNKNOWN unless explicitly marked below.
-- Owner: `visual` owns presentation-only synthetic fixture work after an exact development brief. `frontend` owns reviewed React implementation. `coordinator` owns roadmap numbering, schema/ownership/security/production decisions. Independent reviewer: `reviewer` for every implementation or evidence candidate.
+- No housekeeping/admin/theme browser capture is retained. CMS schema, row provenance, staff permissions, locale storage, asset provenance, and publication/rollback semantics are UNKNOWN unless explicitly marked below.
+- Owner: `visual` owns presentation-only synthetic fixture work after an exact development brief. `frontend` owns reviewed React implementation. `coordinator` owns roadmap numbering and schema/ownership/security decisions. Independent reviewer: `reviewer` for every implementation or evidence candidate.
 - Per-unit provisional cap: 20,000 uncached input tokens, 10,000 cached input tokens, 6,000 output tokens, 60 minutes. Stop on missing evidence, hash mismatch, secret, guessed schema/ownership, unsafe asset path, authorization/CSRF/audit uncertainty, provider failure, or request outside the exact paths.
 
 ## Candidate units
@@ -41,7 +41,7 @@ Status: provisional design only. This document does not itself dispatch implemen
 - Proposed paths: `frontend/src/localization/catalogPackage.ts`, `frontend/tests/localization-package.test.ts`, `docs/evidence/F49-locale-catalog.md`.
 - Missing decisions: production locale inventory, catalog storage/ownership, package signing or hash policy, activation permissions, translated content scope, and compatibility policy for content versions.
 - Negative tests: reject unsupported package/catalog versions, incomplete declared keys, executable values, duplicate locale/key entries, incompatible content version, and locale-dependent route/auth fields.
-- Readiness: proposal-ready synthetic package boundary; production catalog activation is gated. Owner `visual`/`frontend`; reviewer `reviewer`.
+- Readiness: proposal-ready synthetic package boundary; catalog activation remains separately gated. Owner `visual`/`frontend`; reviewer `reviewer`.
 - Acceptance: synthetic package fixtures prove manifest validation and compatibility checks beyond F8's lookup tests, while preserving fixed `home.v1` keys and explicit missing state. Stop if persistence, signing, or activation requires schema/security decisions.
 
 ### F50 - Locale-aware cache integration and invalidation
@@ -139,14 +139,14 @@ Status: provisional design only. This document does not itself dispatch implemen
 - Observable contract: a release candidate is accepted only when typed view-model, theme manifest, locale, asset provenance, browser, cache, audit, and golden-contract checks report explicit pass/blocked/UNKNOWN states.
 - Authority: new website-owned release design constrained by F4/F7/F8 evidence and repository CI policy; not a production release approval.
 - Proposed paths: `docs/evidence/F59-release-verification.md`, `frontend/tests/**` only after each prerequisite is approved, existing CI configuration only through a separate coordinator decision.
-- Missing decisions: exact CI matrix, browser runner, asset/license scan, cache integration, CMS schema, production boundary, and review sign-off policy.
+- Missing decisions: exact CI matrix, browser runner, asset/license scan, cache integration, CMS schema, and review sign-off policy.
 - Negative tests: fail closed on missing artifact, stale provenance, unsupported capability, failed audit, cache invalidation error, red browser/golden check, or secret detection.
 - Readiness: proposal-ready as a checklist; implementation/release enablement gated. Owner `coordinator`; reviewer `reviewer`.
 - Acceptance: list base/head SHA, changed paths, test output, unresolved UNKNOWNs, and no production claims. Stop on unexplained red CI or missing required evidence.
 
 ### F60 - First-release presentation and CMS readiness gate
 
-- Observable contract: the first-release decision packet distinguishes synthetic presentation contracts, source-backed public behavior, gated CMS design, and production enablement; no design label silently grants implementation authority.
+- Observable contract: the first-release decision packet distinguishes synthetic presentation contracts, source-backed public behavior, and gated CMS design; no design label silently grants implementation authority.
 - Authority: new website-owned governance document constrained by `DECISIONS.md:23-24,33-35`, `tasks/queue.md:23-30`, and `docs/ai-run-state.md:5-15`.
 - Proposed paths: `docs/roadmap/F46-F60-candidate-design.md` (this document), later synthesis `docs/roadmap/F18-F60-readiness-summary.md`; no product paths.
 - Missing decisions: F17 publication reconciliation (F16 is delivered), independent synthesis review, development schema/security decisions, and first-release planning estimate validation.
@@ -156,6 +156,6 @@ Status: provisional design only. This document does not itself dispatch implemen
 
 ## Numbering and release conclusion
 
-F46-F60 contain thirteen distinct provisional designs (F48-F60), including two governance/checklist packets (F59/F60), and two unfilled slots (F46/F47). These are not thirteen authorized implementation units. F46/F47 repeat accepted F7 boundaries without distinct new evidence; F30 stays unfilled rather than granting theme/CMS authority. F54 excludes F17/F24/F29/F40 endpoint behavior. The readiness summary estimates first-release work separately from broad parity; F17 publication, CMS/schema/security/browser/publication/media gates remain open. The accepted foundation through F16 plus the local-only F17 candidate is not a production-ready website. Housekeeping writes, rollback, uploads, optional modern assets, Atom, Pixel63 and SWF remain outside current authorization.
+F46-F60 contain thirteen distinct provisional designs (F48-F60), including two governance/checklist packets (F59/F60), and two unfilled slots (F46/F47). These are not thirteen authorized implementation units. F46/F47 repeat accepted F7 boundaries without distinct new evidence; F30 stays unfilled rather than granting theme/CMS authority. F54 excludes F17/F24/F29/F40 endpoint behavior. The readiness summary estimates first-release work separately from broad parity; F17 publication, CMS/schema/security/browser/publication/media gates remain open. The accepted foundation through F16 plus the local-only F17 candidate is not a complete website. Housekeeping writes, rollback, uploads, optional modern assets, Atom, Pixel63 and SWF remain outside current authorization.
 
-No slots are silently converted into implementation work. The synthesis coordinator must reconcile this file with F31-F45 and F18-F30, verify all cited hashes and source lines, preserve explicit gaps, run scope/secret/diff checks, and obtain independent review before any design-only delivery. No production CMS/admin capture, schema, credential, real-data, or runner material is included here.
+No slots are silently converted into implementation work. The synthesis coordinator must reconcile this file with F31-F45 and F18-F30, verify all cited hashes and source lines, preserve explicit gaps, run scope/secret/diff checks, and obtain independent review before any design-only delivery. No CMS/admin capture, schema, credential, real-data, or runner material is included here.

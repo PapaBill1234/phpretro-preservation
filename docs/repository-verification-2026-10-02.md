@@ -24,10 +24,10 @@ Recent history contains the F3, F4, F5, and foundation-completion merges, includ
 ## Foundation status
 
 - `tasks/queue.md` states F0-F5 are accepted and F6+ are deferred.
-- `docs/ai-run-state.md` states there is no active unit and no implementation scope is authorized until a new owner-approved brief is merged.
+- `docs/ai-run-state.md` states there is no active unit and no implementation scope is authorized until a new exact brief is merged.
 - F3, F4, and F5 implementation files and synthetic tests are present under `internal/profile`, `tests/golden`, and `internal/content`.
 - F1 and F2 evidence documents record BCrypt/`$2y$` source evidence, synthetic-only testing, and UNKNOWN runtime row contents.
-- Deferred production registration, payments, emulator writes, client handoff, staff operations, Pixel63, Atom, Redis/nginx/metrics/fuzzing, and SWF remain closed.
+- Deferred registration, payments, emulator writes, client handoff, staff operations, Pixel63, Atom, Redis/nginx/metrics/fuzzing, and SWF remain outside the bounded development scope.
 
 ## Test evidence
 
@@ -50,4 +50,4 @@ Executed in `golang:1.25.13` with the repository mounted read-only for verificat
 
 ## Authorization conclusion
 
-F0-F5 are actually accepted on `main`. No work unit is currently authorized. The smallest sensible next unit is the handoff's evidence-first disposable PolarIS-shaped database adapter brief, but it must first be written and merged with an exact file scope, base SHA `d60186af8621ac9211070b860a8d71c2d0ad0741`, synthetic database-only evidence, explicit SQL column lists, no writes or production connection, and the listed test/security/license acceptance gates.
+F0-F5 are actually accepted on `main`. No work unit is currently authorized. The smallest sensible next unit is the handoff's evidence-first disposable PolarIS-shaped database adapter brief, but it must first be written and merged with an exact file scope, base SHA `d60186af8621ac9211070b860a8d71c2d0ad0741`, synthetic database-only evidence, explicit SQL column lists, no writes or live-system connection, and the listed test/security/license acceptance gates.

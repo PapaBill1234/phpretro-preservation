@@ -64,7 +64,7 @@ Each row has one primary observable contract. Paths are proposed future paths, n
 
 Shared delivery criteria
 
-- Every implementation proposal must be split from evidence recovery and from production enablement. A passing synthetic test does not establish deployed PolarIS rows, capture parity, or permission to ship.
+- Every implementation proposal must be split from evidence recovery. A passing synthetic test does not establish deployed PolarIS rows, capture parity, or permission to use live systems.
 - Any unit touching authentication, sessions, CSRF, TOTP, audit, privacy, ownership, or staff operations remains coordinator-owned for the decision and requires independent security review. Backend owns only the bounded implementation after the gate.
 - Proposed paths above must be reconciled against the live board before dispatch. No raw PHP, rendered HTML, cookie jar, credential, real user row, migration, production handler, or runner change belongs in this lane.
 - Each future card must pin the accepted base SHA, exact path scope, evidence inputs, negative tests, cap, and stop conditions; it must run the applicable Go/React checks, `git diff --check`, and a secret scan.
@@ -80,6 +80,6 @@ Public/support research reconciliation (`t_88da52c3`)
 
 Explicitly unfilled or deferred scope
 
-- No additional F31-F45 slot is available for registration writes, password-reset mail/account enumeration, CMS/admin mutations, client handoff, emulator writes, Pixel63, Atom, SWF, production enablement, or runner changes. Those topics require separate source-backed proposals or remain outside development scope; production and live-system work remains closed.
+- No additional F31-F45 slot is available for registration writes, password-reset mail/account enumeration, CMS/admin mutations, client handoff, emulator writes, Pixel63, Atom, SWF, or runner changes. Those topics require separate source-backed proposals or remain outside development scope; live-system work remains closed.
 - The observed legacy guestbook delete-by-entry-ID behavior is not accepted as a desired contract. It is a security finding and a stop condition until owner, widget, and entry authorization are independently specified.
 - Runtime database rows, deployed schema variants, session-cookie provenance, direct security-check responses, profile/guestbook captures, staff records, and audit-table ownership remain `UNKNOWN` where not cited above.
