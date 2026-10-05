@@ -27,9 +27,9 @@ type Settings struct {
 // source contract. The fields are booleans because the source does not provide
 // a separate enum or persistence schema for them.
 type Preferences struct {
-	HomeVisible   bool
-	OnlineVisible bool
-	MinimailAlertsEnabled bool
+	HomeVisible                bool
+	OnlineVisible              bool
+	MinimailAlertsEnabled      bool
 	FriendRequestAlertsEnabled bool
 }
 
