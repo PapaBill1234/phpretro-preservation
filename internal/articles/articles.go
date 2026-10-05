@@ -8,13 +8,13 @@ import (
 
 // Article is the read-only public content shape. It has no CMS write operations.
 type Article struct {
-	Path      string
-	Title     string
-	Category  string
-	ImageURL  string
-	Summary   string
-	Story     string
-	Author    string
+	Path     string
+	Title    string
+	Category string
+	ImageURL string
+	Summary  string
+	Story    string
+	Author   string
 }
 
 type Policy struct {
