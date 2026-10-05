@@ -1705,10 +1705,9 @@ def report_lines(roadmap: dict, state: dict) -> list:
             + (f"; over per-unit cap: {', '.join(over_cap)}" if over_cap else ""))
     unresolved = []
     open_prs = sorted((u["id"], int(u.get("pr") or 0)) for u in roadmap.values()
-                      if u.get("status") in ("queued", "pr_open")
-                      and int(u.get("pr") or 0))
+                      if int(u.get("pr") or 0) and u.get("status") != "merged")
     if open_prs:
-        unresolved.append("open PRs awaiting merge: " +
+        unresolved.append("open PRs not yet merged: " +
                           ", ".join(f"{i} (#{p})" for i, p in open_prs))
     if STOP_FILE.exists():
         unresolved.append("STOP file present")
