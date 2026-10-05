@@ -1,0 +1,18 @@
+[Unit]
+Description=Check the PHP-Retro failure-alert conditions and message only if something is wrong
+Documentation=file:/home/ubuntu/phpretro-preservation/ops/README.md
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/phpretro-preservation
+Environment=HOME=/home/ubuntu
+Environment=PATH=/home/ubuntu/.local/bin:/home/ubuntu/.local/go-bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/python3 /home/ubuntu/phpretro-preservation/ops/nightly.py --alerts
+TimeoutStartSec=300
+StandardOutput=append:/home/ubuntu/phpretro-ops/logs/nightly.log
+StandardError=append:/home/ubuntu/phpretro-ops/logs/nightly.log
+
+[Install]
+WantedBy=multi-user.target

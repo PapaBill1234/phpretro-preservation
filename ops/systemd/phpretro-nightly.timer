@@ -1,0 +1,13 @@
+[Unit]
+Description=Run the PHP-Retro nightly checks once a night
+Documentation=file:/home/ubuntu/phpretro-preservation/ops/README.md
+
+[Timer]
+Unit=phpretro-nightly.service
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+AccuracySec=1min
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

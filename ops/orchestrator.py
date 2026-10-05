@@ -113,6 +113,7 @@ STATE_JSON = STATE_DIR / "units.state.json"
 STATE_MD = STATE_DIR / "STATE.md"
 LIVE_UNITS = STATE_DIR / "units.live.yaml"
 REPO_UNITS = REPO / "units.yaml"
+NIGHTLY_JSON = STATE_DIR / "nightly.json"
 
 RUNNABLE = ("todo", "building", "pr_open", "queued")
 
@@ -271,7 +272,7 @@ def parse_yaml(text: str) -> dict:
 
 STATE_KEYS = ("status", "pr", "attempts", "tokens", "wall_s", "model", "reason",
               "review_rounds", "conflict_rounds", "planner_retries", "branch",
-              "feedback", "split_requested")
+              "feedback", "split_requested", "fixes_route")
 DEF_KEYS = ("title", "depends_on", "paths", "tests", "acceptance", "fixtures",
             "fidelity_notes", "size", "design_doc", "unclear_semantics")
 
@@ -1662,6 +1663,183 @@ def dispatch(roadmap: dict, state: dict) -> None:
             event(state, f"{u['id']}: pipeline error: {exc}")
 
 
+def nightly_lines() -> list:
+    """Render the nightly integration check and self-check for STATE.md."""
+    led = read_json(NIGHTLY_JSON, {})
+    if not led:
+        return ["- nightly checks: not run yet "
+                "(ops/nightly.py --integration --selfcheck)"]
+    lines = []
+    for name, label in (("integration", "integration"), ("selfcheck", "self-check")):
+        e = led.get(name)
+        if not e:
+            lines.append(f"- {label}: not run yet")
+            continue
+        state_txt = "PASS" if e.get("ok") else "FAIL"
+        detail = ""
+        if name == "integration":
+            fading = e.get("failing_routes") or []
+            detail = ("routes ok: " + str(len(e.get("routes", []))) if e.get("ok")
+                      else "failing: " + ", ".join(fading) if fading
+                      else e.get("error", "unknown"))
+        else:
+            bad = [c["name"] for c in e.get("checks", []) if not c.get("ok")]
+            detail = "all checks ok" if e.get("ok") else "failing: " + ", ".join(bad)
+        fails = int(e.get("consecutive_failures", 0))
+        if not e.get("ok"):
+            fails = nightly_consecutive_failures(name)
+        lines.append(f"- {label}: {state_txt} ({detail})"
+                     + (f"; {fails} consecutive failures" if not e.get("ok") else ""))
+    return lines
+
+
+def nightly_consecutive_failures(name: str) -> int:
+    led = read_json(NIGHTLY_JSON, {})
+    n = 0
+    for entry in reversed([h for h in led.get("history", []) if h.get("name") == name]):
+        if entry.get("ok"):
+            break
+        n += 1
+    return n
+
+
+def queue_nightly_fixes(roadmap: dict, state: dict) -> None:
+    """Turn failing integration routes into planner fix requests, once each.
+
+    A route that is already the subject of an open fix unit is not queued again,
+    so a persistent failure does not pile up duplicate units.
+    """
+    led = read_json(NIGHTLY_JSON, {})
+    integ = led.get("integration") or {}
+    if integ.get("ok"):
+        state["nightly_fix_queue"] = []
+        return
+    failing = integ.get("failing_routes") or []
+    if not failing and integ.get("error"):
+        # The server would not build or start: that is a whole-server fix, not
+        # a per-route one.
+        failing = ["(server did not build or start)"]
+    queued = {r.get("route"): r for r in state.get("nightly_fix_queue", [])}
+    open_routes = {u.get("fixes_route") for u in roadmap.values()
+                   if u.get("fixes_route")
+                   and u.get("status") not in ("merged", "parked-final")}
+    kept = []
+    for route in failing:
+        if route in open_routes:
+            continue
+        if route in queued:
+            kept.append(queued[route])
+            continue
+        detail = integ.get("error", "")
+        if not detail:
+            for r in integ.get("routes", []):
+                if r.get("path") == route and not r.get("ok"):
+                    detail = (f"status {r.get('status')} (want {r.get('want_status')}); "
+                              f"key {r.get('key')!r} found={r.get('key_found')}")
+                    break
+        kept.append({"route": route,
+                     "title": f"Fix the failing route {route}",
+                     "reason": f"nightly integration check: {detail}",
+                     "planner_retries": 0})
+    state["nightly_fix_queue"] = kept
+
+
+def maybe_plan_nightly_fix(roadmap: dict, state: dict) -> bool:
+    """Ask the planner to open a fix unit for the next failing route.
+
+    Returns True when it ran (whether or not the planner produced a unit).
+    """
+    queue = state.get("nightly_fix_queue") or []
+    if not queue:
+        return False
+    req = queue[0]
+    model = MODEL["deepseek"]
+    prompt = f"""PLAN-FIX {req['route']}
+
+The nightly integration check failed for this route:
+{req['reason']}
+
+Open one bounded fix unit that makes this route work again. Rules:
+- size S or M, never L;
+- list only the paths a fix to this route plausibly needs (max 8),
+  including docs/units/<id>.md;
+- use a fresh id of the form NF<n> (e.g. NF1) that collides with no existing
+  unit id;
+- output only the YAML block, starting with a top-level `units:` line.
+"""
+    (BRIEF_DIR / f"NFIX-{abs(hash(req['route'])) % 10000}.md").write_text(prompt)
+    event(state, f"nightly: planner ({model}) fix for {req['route']}")
+    rc, out, usage = hermes_run("planner", model, prompt, "file", REPO,
+                                f"nightly-fix-{abs(hash(req['route'])) % 10000}", 900)
+    tokens = usage_tokens(usage)
+    state["tokens_today"] = int(state.get("tokens_today", 0)) + tokens
+    req["planner_retries"] = int(req.get("planner_retries", 0)) + 1
+    before = set(roadmap)
+    ok = False
+    if rc == 0:
+        ok = apply_planner_output(roadmap, state, req, out, old_id="", mode="fix")
+        if ok:
+            for uid in set(roadmap) - before:
+                roadmap[uid]["fixes_route"] = req["route"]
+    if ok:
+        state["nightly_fix_queue"] = queue[1:]
+        event(state, f"nightly: opened a fix unit for {req['route']}")
+    elif req["planner_retries"] >= PLANNER_RETRIES:
+        state["nightly_fix_queue"] = queue[1:]
+        event(state, f"nightly: could not open a fix unit for {req['route']} "
+                     f"after {req['planner_retries']} planner attempts")
+    else:
+        event(state, f"nightly: planner output rejected for {req['route']} "
+                     f"({req['planner_retries']}/{PLANNER_RETRIES})")
+    return True
+
+
+def read_env_var(name: str) -> str:
+    """Read a variable from ``~/.hermes/.env`` (the documented ntfy setup)."""
+    val = os.environ.get(name, "").strip()
+    if val:
+        return val
+    try:
+        for ln in (HOME / ".hermes" / ".env").read_text().splitlines():
+            ln = ln.strip()
+            if ln.startswith(f"{name}=") and not ln.startswith("#"):
+                return ln.split("=", 1)[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return ""
+
+
+def alerts_lines() -> list:
+    """Render the alert channel, its triggers, and any setup steps for STATE.md."""
+    topic = (read_env_var("PHPRETRO_ALERT_TOPIC") or read_env_var("NTFY_TOPIC"))
+    led = read_json(STATE_DIR / "alerts.json", {})
+    last = led.get("last", {})
+    lines = []
+    if topic:
+        lines.append(f"- channel: ntfy (public server) -> topic `{topic}`")
+        lines.append("- trigger conditions (a one-line message is sent only for these): "
+                     "no merge in 24h; a cap hit; the STOP file exists; the integration "
+                     "check or self-check failed twice in a row; disk over 85%")
+        if last.get("sent_at"):
+            lines.append(f"- last alert: {last['sent_at']} :: "
+                         + "; ".join(last.get("conditions", [])))
+        else:
+            lines.append("- last alert: none yet")
+        lines.append("- to receive: install the ntfy app (https://ntfy.sh/docs/subscribe/phone/), "
+                     f"tap +, enter topic `{topic}`. No account or token is needed on the public "
+                     "server. The topic name is the only secret - keep it out of screenshots and logs.")
+        lines.append("- to make the topic private (optional): reserve it on ntfy.sh, then set "
+                     "`NTFY_TOKEN` in ~/.hermes/.env and restart.")
+    else:
+        lines.append("- channel: NOT configured. No alert can be delivered.")
+        lines.append("- setup (no account needed): install the ntfy app "
+                     "(https://ntfy.sh/docs/subscribe/phone/) and note your topic name; then add "
+                     "`NTFY_TOPIC=<your-topic>` and `NTFY_PUBLISH_TOPIC=<your-topic>` to "
+                     "`~/.hermes/.env`; subscribe to that topic in the app. Verify with "
+                     "`hermes send --to ntfy:<your-topic> \"test\"`.")
+    return lines
+
+
 def unit_tokens(unit: dict) -> int:
     """A unit's total spend: its recorded counter, or its usage logs.
 
@@ -1747,6 +1925,10 @@ def write_state_md(roadmap: dict, state: dict) -> None:
         "",
     ]
     lines += report_lines(roadmap, state)
+    lines += ["", "## Nightly checks", ""]
+    lines += nightly_lines()
+    lines += ["", "## Alerts", ""]
+    lines += alerts_lines()
     lines += ["", "## Counts by status", ""]
     for k in sorted(counts):
         lines.append(f"- {k}: {counts[k]}")
@@ -1799,7 +1981,12 @@ def cycle() -> None:
                 continue
         resume_open_prs(roadmap, state)
         dispatch(roadmap, state)
-        maybe_plan(roadmap, state)
+        # A failed nightly integration route becomes a planner fix unit. Run it
+        # in place of the normal planner pass so a cycle makes at most one
+        # planner call.
+        queue_nightly_fixes(roadmap, state)
+        if not maybe_plan_nightly_fix(roadmap, state):
+            maybe_plan(roadmap, state)
         save_roadmap(roadmap)
         write_json(STATE_JSON, state)
         write_state_md(roadmap, state)
