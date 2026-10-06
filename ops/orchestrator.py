@@ -1748,6 +1748,23 @@ def strip_advisory_deps(live: dict) -> None:
             u["depends_on"] = kept
 
 
+def planner_pending(roadmap: dict) -> bool:
+    """Can the planner still turn something into real (non-advisory) work?
+
+    True when a design, un-rewritten parked, or split-requested unit is waiting
+    on a planner pass. Used to give promotion priority over advisory QA.
+    """
+    for u in roadmap.values():
+        if u.get("status") == "design" and int(u.get("planner_retries", 0)) < PLANNER_RETRIES:
+            return True
+        if u.get("status") == "parked" and int(u.get("planner_retries", 0)) < PLANNER_RETRIES:
+            return True
+        if u.get("split_requested") and u.get("status") == "todo" \
+                and int(u.get("planner_retries", 0)) < PLANNER_RETRIES:
+            return True
+    return False
+
+
 def select_ready(roadmap: dict, state: dict) -> list:
     if int(state.get("merged_today", 0)) >= MAX_MERGE_PER_DAY:
         event(state, f"daily merge cap reached ({MAX_MERGE_PER_DAY}); not dispatching")
@@ -1814,6 +1831,11 @@ def select_ready(roadmap: dict, state: dict) -> list:
     # advisory ones wait.
     if any(not is_advisory(u) for u in ready):
         ready = [u for u in ready if not is_advisory(u)]
+    elif planner_pending(roadmap):
+        # Only advisory work is ready, but the planner can still turn design /
+        # parked / split units into real F work. Promoting a feature unit beats
+        # running advisory QA, so leave the board to the planner this cycle.
+        ready = []
     return ready
 
 
@@ -3000,6 +3022,8 @@ def diagnosis_lines(roadmap: dict, state: dict) -> list:
              and int(state.get("tokens_today", 0)) < DAILY_TOKEN_CAP]
     if any(not is_advisory(u) for u in ready):
         ready = [u for u in ready if not is_advisory(u)]  # QA waits for real work
+    elif ready and planner_pending(roadmap):
+        ready = []                                       # promotion beats QA
     active = [u["id"] for u in roadmap.values()
               if u.get("status") in ("building", "pr_open", "queued")]
     if active:
@@ -3277,6 +3301,27 @@ units:
     strip_advisory_deps(adv)
     assert adv["F40"]["depends_on"] == [], adv["F40"]
     assert adv["QA2"]["depends_on"] == ["QA1"], adv["QA2"]  # QA may depend on QA
+    # QA yields to real work; but when only advisory work is ready AND the
+    # planner can still promote a design unit, promotion wins (otherwise QA
+    # starves promotion).
+    _save_jev = jev_size_check
+    globals()["jev_size_check"] = lambda u: {"action": "run_as_is", "source": "rule"}
+    _sel = select_ready({"F99": {"id": "F99", "status": "todo", "paths": ["p/f"], "tokens": 0},
+                         "QA9": {"id": "QA9", "status": "todo", "kind": "audit-fix",
+                                 "paths": ["p/q"], "tokens": 0}},
+                        {"merged_today": 0, "tokens_today": 0})
+    assert [u["id"] for u in _sel] == ["F99"], _sel
+    _road = {"QA9": {"id": "QA9", "status": "todo", "kind": "audit-fix",
+                     "paths": ["p/q"], "tokens": 0},
+             "F32": {"id": "F32", "status": "design", "planner_retries": 0}}
+    assert planner_pending(_road)
+    assert select_ready(_road, {"merged_today": 0, "tokens_today": 0}) == [], "QA starved promotion"
+    _road2 = {"QA9": {"id": "QA9", "status": "todo", "kind": "audit-fix",
+                      "paths": ["p/q"], "tokens": 0},
+              "F33": {"id": "F33", "status": "design-blocked", "planner_retries": 2}}
+    assert not planner_pending(_road2)
+    assert [u["id"] for u in select_ready(_road2, {"merged_today": 0, "tokens_today": 0})] == ["QA9"]
+    globals()["jev_size_check"] = _save_jev
     # a QA todo blocked on a parked QA unit is not ready, and must not stop the
     # planner from promoting the design backlog. Two parked units exercise the
     # multi-element sort that a single parked unit would not (regression: a bare
