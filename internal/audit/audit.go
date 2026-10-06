@@ -24,6 +24,7 @@ var (
 	ErrUnauthorized   = errors.New("audit mutation unauthorized")
 	ErrInvalidInput   = errors.New("audit mutation invalid")
 	ErrAuditFailure   = errors.New("audit record failure")
+	ErrReplay         = errors.New("audit mutation replay rejected")
 	ErrWriteFailure   = errors.New("audit mutation write failure")
 	ErrStore          = errors.New("audit store unavailable")
 )
@@ -184,6 +185,11 @@ func (s *MemoryStore) ApplyAtomically(ctx context.Context, mutation Mutation, re
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	for _, row := range s.rows {
+		if row.Target == mutation.Target && row.TargetID == mutation.TargetID {
+			return ErrReplay
+		}
+	}
 	if s.FailWrite != nil {
 		return fmt.Errorf("%w: %v", ErrWriteFailure, s.FailWrite)
 	}

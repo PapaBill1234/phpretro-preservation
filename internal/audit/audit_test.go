@@ -96,6 +96,27 @@ func TestAuthorizedMutationCommitsAtomically(t *testing.T) {
 	}
 }
 
+// TestReplayIsRejected proves a committed synthetic target cannot be applied
+// twice. Evidence: docs/evidence/F35-audit-transaction.md, replay requirement.
+func TestReplayIsRejected(t *testing.T) {
+	store := NewMemoryStore()
+	plan, err := Prepare(syntheticSelection())
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor := Actor{ID: "staff-1", Role: syntheticSelection().RequiredRole}
+	if err := plan.Dispatch(context.Background(), store, actor, validMutation()); err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.Dispatch(context.Background(), store, actor, validMutation()); !errors.Is(err, ErrReplay) {
+		t.Fatalf("replay err = %v, want ErrReplay", err)
+	}
+	rows, audit := store.Snapshot()
+	if len(rows) != 1 || len(audit) != 1 {
+		t.Fatalf("replay changed store: rows=%#v audit=%#v", rows, audit)
+	}
+}
+
 // TestUnauthorizedOrInvalidCausesNoWriteNoAudit covers the second F35
 // acceptance: denial happens before the store is touched.
 func TestUnauthorizedOrInvalidCausesNoWriteNoAudit(t *testing.T) {
