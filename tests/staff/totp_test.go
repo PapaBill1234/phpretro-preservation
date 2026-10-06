@@ -1,6 +1,7 @@
 package staff_test
 
 import (
+	"encoding/base32"
 	"errors"
 	"github.com/PapaBill1234/phpretro-preservation/internal/staff"
 	"testing"
@@ -70,5 +71,35 @@ func TestValidateRejectsEmptyAndMismatchedStoreIdentity(t *testing.T) {
 func TestStoreErrorFailsClosed(t *testing.T) {
 	if err := staff.ValidateCode(&staff.MemoryStore{Err: errors.New("down")}, "alice", "123456", time.Now()); !errors.Is(err, staff.ErrStore) {
 		t.Fatal(err)
+	}
+}
+
+// Evidence basis: RFC 6238 Appendix B, SHA1 test vectors (time 59, 8 digits).
+func TestExternalRFC6238VectorAndConfiguredParameters(t *testing.T) {
+	secret := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString([]byte("12345678901234567890"))
+	got, err := staff.SyntheticCode(secret, time.Unix(59, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// SyntheticCode's configured contract is 6 digits and a 30-second period;
+	// compare a six-digit RFC computation at its corresponding counter directly.
+	if got != "287082" { // RFC 6238 Appendix B: 94287082 truncated to configured 6 digits.
+		t.Fatalf("got %q, want RFC-derived 287082", got)
+	}
+}
+
+// Evidence basis: synthetic timing policy only; no retained capture establishes skew.
+func TestAdjacentStepsAreRejected(t *testing.T) {
+	now := time.Unix(1_700_000_010, 0)
+	secret := "JBSWY3DPEHPK3PXP"
+	store := &staff.MemoryStore{Records: map[string]staff.Record{"alice": {StaffID: "alice", Secret: secret, Enabled: true}}}
+	for _, delta := range []time.Duration{-30 * time.Second, 30 * time.Second} {
+		code, err := staff.SyntheticCode(secret, now.Add(delta))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := staff.ValidateCode(store, "alice", code, now); !errors.Is(err, staff.ErrExpiredCode) {
+			t.Fatalf("delta %s: got %v, want expired", delta, err)
+		}
 	}
 }
