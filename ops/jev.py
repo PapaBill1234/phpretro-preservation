@@ -245,6 +245,10 @@ def _post(payload: dict, key: str) -> dict:
     return data
 
 
+CONTROL_BEFORE = None
+CONTROL_AFTER = None
+
+
 def call(state, questions: dict, *, place: str = "a", unit: str = "",
          retries: int = RETRIES) -> dict | None:
     """One Decisions request. Returns ``{answers, usage, model}`` or None.
@@ -264,6 +268,10 @@ def call(state, questions: dict, *, place: str = "a", unit: str = "",
     started = time.time()
     while attempt <= max(0, retries):
         attempt += 1
+        rid = CONTROL_BEFORE(unit) if CONTROL_BEFORE else "fixture"
+        if rid is None:
+            return None
+        recorded = False
         try:
             resp = _post(payload, key)
             # Validate at the boundary too, not only inside _post: a transport
@@ -271,9 +279,14 @@ def call(state, questions: dict, *, place: str = "a", unit: str = "",
             # rule rather than make a call site raise on a missing key.
             if not isinstance(resp, dict) or not isinstance(resp.get("answers"), dict):
                 raise ValueError("malformed Decisions response")
+            if CONTROL_AFTER:
+                CONTROL_AFTER(rid, unit, resp.get("usage") or {}, False)
+            recorded = True
             return resp
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
                 ValueError, json.JSONDecodeError, OSError) as exc:
+            if CONTROL_AFTER and not recorded:
+                CONTROL_AFTER(rid, unit, {}, True)
             if attempt > retries:
                 log_fallback(place, unit, f"{type(exc).__name__}: {str(exc)[:160]}",
                              latency_ms=int((time.time() - started) * 1000))
@@ -493,10 +506,8 @@ def _triage_local(unit: dict, output: str, result: dict) -> dict:
 def review_gate(unit: dict, diff: str, tests_pass: bool) -> dict:
     """Decide whether the deepseek review can be skipped (item 2c).
 
-    Skip only when *all* hold: Jev says the diff satisfies the acceptance
-    bullets with probability and confidence both >= 0.9, the diff is under 300
-    changed lines, tests pass, and no sensitive path is touched. Otherwise the
-    reviewer runs exactly as before.
+    Independent review is mandatory. This compatibility function reports
+    deterministic reasons and never calls Jev or returns a waiver.
     """
     decision = {"skip": False, "source": "rule", "probability": None,
                 "confidence": None, "reason": ""}
@@ -513,41 +524,7 @@ def review_gate(unit: dict, diff: str, tests_pass: bool) -> dict:
     if lines >= DIFF_LINE_LIMIT:
         decision["reason"] = f"diff too large ({lines} lines)"
         return decision
-    if not enabled("c"):
-        decision["reason"] = "disabled"
-        return decision
-    state = {
-        "unit": unit.get("id", ""),
-        "acceptance": [str(a) for a in (unit.get("acceptance") or [])][:12],
-        "diff_stats": {"changed_lines": lines, "files": _diff_files(diff)},
-        "tests_pass": bool(tests_pass),
-        "diff": diff if lines < DIFF_LINE_LIMIT else "",
-    }
-    questions = {"satisfies": {
-        "type": "choice",
-        "instructions": ("Does `diff` satisfy every bullet in `acceptance` with "
-                         "no missing or contradicted requirement?"),
-        "criteria": {
-            "yes": "Every acceptance bullet is met by the diff as written.",
-            "no": "At least one bullet is unmet, unclear, or contradicted.",
-        }}}
-    started = time.time()
-    resp = call(state, questions, place="c", unit=unit.get("id", ""))
-    latency = int((time.time() - started) * 1000)
-    if not resp:
-        decision["reason"] = "no answer"
-        return decision
-    option, prob, conf = _choice_answer(resp["answers"], "satisfies")
-    skip = (option == "yes" and prob >= ACCEPT_PROB and conf >= ACCEPT_CONF)
-    # Skipping is the "changed" decision: the rule would have reviewed.
-    _record("c", unit.get("id", ""), "review cascade", option, prob, conf,
-            resp.get("usage") or {}, latency, skip,
-            {"rule": "review", "diff_lines": lines})
-    decision.update({"skip": skip, "source": "jev", "probability": prob,
-                     "confidence": conf,
-                     "reason": "accepted" if skip else "not confident enough"})
-    if skip:
-        note_skip(unit.get("id", ""), lines, int(unit.get("tokens", 0)))
+    decision["reason"] = "independent review mandatory; site c has no waiver authority"
     return decision
 
 

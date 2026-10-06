@@ -150,6 +150,8 @@ def append(path: Path, record: dict) -> None:
     line = json.dumps(scrub(record), sort_keys=True, default=str)
     with path.open("a") as fh:
         fh.write(line + "\n")
+        fh.flush()
+        os.fsync(fh.fileno())
 
 
 def log_run(record: dict) -> None:
@@ -447,13 +449,23 @@ def read_runs(path: Path | None = None):
     """Every run record in the current log plus its rotated predecessors."""
     path = path or RUNS
     files = sorted(STATE.glob(f"{RUNS.stem}-*{RUNS.suffix}")) + [path]
+    records, outcomes = [], {}
     for f in files:
         try:
             for line in f.read_text(errors="replace").splitlines():
                 if line.strip():
-                    yield json.loads(line)
+                    rec = json.loads(line)
+                    kind = rec.get("record_type", "run")
+                    if kind == "outcome":
+                        outcomes[rec.get("run_id")] = rec.get("outcome", "other")
+                    elif kind == "run":
+                        records.append(rec)
         except (OSError, json.JSONDecodeError):
             continue
+    for rec in records:
+        if rec.get("run_id") in outcomes:
+            rec["outcome"] = outcomes[rec["run_id"]]
+        yield rec
 
 
 def run_total(rec: dict) -> int:
@@ -464,6 +476,8 @@ def run_total(rec: dict) -> int:
     the pessimistic estimate. Never returns 0 for an unknown value unless the
     record genuinely has none.
     """
+    if "charged_tokens" in rec:
+        return int(rec["charged_tokens"])
     u = rec.get("usage") or {}
     aux = u.get("total_including_auxiliary") or {}
     val = aux.get("total_tokens") if isinstance(aux, dict) else None
