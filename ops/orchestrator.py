@@ -1976,8 +1976,13 @@ def start_build(unit: dict, state: dict):
     usage = LOG_DIR / f"{unit['id']}-attempt{attempt}.usage.json"
     with_suppress(lambda: usage.unlink())
     logfile = (LOG_DIR / f"{unit['id']}-attempt{attempt}.log").open("w")
+    # ``context_engine`` is REQUIRED when the Token Terminator engine is selected:
+    # the host gates the engine's recovery tool by that permission, and the engine
+    # refuses semantic reduction without it (so the run would silently fall back
+    # to no reduction). Harmless when the profile uses the built-in compressor.
+    toolsets = "file,terminal,context_engine"
     cmd = [HERMES, "-z", prompt, "--usage-file", str(usage), "-m", model,
-           "--provider", PROVIDER, "--reasoning", "low", "-t", "file,terminal",
+           "--provider", PROVIDER, "--reasoning", "low", "-t", toolsets,
            "-s", SKILL_NAME["builder"], "--in", str(wt), "--accept-hooks"]
     proc = subprocess.Popen(cmd, cwd=str(wt), env={**os.environ, **env},
                             stdout=logfile, stderr=subprocess.STDOUT,
@@ -2050,7 +2055,8 @@ def finish_build(job, roadmap: dict, state: dict) -> None:
         _publish_attempt(unit, wt, state, outcome_box)
     finally:
         log_model_run("builder", unit.get("model", ""), uid, attempt_no,
-                      rc, outcome_box["v"], b_usage, "builder", "file,terminal",
+                      rc, outcome_box["v"], b_usage, "builder",
+                      "file,terminal,context_engine",
                       job.get("ts_start", ""), now())
 
 

@@ -217,6 +217,12 @@ class WiringTest(unittest.TestCase):
         self.assertIn("default_flags(profile, toolsets", src)
         self.assertIn("session_id", src)
 
+    def test_builder_dispatch_allows_the_context_engine_toolset(self):
+        """Without the toolset the engine refuses to reduce, silently. Pin it."""
+        src = (self.OPS / "orchestrator.py").read_text()
+        self.assertIn('toolsets = "file,terminal,context_engine"', src)
+        self.assertIn("file,terminal,context_engine", src)
+
 
 if __name__ == "__main__":
     unittest.main()
