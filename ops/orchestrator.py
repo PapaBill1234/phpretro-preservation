@@ -3174,6 +3174,28 @@ def _try_lock(fh) -> bool:
 # CLI
 # --------------------------------------------------------------------------
 
+def run_ops_tests() -> int:
+    """Run the ops/ regression suite (ops/tests/run_all.sh).
+
+    Returns the suite's exit code. ``PHPRETRO_SKIP_OPS_TESTS=1`` skips it when a
+    caller (the nightly self-check) already ran it as its own check, so the suite
+    is never run twice in one job. ``PHPRETRO_OPS_TESTS`` overrides the script
+    path, which lets the suite's own tests point it at a deliberately red copy.
+    """
+    if os.environ.get("PHPRETRO_SKIP_OPS_TESTS") == "1":
+        return 0
+    script = Path(os.environ.get("PHPRETRO_OPS_TESTS",
+                                 Path(__file__).with_name("tests") / "run_all.sh"))
+    if not script.exists():
+        # Fail closed: a missing suite is a broken wiring, not a pass.
+        log(f"ops tests: MISSING {script}")
+        return 2
+    rc, out = sh(["bash", str(script)], cwd=REPO, timeout=900)
+    tail = "\n".join(out.strip().splitlines()[-25:])
+    print(tail, flush=True)
+    return rc
+
+
 def selftest() -> int:
     doc = parse_yaml('''
 version: 1
@@ -3307,125 +3329,17 @@ units:
     assert _median([100, 200]) == 150
     assert _median([]) == 0
 
-    # --- idle-pipeline fixes -------------------------------------------------
-    # QA units are advisory and must never be a feature unit's prerequisite.
-    assert is_advisory({"id": "QA1"})
-    assert is_advisory({"id": "X1", "kind": "audit-fix"})
-    assert not is_advisory({"id": "F31"})
-    assert not is_advisory({"id": "RF1", "kind": "refactor"})
-    adv = {"F40": {"id": "F40", "status": "todo", "depends_on": ["QA1"]},
-           "QA1": {"id": "QA1", "kind": "audit-fix", "status": "parked"},
-           "QA2": {"id": "QA2", "kind": "audit-fix", "status": "todo",
-                   "depends_on": ["QA1"]}}
-    strip_advisory_deps(adv)
-    assert adv["F40"]["depends_on"] == [], adv["F40"]
-    assert adv["QA2"]["depends_on"] == ["QA1"], adv["QA2"]  # QA may depend on QA
-    # QA yields to real work; but when only advisory work is ready AND the
-    # planner can still promote a design unit, promotion wins (otherwise QA
-    # starves promotion).
-    _save_jev = jev_size_check
-    globals()["jev_size_check"] = lambda u: {"action": "run_as_is", "source": "rule"}
-    _sel = select_ready({"F99": {"id": "F99", "status": "todo", "paths": ["p/f"], "tokens": 0},
-                         "QA9": {"id": "QA9", "status": "todo", "kind": "audit-fix",
-                                 "paths": ["p/q"], "tokens": 0}},
-                        {"merged_today": 0, "tokens_today": 0})
-    assert [u["id"] for u in _sel] == ["F99"], _sel
-    _road = {"QA9": {"id": "QA9", "status": "todo", "kind": "audit-fix",
-                     "paths": ["p/q"], "tokens": 0},
-             "F32": {"id": "F32", "status": "design", "planner_retries": 0}}
-    assert planner_pending(_road)
-    assert select_ready(_road, {"merged_today": 0, "tokens_today": 0}) == [], "QA starved promotion"
-    _road2 = {"QA9": {"id": "QA9", "status": "todo", "kind": "audit-fix",
-                      "paths": ["p/q"], "tokens": 0},
-              "F33": {"id": "F33", "status": "design-blocked", "planner_retries": 2}}
-    assert not planner_pending(_road2)
-    assert [u["id"] for u in select_ready(_road2, {"merged_today": 0, "tokens_today": 0})] == ["QA9"]
-    globals()["jev_size_check"] = _save_jev
-    # a QA todo blocked on a parked QA unit is not ready, and must not stop the
-    # planner from promoting the design backlog. Two parked units exercise the
-    # multi-element sort that a single parked unit would not (regression: a bare
-    # sorted() over dicts raises TypeError).
-    stuck = {"QA3": {"id": "QA3", "status": "todo", "depends_on": ["QA1"]},
-             "QA1": {"id": "QA1", "kind": "audit-fix", "status": "parked",
-                     "attempts": 4, "reason": "diff guard"},
-             "QA2": {"id": "QA2", "kind": "audit-fix", "status": "parked",
-                     "attempts": 4, "reason": "quality"},
-             "F32": {"id": "F32", "status": "design"}}
-    assert not deps_merged(stuck["QA3"], stuck)
-    assert any(u.get("status") == "design" for u in stuck.values())
-    # diagnosis renders exactly five lines covering all five questions.
-    diag = diagnosis_lines(stuck, {"merged_today": 0, "tokens_today": 0, "events": []})
-    assert len(diag) == 5, diag
-    assert diag[0].startswith("1. Parked:") and "QA1" in diag[0] and "QA2" in diag[0], diag
-    assert diag[1].startswith("2. F31+") and "F32" in diag[1], diag
-    assert "no STOP file" in diag[2], diag
-    assert diag[3].startswith("4. Timer:"), diag
-    assert diag[4].startswith("5. Dispatch:") and "design" in diag[4], diag
+    # Everything else the pipeline depends on lives in ops/tests/ and is run
+    # below: the diff base, the diff guard, advisory units, planner
+    # non-starvation, the split deadlock, timeout accounting, the pre-push hook
+    # through a real push, the alert streaks, the Jev fail-open paths and the
+    # quality gates. Add a test there when ops/ code changes - not here.
 
-    # maybe_plan: an advisory (QA) todo - blocked or deps-merged - must never
-    # stop promotion of the design backlog (the live pipeline went idle this way).
-    _save_run = hermes_run
-    globals()["hermes_run"] = lambda *a, **k: (0, "", {})
-    st_mp = {"events": [], "tokens_today": 0}
-    ran = maybe_plan({"QA3": {"id": "QA3", "status": "todo", "kind": "audit-fix",
-                              "depends_on": ["QA1"], "tokens": 0},
-                      "QA1": {"id": "QA1", "kind": "audit-fix", "status": "parked"},
-                      "F32": {"id": "F32", "status": "design", "depends_on": [],
-                              "design_doc": "", "planner_retries": 0}}, st_mp)
-    assert ran is True, ran
-    assert any(e["msg"].startswith("F32: planner") for e in st_mp["events"]), st_mp["events"]
-    st_mp2 = {"events": [], "tokens_today": 0}
-    ran2 = maybe_plan({"QA3": {"id": "QA3", "status": "todo", "kind": "audit-fix",
-                               "depends_on": [], "tokens": 0},
-                       "F32": {"id": "F32", "status": "design", "depends_on": [],
-                               "design_doc": "", "planner_retries": 0}}, st_mp2)
-    assert ran2 is True, ran2
-    # ...but a real (non-advisory) todo still holds the planner back
-    assert maybe_plan({"F32": {"id": "F32", "status": "todo", "depends_on": [],
-                               "tokens": 0}}, {"events": []}) is False
-    globals()["hermes_run"] = _save_run
-
-    # select_ready keeps zeroing out advisory QA work while promotion is pending
-    assert planner_pending({"F32": {"id": "F32", "status": "design", "planner_retries": 0}})
-    assert not planner_pending({"F32": {"id": "F32", "status": "design-blocked", "planner_retries": 2}})
-
-    # the guard/quality diff must compare against the merge base (three-dot), so
-    # a file that only main gained after the branch point is not blamed on the
-    # unit (this parked QA1/QA2/F36 before the fix).
-    import tempfile as _tf2
-    import subprocess as _sp2
-    import os as _os2
-    drepo = _tf2.mkdtemp(prefix="orch-diff-")
-
-    def _g(*a):
-        return _sp2.run(["git", *a], cwd=drepo, capture_output=True, text=True)
-
-    _g("init", "-q")
-    _g("config", "user.email", "t@t")
-    _g("config", "user.name", "t")
-    _os2.makedirs(drepo + "/docs/units", exist_ok=True)
-    open(drepo + "/a.txt", "w").write("a")
-    open(drepo + "/docs/units/OTHER.md", "w").write("base")
-    _g("add", "-A")
-    _g("commit", "-qm", "base")
-    trunk = _g("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
-    _g("checkout", "-qb", "unit/X")
-    open(drepo + "/b.txt", "w").write("b")
-    _g("add", "-A")
-    _g("commit", "-qm", "unit work")
-    _g("checkout", "-q", trunk)          # main advances after the branch point
-    open(drepo + "/docs/units/OTHER.md", "w").write("changed on main")
-    open(drepo + "/mainonly.txt", "w").write("m")
-    _g("add", "-A")
-    _g("commit", "-qm", "main advances")
-    two = _g("diff", "--name-only", trunk, "unit/X").stdout.split()
-    three = _g("diff", "--name-only", f"{trunk}...unit/X").stdout.split()
-    assert "mainonly.txt" in two and "docs/units/OTHER.md" in two, two
-    assert "mainonly.txt" not in three, three
-    assert "docs/units/OTHER.md" not in three, three
-    assert "b.txt" in three, three
-    import shutil as _sh2
-    _sh2.rmtree(drepo, ignore_errors=True)
+    # The ops/ regression suite (ops/tests/run_all.sh). A failure here fails the
+    # self-check, which is what drives the nightly alert.
+    if run_ops_tests() != 0:
+        print("ops tests FAILED", flush=True)
+        return 1
 
     print("selftest OK")
     return 0

@@ -265,7 +265,13 @@ def call(state, questions: dict, *, place: str = "a", unit: str = "",
     while attempt <= max(0, retries):
         attempt += 1
         try:
-            return _post(payload, key)
+            resp = _post(payload, key)
+            # Validate at the boundary too, not only inside _post: a transport
+            # that returns a 200 with an unusable body must fall back to the
+            # rule rather than make a call site raise on a missing key.
+            if not isinstance(resp, dict) or not isinstance(resp.get("answers"), dict):
+                raise ValueError("malformed Decisions response")
+            return resp
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
                 ValueError, json.JSONDecodeError, OSError) as exc:
             if attempt > retries:
@@ -665,7 +671,7 @@ def note_miss_recent(reason: str) -> list:
                 .replace(tzinfo=timezone.utc).timestamp()
         except (KeyError, ValueError):
             continue
-        if t >= cutoff and (newest is None or t > newest[0]):
+        if t >= cutoff and (newest is None or t >= newest[0]):
             newest = (t, s["unit"])
     if newest is None:
         return []

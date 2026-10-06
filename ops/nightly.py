@@ -281,12 +281,37 @@ def integration_check() -> dict:
 # Pipeline self-check
 # --------------------------------------------------------------------------
 
+def check_ops_tests() -> dict:
+    """Run the ops/ regression suite (ops/tests/run_all.sh).
+
+    Runs with PHPRETRO_SKIP_OPS_TESTS=1 so the orchestrator's --selftest does
+    not run it a second time in the same job; the suite is the check here.
+    ``PHPRETRO_SUITE_DEPTH`` is bumped so the suite's own meta-tests (which spawn
+    the suite) do not recurse.
+    """
+    script = Path(os.environ.get("PHPRETRO_OPS_TESTS",
+                                 REPO / "ops" / "tests" / "run_all.sh"))
+    if not script.exists():
+        return {"name": "ops/tests/run_all.sh", "ok": False,
+                "detail": f"missing {script}"}
+    depth = int(os.environ.get("PHPRETRO_SUITE_DEPTH", "0")) + 1
+    rc, out = sh(["bash", str(script)], cwd=REPO, timeout=900,
+                 env={"PHPRETRO_SKIP_OPS_TESTS": "1",
+                      "PHPRETRO_SUITE_DEPTH": str(depth)})
+    ok = rc == 0 and "ops/tests: PASS" in out
+    return {"name": "ops/tests/run_all.sh", "ok": ok,
+            "detail": (out.strip() or f"rc={rc}")[-400:]}
+
+
 def check_selftest() -> dict:
     orch = REPO / "ops" / "orchestrator.py"
     if not orch.exists():
         return {"name": "orchestrator --selftest", "ok": False,
                 "detail": f"missing {orch}"}
-    rc, out = sh(["python3", str(orch), "--selftest"], cwd=REPO, timeout=180)
+    # The ops/ suite is check_ops_tests()'s job; skip the copy inside selftest so
+    # the nightly job runs it exactly once (and still fails if it fails).
+    rc, out = sh(["python3", str(orch), "--selftest"], cwd=REPO, timeout=180,
+                 env={"PHPRETRO_SKIP_OPS_TESTS": "1"})
     ok = rc == 0 and "selftest OK" in out
     return {"name": "orchestrator --selftest", "ok": ok,
             "detail": (out.strip() or f"rc={rc}")[-400:]}
@@ -395,7 +420,8 @@ def check_hook_real_push() -> dict:
 
 def selfcheck() -> dict:
     started = now()
-    checks = [check_selftest(), check_hook_syntax(), check_hook_real_push()]
+    checks = [check_selftest(), check_ops_tests(), check_hook_syntax(),
+              check_hook_real_push()]
     return {"name": "selfcheck", "ok": all(c["ok"] for c in checks),
             "started": started, "finished": now(), "checks": checks}
 

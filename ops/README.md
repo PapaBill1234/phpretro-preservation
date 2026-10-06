@@ -36,6 +36,38 @@ A quality failure increments the attempt and returns the unit to the ladder -
 it does not have its own retry budget. The unit's quality record (coverage,
 fidelity, failure reason) is kept in `~/phpretro-ops/state/quality.json`.
 
+## The ops/ test suite
+
+```
+bash ops/tests/run_all.sh          # every test; exit 0 only if all pass
+```
+
+Plain stdlib `unittest` (no pytest, no network). `ops/tests/harness.py` forces
+`HOME`, `PHPRETRO_OPS` and `PHPRETRO_WORK` into a throwaway temp tree before any
+ops module is imported, so a test can never read or write the real pipeline
+state, and deletes it at exit. `PHPRETRO_REPO` still points at the real checkout
+(it is read, not written). Jev's key is hidden, and the agent runner / HTTP are
+monkeypatched, so no test can reach the network.
+
+The suite is wired into the gates:
+
+* `python3 ops/orchestrator.py --selftest` runs it and exits non-zero when it
+  fails;
+* `ops/nightly.py --selfcheck` runs it as its own named check
+  (`ops/tests/run_all.sh`), so a red suite is a FAILED self-check and therefore
+  trips the failure alert after two consecutive nights, exactly like a broken
+  route or a broken hook.
+
+`PHPRETRO_SKIP_OPS_TESTS=1` makes `--selftest` skip its inner copy (the nightly
+job sets this, so the suite runs once per job, not twice). `PHPRETRO_OPS_TESTS`
+overrides the script path, which the suite's own wiring tests use to point the
+entry points at a deliberately red copy.
+
+**When you change anything under `ops/`, add or extend a test here - do not
+write a throwaway harness.** The one-off scripts that verified the diff guard,
+the planner pass, the advisory rule and the timeout accounting live in this
+directory now.
+
 ## Weekly audit and the consistency unit
 
 - **Item 4 - the audit.** Once a week (when no build is in flight), the
