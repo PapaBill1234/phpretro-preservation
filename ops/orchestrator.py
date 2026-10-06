@@ -966,19 +966,25 @@ def changed_files(wt: Path) -> list:
     return sorted(files)
 
 
-def guard_violations(files, allowed) -> list:
+def guard_violations(files, allowed, unit_id: str = "") -> list:
     """Paths a builder may not touch, or that fall outside the unit's list.
 
     Two rules: the repository's protected paths (ops/, CI, skills, AGENTS.md,
     scripts/check.sh) are never a builder's to change; and anything the unit
-    did not list is out of scope. Returns a list of ``(path, reason)``.
+    did not list is out of scope. The unit's own delivery note
+    (``docs/units/<unit_id>.md``) is always permitted: the brief requires the
+    builder to write it, so a unit whose ``paths`` omit it must not be rejected
+    for doing so. Returns a list of ``(path, reason)``.
     """
     allowed = [str(p) for p in (allowed or [])]
+    own_doc = f"docs/units/{unit_id}.md" if unit_id else ""
     bad = []
     for f in files:
         if any(f == p or f.startswith(p) for p in PROTECTED_FILES) or \
            any(f.startswith(p) for p in PROTECTED_PREFIXES):
             bad.append((f, "protected path"))
+            continue
+        if own_doc and f == own_doc:
             continue
         ok = False
         for a in allowed:
@@ -1949,7 +1955,7 @@ def _publish_attempt(unit: dict, wt: Path, state: dict, outcome_box: dict) -> No
     # Checked on the working tree, before commit_if_dirty, so an uncommitted
     # edit to ops/ still fails the attempt instead of being committed.
     files = changed_files(wt)
-    violations = [] if GUARD_DISABLED else guard_violations(files, unit.get("paths"))
+    violations = [] if GUARD_DISABLED else guard_violations(files, unit.get("paths"), uid)
     if GUARD_DISABLED:
         telemetry_event("guard_disabled", uid,
                         "PHPRETRO_GUARD_DISABLED is set: the diff guard did not "
@@ -2127,6 +2133,12 @@ def apply_planner_output(roadmap: dict, state: dict, unit: dict, out: str,
             return False
         if str(e.get("size", "")).upper() == "L":
             return False  # an L must be split
+        # The builder is required to write docs/units/<id>.md; make sure the
+        # replacement's own paths permit it so the diff guard never rejects the
+        # unit for writing its mandated delivery note.
+        doc = f"docs/units/{e['id']}.md"
+        if doc not in e["paths"]:
+            e["paths"] = list(e["paths"]) + [doc]
         e.setdefault("status", "todo")
         e.setdefault("depends_on", [])
         e.setdefault("attempts", 0)
@@ -3255,6 +3267,12 @@ units:
         [(".github/workflows/go-security.yml", "protected path")]
     assert guard_violations(["internal/profile/profile.go"], allowed) == \
         [("internal/profile/profile.go", "outside the unit's listed paths")]
+    # the unit's own delivery note is always permitted, even when its paths omit
+    # it (the brief requires the builder to write docs/units/<id>.md)...
+    assert guard_violations(["docs/units/F25.md"], ["internal/registration"], "F25") == []
+    # ...but another unit's note is still out of scope
+    assert guard_violations(["docs/units/F26.md"], ["internal/registration"], "F25") == \
+        [("docs/units/F26.md", "outside the unit's listed paths")]
     # a split keeps the replacements inside the parent's paths and sizes
     roadmap = {"F9": {"id": "F9", "title": "big", "paths": ["internal/big"],
                       "status": "todo", "split_requested": True,
