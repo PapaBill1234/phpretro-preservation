@@ -512,21 +512,33 @@ def _tt_revert(reason: str) -> bool:
 
 
 def _hermes_venv_python() -> Path | None:
-    """The interpreter Hermes actually runs (the uv-managed runtime venv)."""
-    try:
-        import subprocess as _sp
-        out = _sp.run([str(HERMES), "--print-runtime-command"], capture_output=True,
-                      text=True, timeout=60).stdout
-        m = re.search(r"(/[\w./\-+]+/bin/python[\w.]*)", out)
-        if m and Path(m.group(1)).exists():
-            return Path(m.group(1))
-    except Exception:
-        pass
+    """The dependency venv python Hermes activates (where the package lives).
+
+    ``hermes --print-runtime-command`` names the *launcher* interpreter; the
+    third-party dependency environment is a separate uv-managed venv that
+    ``hermes_bootstrap.activate_dependencies()`` selects at boot. So the right
+    target is the venv that actually contains the distribution, not the launcher.
+    """
     base = HOME / ".hermes" / "installs"
-    for cand in sorted(base.glob("*/environments/*/venv/bin/python")):
-        if cand.exists():
+    candidates = sorted(base.glob("*/environments/*/venv/bin/python"))
+    for cand in candidates:
+        if (cand.parent.parent / "lib").exists() and _venv_has(cand, "rtk_hermes_plus"):
             return cand
+    if candidates:
+        return candidates[-1]
     return None
+
+
+def _venv_has(venv_python: Path, package: str) -> bool:
+    """True when the venv's site-packages contains ``package`` (or its dist)."""
+    lib = venv_python.parent.parent / "lib"
+    try:
+        for sp in lib.glob("python*/site-packages"):
+            if (sp / package).is_dir() or list(sp.glob(f"{package}-*.dist-info")):
+                return True
+    except OSError:
+        pass
+    return False
 
 
 def tt_engine() -> str:
