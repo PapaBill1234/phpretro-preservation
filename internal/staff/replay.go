@@ -11,7 +11,6 @@ import (
 var (
 	ErrReplay     = errors.New("totp step already used")
 	ErrStepWindow = errors.New("totp step outside allowed window")
-	ErrStore      = errors.New("replay store unavailable")
 )
 
 type ReplayStore interface {
