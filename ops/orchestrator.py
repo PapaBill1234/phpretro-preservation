@@ -2992,19 +2992,21 @@ def diagnosis_lines(roadmap: dict, state: dict) -> list:
 
     # 5. does dispatch resume? (lightweight readiness: no Jev call, no state
     #    mutation - diagnosis must not change the thing it reports on)
-    ready = [u["id"] for u in roadmap.values()
+    ready = [u for u in roadmap.values()
              if u.get("status") == "todo" and not u.get("split_requested")
              and deps_merged(u, roadmap)
              and int(u.get("tokens", 0)) < PER_UNIT_TOKEN_CAP
              and int(state.get("merged_today", 0)) < MAX_MERGE_PER_DAY
              and int(state.get("tokens_today", 0)) < DAILY_TOKEN_CAP]
+    if any(not is_advisory(u) for u in ready):
+        ready = [u for u in ready if not is_advisory(u)]  # QA waits for real work
     active = [u["id"] for u in roadmap.values()
               if u.get("status") in ("building", "pr_open", "queued")]
     if active:
         line5 = f"5. Dispatch: running/dispatched: {', '.join(sorted(active))}"
     elif ready:
         line5 = ("5. Dispatch: ready to resume this cycle: "
-                 + ", ".join(sorted(ready)))
+                 + ", ".join(sorted(u["id"] for u in ready)))
     else:
         line5 = ("5. Dispatch: nothing ready this cycle - "
                  + (f"{sum(1 for u in roadmap.values() if u.get('status')=='design')} "
