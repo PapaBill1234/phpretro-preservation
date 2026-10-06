@@ -1,15 +1,14 @@
 package staff
 
 import (
-	"crypto/hmac"
-	"crypto/sha1" // #nosec G505 -- RFC 6238 specifies HMAC-SHA1 for this synthetic contract.
-	"crypto/subtle"
 	"encoding/base32"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/pquerna/otp"
+	"github.com/pquerna/otp/totp"
 )
 
 var (
@@ -46,8 +45,9 @@ func (s *MemoryStore) Lookup(id string) (Record, error) {
 	return r, nil
 }
 
-// ValidateCode uses RFC 6238 TOTP with a 30-second step and one approved adjacent step.
-// Secrets are synthetic base32 values; no secret is returned or persisted by validation.
+// ValidateCode uses library-backed RFC 6238 TOTP with a synthetic 30-second
+// period and zero accepted clock skew. Secrets are synthetic base32 values;
+// no secret is returned or persisted by validation. Timing policy is unapproved.
 func ValidateCode(store Store, staffID, code string, now time.Time) error {
 	if staffID == "" {
 		return ErrWrongUser
@@ -80,33 +80,27 @@ func ValidateCode(store Store, staffID, code string, now time.Time) error {
 	if err != nil || len(secret) == 0 {
 		return ErrMalformedCode
 	}
-	step := now.Unix() / 30
-	for _, candidate := range []int64{step - 1, step, step + 1} {
-		if subtle.ConstantTimeCompare([]byte(totp(secret, candidate)), []byte(code)) == 1 {
-			if candidate != step {
-				return ErrExpiredCode
-			}
-			return nil
+	secretText := strings.ToUpper(strings.TrimSpace(r.Secret))
+	opts := totp.ValidateOpts{Period: 30, Skew: 0, Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1}
+	if valid, err := totp.ValidateCustom(code, secretText, now, opts); err != nil {
+		return ErrMalformedCode
+	} else if valid {
+		return nil
+	}
+	// Distinguish adjacent-step codes for a stable expired result while keeping
+	// them rejected. The library performs all TOTP computation.
+	for _, adjacent := range []time.Time{now.Add(-30 * time.Second), now.Add(30 * time.Second)} {
+		if valid, _ := totp.ValidateCustom(code, secretText, adjacent, opts); valid {
+			return ErrExpiredCode
 		}
 	}
 	return ErrWrongCode
 }
-func totp(secret []byte, counter int64) string {
-	var b [8]byte
-	binary.BigEndian.PutUint64(b[:], uint64(counter)) // #nosec G115 -- TOTP counters are non-negative in the approved window.
-	h := hmac.New(sha1.New, secret)
-	_, _ = h.Write(b[:])
-	sum := h.Sum(nil)
-	off := sum[len(sum)-1] & 15
-	n := (uint32(sum[off])&127)<<24 | uint32(sum[off+1])<<16 | uint32(sum[off+2])<<8 | uint32(sum[off+3])
-	return fmt.Sprintf("%06d", n%1000000)
-}
 
 // SyntheticCode is test-fixture support and intentionally not an enrollment API.
 func SyntheticCode(secret string, now time.Time) (string, error) {
-	b, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(secret))
-	if err != nil {
+	if _, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(strings.TrimSpace(secret))); err != nil {
 		return "", err
 	}
-	return totp(b, now.Unix()/30), nil
+	return totp.GenerateCodeCustom(strings.ToUpper(strings.TrimSpace(secret)), now, totp.ValidateOpts{Period: 30, Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1})
 }
