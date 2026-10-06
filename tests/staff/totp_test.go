@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// Evidence basis: docs/roadmap/F31-F45-candidate-design.md, F37 row; all
-// behavior is synthetic because per-staff capture, skew and policy are UNKNOWN.
+// Evidence basis: no capture or fixture was supplied; synthetic behavior is
+// guessed, as recorded in docs/units/QA1.md.
 func TestValidateCodeAcceptsCurrentAndBindsPerStaff(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	store := &staff.MemoryStore{Records: map[string]staff.Record{"alice": {StaffID: "alice", Secret: "JBSWY3DPEHPK3PXP", Enabled: true}, "bob": {StaffID: "bob", Secret: "JBSWY3DPEHPK3PXP", Enabled: true}}}
@@ -25,7 +25,7 @@ func TestValidateCodeAcceptsCurrentAndBindsPerStaff(t *testing.T) {
 }
 func TestValidateRejectsCases(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
-	s := &staff.MemoryStore{Records: map[string]staff.Record{"off": {Secret: "JBSWY3DPEHPK3PXP"}, "on": {Secret: "JBSWY3DPEHPK3PXP", Enabled: true}}}
+	s := &staff.MemoryStore{Records: map[string]staff.Record{"off": {StaffID: "off", Secret: "JBSWY3DPEHPK3PXP"}, "on": {StaffID: "on", Secret: "JBSWY3DPEHPK3PXP", Enabled: true}}}
 	code, _ := staff.SyntheticCode(s.Records["on"].Secret, now)
 	cases := []struct {
 		name, id, code string
@@ -40,6 +40,33 @@ func TestValidateRejectsCases(t *testing.T) {
 		})
 	}
 }
+
+// Evidence basis: no capture or fixture was supplied; rejecting a store
+// identity mismatch is the guessed security contract recorded in docs/units/QA1.md.
+func TestValidateRejectsEmptyAndMismatchedStoreIdentity(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	secret := "JBSWY3DPEHPK3PXP"
+	code, err := staff.SyntheticCode(secret, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name   string
+		record staff.Record
+	}{
+		{name: "empty", record: staff.Record{Secret: secret, Enabled: true}},
+		{name: "bob returned for alice", record: staff.Record{StaffID: "bob", Secret: secret, Enabled: true}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &staff.MemoryStore{Records: map[string]staff.Record{"alice": tc.record}}
+			if err := staff.ValidateCode(store, "alice", code, now); !errors.Is(err, staff.ErrWrongUser) {
+				t.Fatalf("got %v want %v", err, staff.ErrWrongUser)
+			}
+		})
+	}
+}
+
 func TestStoreErrorFailsClosed(t *testing.T) {
 	if err := staff.ValidateCode(&staff.MemoryStore{Err: errors.New("down")}, "alice", "123456", time.Now()); !errors.Is(err, staff.ErrStore) {
 		t.Fatal(err)

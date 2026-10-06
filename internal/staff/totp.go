@@ -73,6 +73,9 @@ func ValidateCode(store Store, staffID, code string, now time.Time) error {
 	if !r.Enabled {
 		return ErrDisabled
 	}
+	if r.StaffID == "" || r.StaffID != staffID {
+		return ErrWrongUser
+	}
 	secret, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(strings.TrimSpace(r.Secret)))
 	if err != nil || len(secret) == 0 {
 		return ErrMalformedCode
