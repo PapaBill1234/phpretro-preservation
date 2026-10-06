@@ -1,10 +1,8 @@
-# F37 staff step-up evidence
+F37 evidence record
 
-Source: docs/roadmap/F31-F45-candidate-design.md, F37 candidate row.
+Source: docs/roadmap/F31-F45-candidate-design.md, F37 row.
+It requires library-backed per-staff TOTP, session binding, explicit negative
+cases, and approval of skew, rate limits, and failure response.
 
-The source explicitly requires library-backed synthetic TOTP validation,
-per-staff binding, negative cases, and fail-closed store errors. It also says
-step-up scope, skew, rate limits, and failure response are UNKNOWN and requires
-independent security review. This unit therefore records synthetic evidence
-only; it does not claim production schema, capture parity, audit persistence,
-replay protection, or HTTP/session integration.
+No retained staff capture or coordinator approval is present. Tests use
+synthetic RFC 6238 secrets; guessed policy is recorded in docs/units/F37.md.

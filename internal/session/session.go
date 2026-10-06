@@ -9,11 +9,18 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/PapaBill1234/phpretro-preservation/internal/staff"
 )
 
 const LogoutReason = "logout"
 
-var ErrWrongLogoutReason = errors.New("wrong logout reason")
+var (
+	ErrWrongLogoutReason = errors.New("wrong logout reason")
+	ErrStepUpSession     = errors.New("invalid step-up session")
+	ErrStepUpUser        = errors.New("step-up user does not match session")
+	ErrStepUpRate        = errors.New("step-up rate limit exceeded")
+)
 
 // PublicPage is the post-logout public projection. PrivateField is deliberately
 // empty: the public transition does not carry authenticated state.
@@ -23,8 +30,10 @@ type PublicPage struct {
 }
 
 type Record struct {
-	UserID    string
-	ExpiresAt time.Time
+	UserID         string
+	ExpiresAt      time.Time
+	StepUpFailures int
+	StepUpWindow   time.Time
 }
 
 type Manager struct {
@@ -76,6 +85,57 @@ func (m *Manager) Lookup(token string) (Record, bool) {
 	}
 	return record, true
 }
+
+// StepUp validates a staff TOTP only against the user bound to token.
+func (m *Manager) StepUp(token, staffID, code string, store staff.Store) error {
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil || len(raw) != 32 {
+		return ErrStepUpSession
+	}
+	hash := sha256.Sum256(raw)
+	m.mu.Lock()
+	record, ok := m.sessions[hash]
+	now := m.now()
+	if !ok || !now.Before(record.ExpiresAt) {
+		m.mu.Unlock()
+		return ErrStepUpSession
+	}
+	if record.UserID != staffID {
+		m.mu.Unlock()
+		return ErrStepUpUser
+	}
+	if !record.StepUpWindow.IsZero() && now.Sub(record.StepUpWindow) >= time.Minute {
+		record.StepUpFailures = 0
+		record.StepUpWindow = now
+	}
+	if record.StepUpFailures >= 5 {
+		m.mu.Unlock()
+		return ErrStepUpRate
+	}
+	m.mu.Unlock()
+	if err := staff.ValidateCode(store, staffID, code, now); err != nil {
+		m.mu.Lock()
+		record, ok = m.sessions[hash]
+		if ok {
+			if record.StepUpWindow.IsZero() {
+				record.StepUpWindow = now
+			}
+			record.StepUpFailures++
+			m.sessions[hash] = record
+		}
+		m.mu.Unlock()
+		return err
+	}
+	m.mu.Lock()
+	if record, ok = m.sessions[hash]; ok {
+		record.StepUpFailures = 0
+		record.StepUpWindow = time.Time{}
+		m.sessions[hash] = record
+	}
+	m.mu.Unlock()
+	return nil
+}
+
 func (m *Manager) Logout(token string) {
 	raw, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil || len(raw) != 32 {

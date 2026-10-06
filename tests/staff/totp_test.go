@@ -32,7 +32,7 @@ func TestValidateRejectsCases(t *testing.T) {
 		name, id, code string
 		at             time.Time
 		want           error
-	}{{"missing", "on", "", now, staff.ErrMissingCode}, {"disabled", "off", code, now, staff.ErrDisabled}, {"malformed", "on", "abc", now, staff.ErrMalformedCode}, {"wrong", "on", "000000", now, staff.ErrWrongCode}, {"expired", "on", code, now.Add(90 * time.Second), staff.ErrWrongCode}, {"wrong-user", "unknown", code, now, staff.ErrWrongUser}}
+	}{{"missing", "on", "", now, staff.ErrMissingCode}, {"disabled", "off", code, now, staff.ErrDisabled}, {"malformed", "on", "abc", now, staff.ErrMalformedCode}, {"wrong", "on", "000000", now, staff.ErrWrongCode}, {"expired", "on", code, now.Add(30 * time.Second), staff.ErrExpiredCode}, {"wrong-user", "unknown", code, now, staff.ErrWrongUser}}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := staff.ValidateCode(s, tc.id, tc.code, tc.at); !errors.Is(err, tc.want) {
