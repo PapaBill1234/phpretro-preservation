@@ -88,7 +88,7 @@ def go_package_dirs(files) -> list:
 def changed_files(wt: Path, base: str) -> list:
     """Paths this attempt changed, committed or not, relative to ``base``."""
     files = set()
-    for args in (("diff", "--name-only", base, "HEAD"),
+    for args in (("diff", "--name-only", f"{base}...HEAD"),
                  ("diff", "--name-only", "HEAD"),
                  ("ls-files", "--others", "--exclude-standard")):
         rc, out = git(wt, *args)

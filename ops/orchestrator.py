@@ -384,6 +384,7 @@ def load_roadmap(state: dict) -> dict:
                         "unclear_semantics"):
                 if key in u:
                     live[uid][key] = u[key]
+    strip_advisory_deps(live)
     return live
 
 
@@ -955,7 +956,7 @@ def changed_files(wt: Path) -> list:
     attempt, not be committed and then caught.
     """
     files = set()
-    for args in (("diff", "--name-only", BASE_REF, "HEAD"),
+    for args in (("diff", "--name-only", f"{BASE_REF}...HEAD"),
                  ("diff", "--name-only", "HEAD"),
                  ("ls-files", "--others", "--exclude-standard")):
         for ln in git_out(*args, cwd=wt).splitlines():
@@ -1719,6 +1720,34 @@ def deps_merged(unit: dict, roadmap: dict) -> bool:
     return True
 
 
+# QA units are advisory work: they improve confidence but must never gate
+# feature (F) delivery. Only these kinds are advisory; a refactor (RF) unit is
+# a normal roadmap entry and is not in this set.
+ADVISORY_KINDS = ("audit-fix",)
+
+
+def is_advisory(unit: dict) -> bool:
+    return str(unit.get("id", "")).startswith("QA") or unit.get("kind") in ADVISORY_KINDS
+
+
+def strip_advisory_deps(live: dict) -> None:
+    """Remove advisory (QA) dependencies from non-advisory units, in place.
+
+    An F unit that names a QA unit in ``depends_on`` would be blocked until the
+    advisory work merges - exactly the coupling the pipeline must not have. The
+    dependency is dropped so the feature unit can proceed; advisory units may
+    still depend on each other.
+    """
+    advisory_ids = {uid for uid, u in live.items() if is_advisory(u)}
+    for uid, u in live.items():
+        if is_advisory(u):
+            continue
+        deps = [str(d) for d in (u.get("depends_on") or [])]
+        kept = [d for d in deps if d not in advisory_ids]
+        if kept != deps:
+            u["depends_on"] = kept
+
+
 def select_ready(roadmap: dict, state: dict) -> list:
     if int(state.get("merged_today", 0)) >= MAX_MERGE_PER_DAY:
         event(state, f"daily merge cap reached ({MAX_MERGE_PER_DAY}); not dispatching")
@@ -1757,7 +1786,7 @@ def select_ready(roadmap: dict, state: dict) -> list:
             u["size_check_at"] = stamp
             u["size_action"] = size["action"]
             u["size_source"] = size.get("source", "rule")
-        if size["action"] == "split":
+        if size["action"] == "split" and int(u.get("planner_retries", 0)) < PLANNER_RETRIES:
             if not u.get("split_requested"):
                 u["split_requested"] = True
                 u["reason"] = (f"size check: split "
@@ -1780,6 +1809,11 @@ def select_ready(roadmap: dict, state: dict) -> list:
                 event(state, f"{uid}: size check -> split (shrink limit reached)")
                 continue
         ready.append(u)
+    # Advisory (QA) units never compete with real work: they run only when
+    # nothing else is ready. If any non-advisory unit is ready this cycle, the
+    # advisory ones wait.
+    if any(not is_advisory(u) for u in ready):
+        ready = [u for u in ready if not is_advisory(u)]
     return ready
 
 
@@ -2099,14 +2133,19 @@ def apply_planner_output(roadmap: dict, state: dict, unit: dict, out: str,
     return True
 
 
-def maybe_plan(roadmap: dict, state: dict) -> None:
+def maybe_plan(roadmap: dict, state: dict) -> bool:
+    """Run one planner pass (split / rewrite / promote) if the board needs it.
+
+    Returns True when the planner was actually invoked (it consumed the cycle's
+    one agent call), False otherwise.
+    """
     active = [u for u in roadmap.values() if u.get("status") in ("building", "pr_open", "queued")]
     if active:
-        return
+        return False
     todo = [u for u in roadmap.values() if u.get("status") == "todo"
-            and not u.get("split_requested")]
+            and not u.get("split_requested") and deps_merged(u, roadmap)]
     if todo:
-        return
+        return False
     # A unit that timed out or produced no change gets split into smaller units
     # rather than retried at the same size. This takes precedence over the
     # parked/design queues because it is the failure the pipeline just produced.
@@ -2125,17 +2164,17 @@ def maybe_plan(roadmap: dict, state: dict) -> None:
                          if u.get("status") == "design"
                          and int(u.get("planner_retries", 0)) < PLANNER_RETRIES],
                         key=lambda u: u["id"])
-        if parked:
-            target, mode = parked[0], "rewrite"
-        elif design:
+        if design:
             target, mode = design[0], "promote"
+        elif parked:
+            target, mode = parked[0], "rewrite"
         else:
             for u in roadmap.values():
                 if u.get("status") == "parked":
                     u["status"] = "parked-final"
                 if u.get("status") == "design" and int(u.get("planner_retries", 0)) >= PLANNER_RETRIES:
                     u["status"] = "design-blocked"
-            return
+            return False
 
     uid = target["id"]
     target["split_requested"] = False
@@ -2171,12 +2210,16 @@ def maybe_plan(roadmap: dict, state: dict) -> None:
                 target["status"] = "design-blocked"
             else:
                 # The split could not be produced: fall back to the retry ladder
-                # rather than silently dropping the unit.
+                # rather than silently dropping the unit. Clear split_requested,
+                # or select_ready would skip it forever while maybe_plan has no
+                # retries left to act on it - a deadlock.
                 target["status"] = "todo"
+                target["split_requested"] = False
         elif mode == "split":
             target["split_requested"] = True
         event(state, f"{uid}: planner output rejected "
                      f"({target['planner_retries']}/{PLANNER_RETRIES})")
+    return True
 
 
 # --------------------------------------------------------------------------
@@ -2872,6 +2915,99 @@ def report_lines(roadmap: dict, state: dict) -> list:
     ]
 
 
+def diagnosis_lines(roadmap: dict, state: dict) -> list:
+    """The five-line diagnosis requested for the STATE.md report.
+
+    Answers, in order: why each parked unit is parked; which F units (F31+) are
+    todo/design and what blocks them; whether a cap or the STOP file is active;
+    whether the timer ran in the last hour; and whether dispatch resumes.
+    """
+    def _is_f(uid: str) -> bool:
+        return uid.startswith("F") and uid[1:].isdigit() and int(uid[1:]) >= 31
+
+    # 1. parked units and the exact reason
+    parked = sorted(u for u in roadmap.values() if u.get("status") == "parked")
+    if parked:
+        line1 = ("1. Parked: " + "; ".join(
+            f"{u['id']} (attempts {u.get('attempts',0)}, "
+            f"{str(u.get('reason','') or 'no reason recorded')[:80]})"
+            for u in parked))
+    else:
+        line1 = "1. Parked: none"
+
+    # 2. F31+ units not yet merged, and what holds them
+    f_open = sorted((u for u in roadmap.values() if _is_f(u.get("id", ""))
+                     and u.get("status") != "merged"), key=lambda u: u["id"])
+    if not f_open:
+        line2 = "2. F31+ open: none"
+    else:
+        bits = []
+        for u in f_open[:6]:
+            blockers = [str(d) for d in (u.get("depends_on") or [])
+                        if (roadmap.get(str(d)) or {}).get("status") != "merged"]
+            why = ("blocked on " + ", ".join(blockers)) if blockers else (
+                "waiting for a planner pass" if u.get("status") == "design"
+                else str(u.get("reason", "") or "ready")[:40])
+            bits.append(f"{u['id']}={u.get('status')} ({why})")
+        more = f"; +{len(f_open)-6} more" if len(f_open) > 6 else ""
+        line2 = (f"2. F31+ open ({len(f_open)}): " + "; ".join(bits) + more)
+
+    # 3. caps and STOP
+    merged = int(state.get("merged_today", 0))
+    tokens = int(state.get("tokens_today", 0))
+    caps = []
+    if merged >= MAX_MERGE_PER_DAY:
+        caps.append(f"daily merge cap HIT ({merged}/{MAX_MERGE_PER_DAY})")
+    if tokens >= DAILY_TOKEN_CAP:
+        caps.append(f"daily token cap HIT ({tokens}/{DAILY_TOKEN_CAP})")
+    cap_txt = "; ".join(caps) if caps else (
+        f"caps not in effect (merged {merged}/{MAX_MERGE_PER_DAY}, "
+        f"tokens {tokens}/{DAILY_TOKEN_CAP})")
+    stop_txt = "STOP file PRESENT" if STOP_FILE.exists() else "no STOP file"
+    line3 = f"3. {cap_txt}; {stop_txt}"
+
+    # 4. whether the timer ran in the last hour (newest cycle-start event)
+    last = ""
+    for e in reversed(state.get("events", [])):
+        if str(e.get("msg", "")).startswith("cycle start"):
+            last = e.get("ts", "")
+            break
+    if last:
+        try:
+            age = (datetime.now(timezone.utc) - datetime.strptime(
+                last, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)).total_seconds()
+            line4 = (f"4. Timer: last cycle {last} "
+                     f"({int(age//60)} min ago) - "
+                     f"{'ran within the last hour' if age < 3600 else 'NOT in the last hour'}")
+        except Exception:
+            line4 = f"4. Timer: last cycle {last}"
+    else:
+        line4 = "4. Timer: no cycle recorded yet"
+
+    # 5. does dispatch resume? (lightweight readiness: no Jev call, no state
+    #    mutation - diagnosis must not change the thing it reports on)
+    ready = [u["id"] for u in roadmap.values()
+             if u.get("status") == "todo" and not u.get("split_requested")
+             and deps_merged(u, roadmap)
+             and int(u.get("tokens", 0)) < PER_UNIT_TOKEN_CAP
+             and int(state.get("merged_today", 0)) < MAX_MERGE_PER_DAY
+             and int(state.get("tokens_today", 0)) < DAILY_TOKEN_CAP]
+    active = [u["id"] for u in roadmap.values()
+              if u.get("status") in ("building", "pr_open", "queued")]
+    if active:
+        line5 = f"5. Dispatch: running/dispatched: {', '.join(sorted(active))}"
+    elif ready:
+        line5 = ("5. Dispatch: ready to resume this cycle: "
+                 + ", ".join(sorted(ready)))
+    else:
+        line5 = ("5. Dispatch: nothing ready this cycle - "
+                 + (f"{sum(1 for u in roadmap.values() if u.get('status')=='design')} "
+                    "design units await the planner (one promotion per cycle)"
+                    if any(u.get("status") == "design" for u in roadmap.values())
+                    else "no todo/design work remains"))
+    return [line1, line2, line3, line4, line5]
+
+
 def write_state_md(roadmap: dict, state: dict) -> None:
     counts: dict = {}
     for u in roadmap.values():
@@ -2889,6 +3025,8 @@ def write_state_md(roadmap: dict, state: dict) -> None:
         "",
     ]
     lines += report_lines(roadmap, state)
+    lines += ["", "## Diagnosis", ""]
+    lines += [f"- {l}" for l in diagnosis_lines(roadmap, state)]
     lines += ["", "## Quality", ""]
     lines += quality_lines(roadmap)
     lines += ["", "## Telemetry", ""]
@@ -2965,9 +3103,12 @@ def cycle() -> None:
         maybe_refactor_unit(roadmap, state)
         used_agent = maybe_plan_nightly_fix(roadmap, state)
         if not used_agent:
-            used_agent = maybe_audit(roadmap, state)
+            # Promotion/park-rewrite/split takes priority over the weekly audit:
+            # an idle board holding only design units must be able to promote the
+            # next F unit rather than letting the audit consume the one agent call.
+            used_agent = maybe_plan(roadmap, state)
         if not used_agent:
-            maybe_plan(roadmap, state)
+            maybe_audit(roadmap, state)
         save_roadmap(roadmap)
         write_json(STATE_JSON, state)
         write_state_md(roadmap, state)
@@ -3114,6 +3255,74 @@ units:
     assert _median([100, 0, 300]) == 200   # a recorded 0 is not a data point
     assert _median([100, 200]) == 150
     assert _median([]) == 0
+
+    # --- idle-pipeline fixes -------------------------------------------------
+    # QA units are advisory and must never be a feature unit's prerequisite.
+    assert is_advisory({"id": "QA1"})
+    assert is_advisory({"id": "X1", "kind": "audit-fix"})
+    assert not is_advisory({"id": "F31"})
+    assert not is_advisory({"id": "RF1", "kind": "refactor"})
+    adv = {"F40": {"id": "F40", "status": "todo", "depends_on": ["QA1"]},
+           "QA1": {"id": "QA1", "kind": "audit-fix", "status": "parked"},
+           "QA2": {"id": "QA2", "kind": "audit-fix", "status": "todo",
+                   "depends_on": ["QA1"]}}
+    strip_advisory_deps(adv)
+    assert adv["F40"]["depends_on"] == [], adv["F40"]
+    assert adv["QA2"]["depends_on"] == ["QA1"], adv["QA2"]  # QA may depend on QA
+    # a QA todo blocked on a parked QA unit is not ready, and must not stop the
+    # planner from promoting the design backlog.
+    stuck = {"QA3": {"id": "QA3", "status": "todo", "depends_on": ["QA1"]},
+             "QA1": {"id": "QA1", "kind": "audit-fix", "status": "parked"},
+             "F32": {"id": "F32", "status": "design"}}
+    assert not deps_merged(stuck["QA3"], stuck)
+    assert any(u.get("status") == "design" for u in stuck.values())
+    # diagnosis renders exactly five lines covering all five questions.
+    diag = diagnosis_lines(stuck, {"merged_today": 0, "tokens_today": 0, "events": []})
+    assert len(diag) == 5, diag
+    assert diag[0].startswith("1. Parked:") and "QA1" in diag[0], diag
+    assert diag[1].startswith("2. F31+") and "F32" in diag[1], diag
+    assert "no STOP file" in diag[2], diag
+    assert diag[3].startswith("4. Timer:"), diag
+    assert diag[4].startswith("5. Dispatch:") and "design" in diag[4], diag
+
+    # the guard/quality diff must compare against the merge base (three-dot), so
+    # a file that only main gained after the branch point is not blamed on the
+    # unit (this parked QA1/QA2/F36 before the fix).
+    import tempfile as _tf2
+    import subprocess as _sp2
+    import os as _os2
+    drepo = _tf2.mkdtemp(prefix="orch-diff-")
+
+    def _g(*a):
+        return _sp2.run(["git", *a], cwd=drepo, capture_output=True, text=True)
+
+    _g("init", "-q")
+    _g("config", "user.email", "t@t")
+    _g("config", "user.name", "t")
+    _os2.makedirs(drepo + "/docs/units", exist_ok=True)
+    open(drepo + "/a.txt", "w").write("a")
+    open(drepo + "/docs/units/OTHER.md", "w").write("base")
+    _g("add", "-A")
+    _g("commit", "-qm", "base")
+    trunk = _g("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    _g("checkout", "-qb", "unit/X")
+    open(drepo + "/b.txt", "w").write("b")
+    _g("add", "-A")
+    _g("commit", "-qm", "unit work")
+    _g("checkout", "-q", trunk)          # main advances after the branch point
+    open(drepo + "/docs/units/OTHER.md", "w").write("changed on main")
+    open(drepo + "/mainonly.txt", "w").write("m")
+    _g("add", "-A")
+    _g("commit", "-qm", "main advances")
+    two = _g("diff", "--name-only", trunk, "unit/X").stdout.split()
+    three = _g("diff", "--name-only", f"{trunk}...unit/X").stdout.split()
+    assert "mainonly.txt" in two and "docs/units/OTHER.md" in two, two
+    assert "mainonly.txt" not in three, three
+    assert "docs/units/OTHER.md" not in three, three
+    assert "b.txt" in three, three
+    import shutil as _sh2
+    _sh2.rmtree(drepo, ignore_errors=True)
+
     print("selftest OK")
     return 0
 
