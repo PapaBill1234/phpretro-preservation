@@ -5,9 +5,10 @@ Everything lives outside the repository, under ``~/phpretro-ops/state``:
 
 * ``runs.jsonl``     one JSON line per model call or agent run
 * ``events.jsonl``   one JSON line per pipeline state change
-* ``nightly.json``   the latest integration + self-check result
-* ``nightly-history.jsonl``   one line per nightly run
 * ``prices.yaml``    per-model prices as shown by the A6API gateway
+
+``nightly.json`` and ``nightly-history.jsonl`` also live in that directory but
+are written by ``ops/nightly.py``; STATE.md and the alerts read them directly.
 
 Rules this module enforces:
 
@@ -39,8 +40,6 @@ STATE = OPS / "state"
 
 RUNS = STATE / "runs.jsonl"
 EVENTS = STATE / "events.jsonl"
-NIGHTLY = STATE / "nightly.json"
-NIGHTLY_HISTORY = STATE / "nightly-history.jsonl"
 PRICES = STATE / "prices.yaml"
 
 PROVIDER = os.environ.get("PHPRETRO_PROVIDER", "custom:a6api")
@@ -469,56 +468,18 @@ def unit_run_summary(unit: str) -> dict:
             "outcomes": outcomes, "cost_estimate": round(cost, 8)}
 
 
-def log_nightly(integration: dict, selfcheck: dict) -> None:
-    """Write nightly.json in the required shape and append the history."""
-    rec = {
-        "integration": {"ts": integration.get("ts", now()),
-                        "pass": bool(integration.get("pass")),
-                        "details": integration.get("details", {})},
-        "selfcheck": {"ts": selfcheck.get("ts", now()),
-                      "pass": bool(selfcheck.get("pass")),
-                      "details": selfcheck.get("details", {})},
-        "updated": now(),
-    }
-    STATE.mkdir(parents=True, exist_ok=True)
-    NIGHTLY.write_text(json.dumps(rec, indent=1, sort_keys=True))
-    append(NIGHTLY_HISTORY, {"ts": rec["updated"],
-                             "integration": rec["integration"]["pass"],
-                             "selfcheck": rec["selfcheck"]["pass"]})
-
-
-def consecutive_failures(kind: str) -> int:
-    """How many of the most recent nightly runs of ``kind`` failed in a row."""
-    n = 0
-    entries = []
-    files = sorted(STATE.glob(f"{NIGHTLY_HISTORY.stem}-*{NIGHTLY_HISTORY.suffix}")) \
-        + [NIGHTLY_HISTORY]
-    for f in files:
-        try:
-            entries += [json.loads(l) for l in f.read_text().splitlines() if l.strip()]
-        except (OSError, json.JSONDecodeError):
-            continue
-    for e in reversed(entries):
-        if e.get(kind):
-            break
-        n += 1
-    return n
-
-
 # --------------------------------------------------------------------------
 # selftest
 # --------------------------------------------------------------------------
 
 def selftest() -> int:
     import tempfile
-    global STATE, RUNS, EVENTS, NIGHTLY, NIGHTLY_HISTORY, PRICES
-    keep = (STATE, RUNS, EVENTS, NIGHTLY, NIGHTLY_HISTORY, PRICES)
+    global STATE, RUNS, EVENTS, PRICES
+    keep = (STATE, RUNS, EVENTS, PRICES)
     tmp = Path(tempfile.mkdtemp(prefix="tel-selftest-"))
     STATE = tmp
     RUNS = tmp / "runs.jsonl"
     EVENTS = tmp / "events.jsonl"
-    NIGHTLY = tmp / "nightly.json"
-    NIGHTLY_HISTORY = tmp / "nightly-history.jsonl"
     PRICES = tmp / "prices.yaml"
     try:
         # unknown values are null, never 0, and carry the estimate
@@ -582,20 +543,8 @@ def selftest() -> int:
         ev = [json.loads(l) for l in EVENTS.read_text().splitlines() if l.strip()]
         assert ev[0]["kind"] == "merged" and ev[0]["unit"] == "F1", ev
 
-        # nightly shape + history
-        log_nightly({"ts": "2026-10-06T03:15:00Z", "pass": True, "details": {"routes": 11}},
-                    {"ts": "2026-10-06T03:15:01Z", "pass": False, "details": {"checks": 3}})
-        n = json.loads(NIGHTLY.read_text())
-        assert set(n) >= {"integration", "selfcheck"}, n
-        assert n["integration"] == {"ts": "2026-10-06T03:15:00Z", "pass": True,
-                                    "details": {"routes": 11}}, n["integration"]
-        assert n["selfcheck"]["pass"] is False, n["selfcheck"]
-        assert consecutive_failures("selfcheck") == 1
-        log_nightly({"ts": "2026-10-06T03:16:00Z", "pass": True, "details": {}},
-                    {"ts": "2026-10-06T03:16:01Z", "pass": True, "details": {}})
-        assert consecutive_failures("selfcheck") == 0
     finally:
-        STATE, RUNS, EVENTS, NIGHTLY, NIGHTLY_HISTORY, PRICES = keep
+        STATE, RUNS, EVENTS, PRICES = keep
         shutil.rmtree(tmp, ignore_errors=True)
     print("telemetry selftest OK")
     return 0
