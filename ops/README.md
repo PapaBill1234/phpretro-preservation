@@ -15,6 +15,7 @@ SHA-bound approvals.
 | `ops/hooks/pre-push` | Safety outside the model: rejects pushes to `main`/`integration` and any force push. Activated with `git config core.hooksPath ops/hooks`. |
 | `ops/nightly.py` | Nightly integration check, pipeline self-check, and failure alerts. systemd timer, `--all` at 03:15. |
 | `ops/quality.py` | The per-attempt quality safeguards: the tests must exercise the change, coverage on changed files, evidence tie. |
+| `ops/telemetry.py` | Append-only run and event logs, monthly rotation, the price table, and the nightly writers. |
 | `ops/setup/configure-profiles.sh` | Configures the headless Hermes profiles. |
 | `ops/systemd/` | `phpretro-orchestrator.{service,timer}`, `phpretro-nightly.{service,timer}`, `phpretro-alerts.{service,timer}`. |
 
@@ -58,6 +59,30 @@ The report carries: the guessed-fidelity count, the median coverage over
 merged units, the number of open audit findings, and how many units the
 quality checks have failed (by item 1 / 2 / 3). The per-unit table gains
 `kind`, `severity`, `coverage` and `fidelity` columns.
+
+## Telemetry
+
+Append-only, outside the repository, in `~/phpretro-ops/state`. Nothing here
+holds an API key or a prompt; a scrubber drops credential-looking fields.
+
+| File | One line per | Notes |
+| --- | --- | --- |
+| `runs.jsonl` | model call / agent run | ts_start, ts_end, unit, attempt, role (builder/reviewer/planner/audit/jev/other), model, provider, input/output/cached tokens, api_calls, cost_estimate, rc, outcome, flags. The raw usage-file object is kept in `usage`. An unknown value is `null`, never 0, with `tokens_pessimistic` alongside. |
+| `events.jsonl` | state change | dispatched, built, gate_pass, gate_fail, pr_opened, review_verdict, merged, parked, split, escalated, timeout, provider_error, guard_disabled. Each has `ts`, `unit`, a short `reason`. |
+| `nightly.json` | - | `{integration: {ts,pass,details}, selfcheck: {ts,pass,details}}`. |
+| `nightly-history.jsonl` | nightly run | appended every run. |
+| `prices.yaml` | - | per-model input/output prices, with a `note` saying the unit is uncalibrated. |
+
+Every log **rotates monthly** (`runs-2026-09.jsonl`): the old month is moved
+aside whole, never edited. `cost_estimate` comes from the usage file when it
+carries a real cost, else from `prices.yaml`; when a price is null the estimate
+is `null`, never 0.
+
+`STATE.md` reads its numbers from these logs: today's tokens and the per-unit
+totals come from `runs.jsonl` (the state counter is only a fallback), the
+nightly lines from `nightly.json` + `nightly-history.jsonl`, and the Quality
+section from `quality.json`. Its Telemetry section carries the one-line note
+that the A6API cost dashboard reads these same files.
 
 ## Nightly checks and alerts (`ops/nightly.py`)
 

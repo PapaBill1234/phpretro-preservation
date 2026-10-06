@@ -44,6 +44,7 @@ REPO = Path(os.environ.get("PHPRETRO_REPO", HOME / "phpretro-preservation"))
 OPS = Path(os.environ.get("PHPRETRO_OPS", HOME / "phpretro-ops"))
 STATE_DIR = OPS / "state"
 NIGHTLY_JSON = STATE_DIR / "nightly.json"
+NIGHTLY_HISTORY = STATE_DIR / "nightly-history.jsonl"
 NIGHTLY_MD = STATE_DIR / "nightly-last.md"
 NIGHTLY_LOG_DIR = OPS / "logs" / "nightly"
 UNITS_STATE = STATE_DIR / "units.state.json"
@@ -404,16 +405,41 @@ def selfcheck() -> dict:
 # --------------------------------------------------------------------------
 
 def load_ledger() -> dict:
+    """The latest result per job, in the required shape.
+
+    ``nightly.json`` is ``{"integration": {ts,pass,details}, "selfcheck":
+    {ts,pass,details}}``. History lives in ``nightly-history.jsonl`` (one line
+    per run) so the JSON file stays small and is never rewritten as a growing
+    document. A legacy ``history`` key is tolerated on read.
+    """
     led = read_json(NIGHTLY_JSON, {})
-    led.setdefault("history", [])
+    if not isinstance(led, dict):
+        led = {}
+    led.pop("history", None)
     return led
 
 
-def trailing_failures(history: list, name: str) -> int:
-    """How many of the most recent runs of ``name`` failed in a row."""
-    seq = [h for h in history if h.get("name") == name]
+def history_entries() -> list:
+    """Every entry in nightly-history.jsonl, oldest first (rotated files too)."""
+    entries = []
+    files = sorted(STATE_DIR.glob(f"{NIGHTLY_HISTORY.stem}-*{NIGHTLY_HISTORY.suffix}")) \
+        + [NIGHTLY_HISTORY]
+    for f in files:
+        try:
+            for line in f.read_text().splitlines():
+                if line.strip():
+                    entries.append(json.loads(line))
+        except (OSError, json.JSONDecodeError):
+            continue
+    return entries
+
+
+def trailing_failures(_history, name: str) -> int:
+    """How many of the most recent nightly runs of ``name`` failed in a row."""
     n = 0
-    for entry in reversed(seq):
+    for entry in reversed(history_entries()):
+        if entry.get("name") != name:
+            continue
         if entry.get("ok"):
             break
         n += 1
@@ -421,14 +447,53 @@ def trailing_failures(history: list, name: str) -> int:
 
 
 def record(entry: dict) -> None:
+    """Store a job result: nightly.json in the required shape, plus history."""
     led = load_ledger()
+    # The required shape carries pass/details; keep the richer record too, so
+    # the STATE.md renderer keeps its per-route and per-check detail.
+    led[entry["name"]] = {"ts": entry.get("finished") or entry.get("started") or now(),
+                          "pass": bool(entry.get("ok")),
+                          "details": {k: v for k, v in entry.items()
+                                      if k not in ("name", "ok")}}
     led["updated"] = now()
-    led[entry["name"]] = entry
-    led["history"] = (led.get("history", []) + [entry])[-40:]
     write_json(NIGHTLY_JSON, led)
+    # Append-only history, one line per run.
+    append_line(NIGHTLY_HISTORY, entry)
     NIGHTLY_LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     write_json(NIGHTLY_LOG_DIR / f"{entry['name']}-{stamp}.json", entry)
+
+
+def append_line(path: Path, record_obj: dict) -> None:
+    """Append one JSON line, rotating first if the month changed."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    rotate_if_stale(path)
+    try:
+        with path.open("a") as fh:
+            fh.write(json.dumps(record_obj, sort_keys=True, default=str) + "\n")
+    except OSError:
+        pass
+
+
+def rotate_if_stale(path: Path) -> None:
+    """Move a log aside as ``<stem>-YYYY-MM<suffix>`` when it is a month old."""
+    if not path.exists():
+        return
+    try:
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+    except OSError:
+        return
+    if mtime.strftime("%Y-%m") == datetime.now(timezone.utc).strftime("%Y-%m"):
+        return
+    rotated = path.with_name(f"{path.stem}-{mtime.strftime('%Y-%m')}{path.suffix}")
+    n = 1
+    while rotated.exists():
+        rotated = path.with_name(f"{path.stem}-{mtime.strftime('%Y-%m')}-{n}{path.suffix}")
+        n += 1
+    try:
+        shutil.move(str(path), str(rotated))
+    except OSError:
+        pass
 
 
 def write_detail_md() -> None:
@@ -438,20 +503,21 @@ def write_detail_md() -> None:
         e = led.get(name)
         if not e:
             continue
-        state_txt = "PASS" if e.get("ok") else "FAIL"
+        state_txt = "PASS" if e.get("pass") else "FAIL"
+        d = e.get("details") or {}
         lines += [f"## {name}: {state_txt}", "",
-                  f"- started: {e.get('started', '?')}  finished: {e.get('finished', '?')}",
-                  f"- consecutive failures: {trailing_failures(led.get('history', []), name)}"]
+                  f"- run: {e.get('ts', '?')}",
+                  f"- consecutive failures: {trailing_failures(None, name)}"]
         if name == "integration":
-            if e.get("error"):
-                lines.append(f"- error: {e['error']}")
-            for r in e.get("routes", []):
+            if d.get("error"):
+                lines.append(f"- error: {d['error']}")
+            for r in d.get("routes", []):
                 mark = "ok" if r["ok"] else "FAIL"
                 lines.append(f"- [{mark}] {r['path']} -> {r['status']} "
                              f"(want {r['want_status']}, key {r['key']!r} "
                              f"found={r['key_found']})")
         else:
-            for c in e.get("checks", []):
+            for c in d.get("checks", []):
                 lines.append(f"- [{'ok' if c['ok'] else 'FAIL'}] {c['name']}: {c.get('detail','')}")
                 for case in c.get("cases", []):
                     lines.append(f"    - [{'ok' if case['ok'] else 'FAIL'}] {case['case']}")
@@ -516,9 +582,8 @@ def active_conditions() -> list:
         conds.append(f"merge cap hit ({merged}/{MAX_MERGE_PER_DAY})")
     if tokens >= DAILY_TOKEN_CAP:
         conds.append(f"daily token cap hit ({tokens}/{DAILY_TOKEN_CAP})")
-    led = load_ledger()
     for name in ("integration", "selfcheck"):
-        n = trailing_failures(led.get("history", []), name)
+        n = trailing_failures(None, name)
         if n >= 2:
             conds.append(f"{name} check failed {n}x in a row")
     d = disk_percent()

@@ -95,6 +95,9 @@ PROTECTED_FILES = (
     "AGENTS.md",
     "scripts/check.sh",
 )
+# The diff guard can be turned off for debugging, but never silently: every
+# dispatch while it is off appends a guard_disabled event (telemetry item 2).
+GUARD_DISABLED = bool(os.environ.get("PHPRETRO_GUARD_DISABLED"))
 
 PROVIDER = "custom:a6api"
 MODEL = {
@@ -437,6 +440,48 @@ def _load_quality():
         return None
 
 
+_TELEMETRY_MOD = None
+
+
+def _load_telemetry():
+    """Import ops/telemetry.py once. It is a sibling of this file.
+
+    Cached: every state change appends an event, and re-reading the module on
+    each one would add a file read per event for no benefit.
+    """
+    global _TELEMETRY_MOD
+    if _TELEMETRY_MOD is not None:
+        return _TELEMETRY_MOD
+    try:
+        import importlib.util
+        tpath = Path(__file__).with_name("telemetry.py")
+        spec = importlib.util.spec_from_file_location("phpretro_telemetry", tpath)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"cannot load {tpath}")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _TELEMETRY_MOD = mod
+        return mod
+    except Exception as exc:
+        log(f"telemetry module unavailable: {exc}")
+        return None
+
+
+def telemetry_event(kind: str, unit: str, reason: str = "", **extra) -> None:
+    """Append a state change to events.jsonl (telemetry item 2). Never raises."""
+    if kind not in ("dispatched", "built", "gate_pass", "gate_fail", "pr_opened",
+                    "review_verdict", "merged", "parked", "split", "escalated",
+                    "timeout", "provider_error", "guard_disabled"):
+        kind = "other"
+    mod = _load_telemetry()
+    if mod is None:
+        return
+    try:
+        mod.log_event(kind, unit or "", reason, **extra)
+    except Exception as exc:
+        log(f"telemetry: event log failed: {exc}")
+
+
 def go_pin() -> str:
     try:
         return (REPO / ".go-version").read_text().strip()
@@ -477,13 +522,18 @@ SKILL_NAME = {"builder": "unit-builder", "reviewer": "unit-reviewer",
 
 
 def hermes_run(profile: str, model: str, prompt: str, toolsets: str,
-               cwd: Path, tag: str, timeout: int) -> tuple[int, str, dict]:
+               cwd: Path, tag: str, timeout: int, *,
+               unit: str = "", attempt=None, role: str = "",
+               outcome: str = "other") -> tuple[int, str, dict]:
     """One headless agent run. Returns (rc, output, usage).
 
     ``--usage-file`` is written even when the run fails, so every unit's spend is
     accounted for. The prompt is passed as argv (not stdin): the unit briefs are
     plain text with no shell metacharacter risk and argv keeps the run's exact
     prompt visible in the log.
+
+    Every call is also appended to ``state/runs.jsonl`` (telemetry item 1). The
+    prompt is never logged.
     """
     usage = LOG_DIR / f"{tag}.usage.json"
     with_suppress(lambda: usage.unlink())
@@ -497,9 +547,47 @@ def hermes_run(profile: str, model: str, prompt: str, toolsets: str,
            "-s", SKILL_NAME[profile],
            "--in", str(cwd),
            "--accept-hooks"]
+    ts_start = now()
     rc, out = sh(cmd, cwd=cwd, timeout=timeout, env=env)
+    ts_end = now()
     data = read_json(usage, {}) or {}
+    log_model_run(role or _role_for_profile(profile), model, unit, attempt, rc,
+                  outcome if outcome != "other" else _outcome_for_rc(rc),
+                  data, profile, toolsets, ts_start, ts_end)
     return rc, out, data
+
+
+def _role_for_profile(profile: str) -> str:
+    return {"builder": "builder", "reviewer": "reviewer",
+            "planner": "planner", "auditor": "audit"}.get(profile, "other")
+
+
+def _outcome_for_rc(rc) -> str:
+    if rc is None:
+        return "other"
+    if rc == 124:
+        return "timeout"
+    if rc != 0:
+        return "provider_error"
+    return "other"
+
+
+def log_model_run(role: str, model: str, unit: str, attempt, rc, outcome: str,
+                  usage: dict, profile: str = "", toolsets: str = "",
+                  ts_start: str = "", ts_end: str = "") -> None:
+    """Append one model call / agent run to state/runs.jsonl. Never raises."""
+    mod = _load_telemetry()
+    if mod is None:
+        return
+    try:
+        rec = mod.build_run(
+            ts_start=ts_start or now(), ts_end=ts_end or now(), role=role,
+            model=model, unit=unit or "", attempt=attempt, rc=rc, outcome=outcome,
+            usage=usage or {}, provider=PROVIDER,
+            flags=mod.default_flags(profile, toolsets))
+        mod.log_run(rec)
+    except Exception as exc:
+        log(f"telemetry: run log failed: {exc}")
 
 
 def usage_tokens(usage: dict) -> int:
@@ -882,7 +970,9 @@ def run_review(unit: dict, wt: Path, state: dict, author_model: str) -> tuple[st
         return "pass", "", 0
     prompt = reviewer_brief(unit, diff, model)
     rc, out, usage = hermes_run("reviewer", model, prompt, "file", wt,
-                                f"{unit['id']}-review", 900)
+                                f"{unit['id']}-review", 900,
+                                unit=unit["id"], attempt=unit.get("attempts"),
+                                role="reviewer")
     tokens = usage_tokens(usage)
     verdict, findings = "pass", ""
     m = re.search(r"\{.*\}", out, re.S)
@@ -908,7 +998,9 @@ def run_second_review(unit: dict, wt: Path, state: dict) -> tuple[str, str, int]
     prompt = (f"SECOND REVIEW {unit['id']} (auth/session/schema paths)\n\n"
               f"## Unified diff\n{diff}\n\nOutput ONLY the JSON verdict object.\n")
     rc, out, usage = hermes_run("reviewer", model, prompt, "file", wt,
-                                f"{unit['id']}-review2", 900)
+                                f"{unit['id']}-review2", 900,
+                                unit=unit["id"], attempt=unit.get("attempts"),
+                                role="reviewer")
     tokens = usage_tokens(usage)
     m = re.search(r"\{.*\}", out, re.S)
     if not m:
@@ -1222,6 +1314,9 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
         state["merged_today"] = int(state.get("merged_today", 0)) + 1
         event(state, f"{unit['id']}: MERGED PR #{pr} "
                      f"(head {head_sha[:12]}, gate=check.sh, tokens {unit.get('tokens',0)})")
+        telemetry_event("merged", unit["id"],
+                        f"PR #{pr} merged (gate=check.sh, head {head_sha[:12]})",
+                        pr=pr, head=head_sha[:12], tokens=unit.get("tokens", 0))
         git("fetch", "origin", "main")
         drop_worktree(unit)
         return True
@@ -1498,8 +1593,14 @@ def start_build(unit: dict, state: dict):
     proc = subprocess.Popen(cmd, cwd=str(wt), env={**os.environ, **env},
                             stdout=logfile, stderr=subprocess.STDOUT,
                             text=True, start_new_session=True)
+    telemetry_event("dispatched", unit["id"],
+                    f"attempt {attempt} on {model}", attempt=attempt, model=model)
+    if attempt > 1 and model == MODEL["sol"]:
+        telemetry_event("escalated", unit["id"],
+                        f"ladder reached the last rung on attempt {attempt} ({model})",
+                        attempt=attempt, model=model)
     return {"unit": unit, "proc": proc, "started": time.time(),
-            "logfile": logfile, "usage": usage, "wt": wt}
+            "logfile": logfile, "usage": usage, "wt": wt, "ts_start": now()}
 
 
 def finish_build(job, roadmap: dict, state: dict) -> None:
@@ -1534,20 +1635,60 @@ def finish_build(job, roadmap: dict, state: dict) -> None:
     unit["updated"] = now()
     log(f"{uid}: builder finished rc={rc} in {wall}s, {tokens} tokens ({source})")
 
-    # A timeout is a size problem, not a model problem: ask the planner to
-    # split the unit instead of retrying it whole at the same size.
+    telemetry_event("built", uid,
+                    f"rc={rc} {wall}s {tokens} tokens ({source})",
+                    attempt=unit.get("attempts"), tokens=tokens, wall_s=wall)
     if rc == 124:
+        telemetry_event("timeout", uid, f"builder stopped at {RUN_TIMEOUT}s "
+                                        f"({tokens} tokens, {source})")
+        # A timeout is a size problem, not a model problem: ask the planner to
+        # split the unit instead of retrying it whole at the same size.
         unit["split_requested"] = True
         unit["reason"] = f"timed out at {RUN_TIMEOUT}s ({tokens} tokens, {source})"
+    elif rc not in (0, None):
+        telemetry_event("provider_error", uid,
+                        f"builder exited rc={rc} in {wall}s ({tokens} tokens, {source})")
 
+    # Telemetry item 1: the builder run. Its outcome is only known after the
+    # attempt has been judged, so _publish_attempt writes outcome_box and the
+    # record is emitted in the finally - rc 0 alone is not "merged".
+    b_usage = read_json(usage, {}) or {}
+    attempt_no = unit.get("attempts")
+    outcome_box = {"v": ("timeout" if rc == 124 else
+                         "provider_error" if rc not in (0, None) else "other")}
+    try:
+        _publish_attempt(unit, wt, state, outcome_box)
+    finally:
+        log_model_run("builder", unit.get("model", ""), uid, attempt_no,
+                      rc, outcome_box["v"], b_usage, "builder", "file,terminal",
+                      job.get("ts_start", ""), now())
+
+
+def _publish_attempt(unit: dict, wt: Path, state: dict, outcome_box: dict) -> None:
+    """Judge one builder attempt and carry it to merge, or fail it.
+
+    Sets ``outcome_box["v"]`` to the attempt's telemetry outcome (merged,
+    gate_failed, no_change, review_fix, provider_error) so the caller can write
+    the builder's run record once the decision is known. Returning early means
+    the attempt failed and stays in the unit's own status; returning normally
+    means the unit was queued for merge.
+    """
+    uid = unit["id"]
     # --- diff guard: scope and protected paths ---------------------------
     # Checked on the working tree, before commit_if_dirty, so an uncommitted
     # edit to ops/ still fails the attempt instead of being committed.
     files = changed_files(wt)
-    violations = guard_violations(files, unit.get("paths"))
+    violations = [] if GUARD_DISABLED else guard_violations(files, unit.get("paths"))
+    if GUARD_DISABLED:
+        telemetry_event("guard_disabled", uid,
+                        "PHPRETRO_GUARD_DISABLED is set: the diff guard did not "
+                        "run on this attempt")
     if violations:
+        outcome_box["v"] = "gate_failed"
         detail = "\n".join(f"- {p}: {why}" for p, why in violations)
         event(state, f"{uid}: DIFF GUARD rejected the attempt:\n{detail}")
+        telemetry_event("gate_fail", uid, "diff guard: " + "; ".join(
+            f"{p} ({why})" for p, why in violations)[:200])
         (LOG_DIR / f"{uid}-attempt{unit['attempts']}-guard.log").write_text(detail + "\n")
         discard_changes(wt, unit)
         unit["reason"] = "diff guard: " + "; ".join(f"{p} ({why})" for p, why in violations)[:300]
@@ -1556,6 +1697,7 @@ def finish_build(job, roadmap: dict, state: dict) -> None:
         if unit["attempts"] >= MAX_ATTEMPTS:
             unit["status"] = "parked"
             event(state, f"{uid}: parked after repeated diff-guard rejections")
+            telemetry_event("parked", uid, "repeated diff-guard rejections")
         else:
             unit["status"] = "todo"
             event(state, f"{uid}: diff guard -> retry")
@@ -1564,6 +1706,7 @@ def finish_build(job, roadmap: dict, state: dict) -> None:
     commit_if_dirty(wt, unit)
     ahead = git_out("rev-list", "--count", f"{BASE_REF}..HEAD", cwd=wt)
     if not ahead or ahead == "0":
+        outcome_box["v"] = "no_change"
         record_history(unit, "no-change")
         # No change is the same signal as a timeout: the unit is too big or
         # too vague, so the planner splits it instead of it retrying unchanged.
@@ -1573,24 +1716,30 @@ def finish_build(job, roadmap: dict, state: dict) -> None:
         if unit["attempts"] >= MAX_ATTEMPTS or unit["tokens"] >= PER_UNIT_TOKEN_CAP:
             unit["status"] = "parked"
             unit["reason"] = "no committed change after all ladder attempts"
+            telemetry_event("parked", uid, "no committed change after the ladder")
+        telemetry_event("no_change", uid, "attempt produced no committed change")
         event(state, f"{uid}: no change produced -> {unit['status']} (split requested)")
         return
 
     rc, out = run_check(wt)
     (LOG_DIR / f"{uid}-attempt{unit['attempts']}.check.log").write_text(out)
     if rc != 0:
+        outcome_box["v"] = "gate_failed"
         unit["feedback"] = ("scripts/check.sh failed:\n" + tail(out, 60))
         unit["reason"] = "check.sh failed: " + tail(out, 3).replace("\n", " | ")
+        telemetry_event("gate_fail", uid, "check.sh: " + tail(out, 2).replace("\n", " | ")[:200])
         if unit["attempts"] >= MAX_ATTEMPTS or unit["tokens"] >= PER_UNIT_TOKEN_CAP:
             unit["status"] = "parked"
             event(state, f"{uid}: parked after {unit['attempts']} attempts "
                          f"({unit['tokens']} tokens)")
+            telemetry_event("parked", uid, f"gate failed after {unit['attempts']} attempts")
         else:
             unit["status"] = "todo"
             event(state, f"{uid}: check failed, attempt {unit['attempts']} -> retry")
         return
 
     event(state, f"{uid}: check.sh PASSED on attempt {unit['attempts']}")
+    telemetry_event("gate_pass", uid, f"check.sh passed on attempt {unit['attempts']}")
 
     # --- quality safeguards: items 1-3, before anything is published ------
     # A quality failure is an attempt failure: fix it in the worktree and retry,
@@ -1606,6 +1755,7 @@ def finish_build(job, roadmap: dict, state: dict) -> None:
     log(f"{uid}: quality ok={qreport['ok']} coverage={qreport.get('coverage')} "
         f"fidelity={qreport.get('fidelity')} ({qreport.get('reason','')[:80]})")
     if not qreport.get("ok"):
+        outcome_box["v"] = "gate_failed"
         unit["feedback"] = ("Quality safeguards rejected the attempt:\n"
                             + (qreport.get("detail") or qreport.get("reason", ""))
                             + "\n\nRepair the tests, not the check. Every new test must fail "
@@ -1619,19 +1769,25 @@ def finish_build(job, roadmap: dict, state: dict) -> None:
         unit["status"] = "todo" if unit["attempts"] < MAX_ATTEMPTS else "parked"
         event(state, f"{uid}: QUALITY rejected the attempt "
                      f"({qreport.get('reason')}) -> {unit['status']}")
+        telemetry_event("gate_fail", uid, "quality: " + str(qreport.get("reason",""))[:200])
+        if unit["status"] == "parked":
+            telemetry_event("parked", uid, "quality safeguards, out of attempts")
         return
 
     try:
         pr = push_and_open_pr(unit, wt, out, state)
     except Exception as exc:
+        outcome_box["v"] = "provider_error"
         unit["status"] = "todo"
         unit["feedback"] = f"delivery failed: {exc}"
         event(state, f"{uid}: PR delivery failed: {exc}")
+        telemetry_event("provider_error", uid, f"PR delivery failed: {exc}"[:200])
         return
     unit["pr"] = pr
     unit["status"] = "pr_open"
     unit["updated"] = now()
     event(state, f"{uid}: PR #{pr} opened")
+    telemetry_event("pr_opened", uid, f"PR #{pr} opened", pr=pr)
 
     # --- review (one round maximum) -------------------------------------
     verdict, findings, rtokens = run_review(unit, wt, state, unit.get("model", MODEL["luna"]))
@@ -1642,20 +1798,24 @@ def finish_build(job, roadmap: dict, state: dict) -> None:
         if v2 == "block" or (v2 == "fix" and f2):
             verdict, findings = v2, f2
         event(state, f"{uid}: second review ({MODEL['sol']}) verdict={v2}")
+        telemetry_event("review_verdict", uid, f"second review (sol): {v2}", verdict=v2)
     event(state, f"{uid}: review verdict={verdict}")
+    telemetry_event("review_verdict", uid, f"reviewer verdict={verdict}", verdict=verdict)
     if verdict in ("fix", "block") and findings and int(unit.get("review_rounds", 0)) < 1:
+        outcome_box["v"] = "review_fix"
         unit["review_rounds"] = int(unit.get("review_rounds", 0)) + 1
         unit["feedback"] = "Reviewer blockers to repair:\n" + findings
         unit["reason"] = "reviewer blockers: " + findings.replace("\n", " | ")[:300]
         unit["attempts"] = int(unit.get("attempts", 0)) + 1
         unit["status"] = "todo" if unit["attempts"] < MAX_ATTEMPTS else "parked"
         event(state, f"{uid}: blockers from review -> {unit['status']}")
+        if unit["status"] == "parked":
+            telemetry_event("parked", uid, "reviewer blockers, out of attempts")
         return
 
     unit["status"] = "queued"
-    merge_queue(unit, wt, state)
-
-
+    if merge_queue(unit, wt, state):
+        outcome_box["v"] = "merged"
 # --------------------------------------------------------------------------
 # Planner
 # --------------------------------------------------------------------------
@@ -1765,8 +1925,9 @@ def maybe_plan(roadmap: dict, state: dict) -> None:
     prompt = planner_brief(target, mode, design_text)
     (BRIEF_DIR / f"{uid}-planner.md").write_text(prompt)
     event(state, f"{uid}: planner ({model}) {mode}")
+    role = "planner"
     rc, out, usage = hermes_run("planner", model, prompt, "file", REPO,
-                                f"{uid}-planner", 900)
+                                f"{uid}-planner", 900, unit=uid, role=role)
     tokens = usage_tokens(usage)
     state["tokens_today"] = int(state.get("tokens_today", 0)) + tokens
     target["planner_retries"] = int(target.get("planner_retries", 0)) + 1
@@ -1777,6 +1938,9 @@ def maybe_plan(roadmap: dict, state: dict) -> None:
         else:
             target["status"] = "parked-final"
         event(state, f"{uid}: planner produced replacement entries")
+        if mode == "split":
+            telemetry_event("split", uid,
+                            f"planner split the unit (retry {target['planner_retries']})")
     else:
         target["reason"] = (target.get("reason", "") + " | planner output rejected")[:400]
         if target["planner_retries"] >= PLANNER_RETRIES:
@@ -1829,6 +1993,22 @@ def dispatch(roadmap: dict, state: dict) -> None:
             event(state, f"{u['id']}: pipeline error: {exc}")
 
 
+def _nightly_entry(name: str) -> dict:
+    """One nightly job's latest result, flattened for the renderer.
+
+    nightly.json is ``{name: {ts, pass, details}}``; the readers here want the
+    details' fields at the top level, so this merges them in.
+    """
+    led = read_json(NIGHTLY_JSON, {})
+    e = led.get(name) if isinstance(led, dict) else None
+    if not isinstance(e, dict):
+        return {}
+    out = dict(e.get("details") or {})
+    out["ts"] = e.get("ts")
+    out["ok"] = bool(e.get("pass"))
+    return out
+
+
 def nightly_lines() -> list:
     """Render the nightly integration check and self-check for STATE.md."""
     led = read_json(NIGHTLY_JSON, {})
@@ -1837,7 +2017,7 @@ def nightly_lines() -> list:
                 "(ops/nightly.py --integration --selfcheck)"]
     lines = []
     for name, label in (("integration", "integration"), ("selfcheck", "self-check")):
-        e = led.get(name)
+        e = _nightly_entry(name)
         if not e:
             lines.append(f"- {label}: not run yet")
             continue
@@ -1851,22 +2031,37 @@ def nightly_lines() -> list:
         else:
             bad = [c["name"] for c in e.get("checks", []) if not c.get("ok")]
             detail = "all checks ok" if e.get("ok") else "failing: " + ", ".join(bad)
-        fails = int(e.get("consecutive_failures", 0))
-        if not e.get("ok"):
-            fails = nightly_consecutive_failures(name)
+        fails = nightly_consecutive_failures(name)
         lines.append(f"- {label}: {state_txt} ({detail})"
                      + (f"; {fails} consecutive failures" if not e.get("ok") else ""))
     return lines
 
 
 def nightly_consecutive_failures(name: str) -> int:
-    led = read_json(NIGHTLY_JSON, {})
+    """Trailing failures for one nightly job, from nightly-history.jsonl."""
     n = 0
-    for entry in reversed([h for h in led.get("history", []) if h.get("name") == name]):
+    for entry in reversed(nightly_history()):
+        if entry.get("name") != name:
+            continue
         if entry.get("ok"):
             break
         n += 1
     return n
+
+
+def nightly_history() -> list:
+    """Every nightly run record, oldest first (nightly-history.jsonl + rotated)."""
+    entries = []
+    files = sorted(STATE_DIR.glob("nightly-history-*.jsonl")) + \
+        [STATE_DIR / "nightly-history.jsonl"]
+    for f in files:
+        try:
+            for line in f.read_text().splitlines():
+                if line.strip():
+                    entries.append(json.loads(line))
+        except (OSError, json.JSONDecodeError):
+            continue
+    return entries
 
 
 def queue_nightly_fixes(roadmap: dict, state: dict) -> None:
@@ -1875,8 +2070,7 @@ def queue_nightly_fixes(roadmap: dict, state: dict) -> None:
     A route that is already the subject of an open fix unit is not queued again,
     so a persistent failure does not pile up duplicate units.
     """
-    led = read_json(NIGHTLY_JSON, {})
-    integ = led.get("integration") or {}
+    integ = _nightly_entry("integration")
     if integ.get("ok"):
         state["nightly_fix_queue"] = []
         return
@@ -1936,7 +2130,8 @@ Open one bounded fix unit that makes this route work again. Rules:
     (BRIEF_DIR / f"NFIX-{abs(hash(req['route'])) % 10000}.md").write_text(prompt)
     event(state, f"nightly: planner ({model}) fix for {req['route']}")
     rc, out, usage = hermes_run("planner", model, prompt, "file", REPO,
-                                f"nightly-fix-{abs(hash(req['route'])) % 10000}", 900)
+                                f"nightly-fix-{abs(hash(req['route'])) % 10000}", 900,
+                                unit="", role="planner")
     tokens = usage_tokens(usage)
     state["tokens_today"] = int(state.get("tokens_today", 0)) + tokens
     req["planner_retries"] = int(req.get("planner_retries", 0)) + 1
@@ -2042,7 +2237,8 @@ def run_audit(roadmap: dict, state: dict) -> dict:
               "nothing worth changing, output exactly `units: []`.")
     (BRIEF_DIR / "weekly-audit.md").write_text(prompt)
     event(state, f"audit: weekly read-only audit ({model})")
-    rc, out, usage = hermes_run("auditor", model, prompt, "file", REPO, "weekly-audit", 1200)
+    rc, out, usage = hermes_run("auditor", model, prompt, "file", REPO, "weekly-audit", 1200,
+                                unit="", role="audit")
     tokens = usage_tokens(usage)
     # Keep the raw output: a rejected audit must be diagnosable, not just lost.
     with_suppress(lambda: (LOG_DIR / "weekly-audit.out").write_text(
@@ -2295,6 +2491,85 @@ def _median(values) -> int:
     return vals[mid] if len(vals) % 2 else (vals[mid - 1] + vals[mid]) // 2
 
 
+def telemetry_lines(state: dict) -> list:
+    """Item 6: what the telemetry logs hold, and the dashboard note."""
+    mod = _load_telemetry()
+    lines = []
+    if mod is None:
+        lines.append("- telemetry module unavailable; numbers fall back to the "
+                     "state counter")
+        return lines
+    try:
+        runs = list(mod.read_runs())
+    except Exception:
+        runs = []
+    day = state.get("day", "")
+    today = [r for r in runs if str(r.get("ts_start", ""))[:10] == day]
+    outcomes: dict = {}
+    for r in today:
+        o = r.get("outcome", "other")
+        outcomes[o] = outcomes.get(o, 0) + 1
+    roles: dict = {}
+    for r in today:
+        ro = r.get("role", "other")
+        roles[ro] = roles.get(ro, 0) + 1
+    unknown = sum(1 for r in today
+                  if r.get("input_tokens") is None or r.get("api_calls") is None)
+    lines.append(f"- runs.jsonl: {len(runs)} run(s) total, {len(today)} today "
+                 f"({' '.join(f'{k}={v}' for k, v in sorted(roles.items())) or 'none'})")
+    lines.append(f"- outcomes today: "
+                 + (" ".join(f"{k}={v}" for k, v in sorted(outcomes.items())) or "none")
+                 + (f"; {unknown} with unknown token fields (pessimistic estimate used)"
+                    if unknown else ""))
+    try:
+        ev = sum(1 for _ in (STATE_DIR / "events.jsonl").read_text().splitlines())
+    except OSError:
+        ev = 0
+    lines.append(f"- events.jsonl: {ev} event(s)")
+    prices = {}
+    try:
+        prices = mod.load_prices()
+    except Exception:
+        prices = {}
+    luna = (prices.get("gpt-6-luna") or {})
+    lines.append("- prices.yaml: input/output per million (ESTIMATE; unit "
+                 "uncalibrated)"
+                 + (f"; gpt-6-luna {luna.get('input')}/{luna.get('output')}"
+                    if luna else ""))
+    lines.append("- logs are append-only, rotated monthly, and hold no keys or "
+                 "prompts")
+    lines.append("- note: the A6API cost dashboard reads these same files "
+                 "(runs.jsonl, events.jsonl, nightly.json) for its numbers")
+    return lines
+
+
+def telemetry_day_totals(day: str) -> dict:
+    """Today's tokens/runs from runs.jsonl; falls back to the state counter.
+
+    Item 6: STATE.md's numbers come from the telemetry logs. The state counter
+    is only used when the log has nothing for the day (for example before the
+    telemetry module was installed).
+    """
+    mod = _load_telemetry()
+    if mod is None:
+        return {}
+    try:
+        return mod.totals_for_day(day)
+    except Exception:
+        return {}
+
+
+def telemetry_unit_totals() -> dict:
+    """Total tokens per unit from runs.jsonl (empty when unavailable)."""
+    mod = _load_telemetry()
+    if mod is None:
+        return {}
+    try:
+        return mod.unit_token_totals()
+    except Exception:
+        return {}
+
+
 def report_lines(roadmap: dict, state: dict) -> list:
     """The five-line report: merged, stuck, median tokens/unit, caps, unresolved."""
     merged = sorted(u["id"] for u in roadmap.values() if u.get("status") == "merged")
@@ -2302,14 +2577,29 @@ def report_lines(roadmap: dict, state: dict) -> list:
                    if u.get("status") in ("queued", "pr_open", "building", "todo",
                                           "parked", "parked-final",
                                           "design-blocked"))
-    delivered = [unit_tokens(u) for u in roadmap.values()
-                 if u.get("status") == "merged"]
+    # Tokens per unit: prefer the telemetry log's per-unit totals; fall back to
+    # the unit's own counter / usage files when the log has nothing for it.
+    tel = telemetry_unit_totals()
+    delivered = []
+    for u in roadmap.values():
+        if u.get("status") != "merged":
+            continue
+        delivered.append(tel.get(u["id"]) or unit_tokens(u))
     med = _median(delivered)
     over_cap = sorted(u["id"] for u in roadmap.values()
                       if int(u.get("tokens", 0)) >= PER_UNIT_TOKEN_CAP)
+    # Today's tokens: the telemetry log is the source of truth (item 6).
+    day = telemetry_day_totals(state.get("day", ""))
+    tokens_today = int(day.get("tokens") or 0)
+    tokens_src = "runs.jsonl"
+    if not tokens_today:
+        tokens_today = int(state.get("tokens_today", 0))
+        tokens_src = "state counter"
+    over_daily = tokens_today >= DAILY_TOKEN_CAP
     caps = (f"merged {state['merged_today']}/{MAX_MERGE_PER_DAY}; "
-            f"tokens {state['tokens_today']}/{DAILY_TOKEN_CAP}; "
-            f"per-unit {PER_UNIT_TOKEN_CAP}"
+            f"tokens {tokens_today}/{DAILY_TOKEN_CAP} (from {tokens_src})"
+            + ("; DAILY TOKEN CAP HIT" if over_daily else "")
+            + f"; per-unit {PER_UNIT_TOKEN_CAP}"
             + (f"; over per-unit cap: {', '.join(over_cap)}" if over_cap else ""))
     unresolved = []
     open_prs = sorted((u["id"], int(u.get("pr") or 0)) for u in roadmap.values()
@@ -2332,7 +2622,7 @@ def report_lines(roadmap: dict, state: dict) -> list:
         f"2. Stuck ({len(stuck)}): "
         + (", ".join(f"{i}={s}" for i, s in stuck) if stuck else "nothing"),
         f"3. Tokens per unit (median of merged): {med} "
-        f"(n={len(delivered)})",
+        f"(n={len(delivered)}{', from runs.jsonl' if tel else ''})",
         f"4. Caps: {caps}",
         f"5. Unresolved: " + "; ".join(unresolved),
     ]
@@ -2357,6 +2647,8 @@ def write_state_md(roadmap: dict, state: dict) -> None:
     lines += report_lines(roadmap, state)
     lines += ["", "## Quality", ""]
     lines += quality_lines(roadmap)
+    lines += ["", "## Telemetry", ""]
+    lines += telemetry_lines(state)
     lines += ["", "## Nightly checks", ""]
     lines += nightly_lines()
     lines += ["", "## Alerts", ""]
