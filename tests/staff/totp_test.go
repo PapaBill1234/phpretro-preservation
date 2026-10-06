@@ -12,7 +12,7 @@ import (
 // guessed, as recorded in docs/units/QA1.md.
 func TestValidateCodeAcceptsCurrentAndBindsPerStaff(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
-	store := &staff.MemoryStore{Records: map[string]staff.Record{"alice": {StaffID: "alice", Secret: "JBSWY3DPEHPK3PXP", Enabled: true}, "bob": {StaffID: "bob", Secret: "JBSWY3DPEHPK3PXP", Enabled: true}}}
+	store := &staff.MemoryStore{Records: map[string]staff.Record{"alice": {StaffID: "alice", Secret: "JBSWY3DPEHPK3PXP", Enabled: true}, "bob": {StaffID: "bob", Secret: "KRUGS4ZANFZSAYJA", Enabled: true}}}
 	code, err := staff.SyntheticCode(store.Records["alice"].Secret, now)
 	if err != nil {
 		t.Fatal(err)
@@ -20,8 +20,8 @@ func TestValidateCodeAcceptsCurrentAndBindsPerStaff(t *testing.T) {
 	if err := staff.ValidateCode(store, "alice", code, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := staff.ValidateCode(store, "bob", code, now); err != nil {
-		t.Fatal(err)
+	if err := staff.ValidateCode(store, "bob", code, now); !errors.Is(err, staff.ErrWrongCode) {
+		t.Fatalf("got %v, want wrong-code rejection for another staff member", err)
 	}
 }
 func TestValidateRejectsCases(t *testing.T) {
