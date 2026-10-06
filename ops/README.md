@@ -68,6 +68,32 @@ write a throwaway harness.** The one-off scripts that verified the diff guard,
 the planner pass, the advisory rule and the timeout accounting live in this
 directory now.
 
+## Token Terminator on the builder profile (context engine)
+
+`ops/tt_guard.py` guards the optional Token Terminator context engine, which is
+selected for the **builder profile only** (`context.engine` in the builder's
+`config.yaml`; other profiles keep the built-in compressor). Two jobs:
+
+* **Marker.** Every run record in `runs.jsonl` carries
+  `flags.plugins = {tt, plugin, version, engine, active, staged_sources}`.
+  `active` is evidence, not an assertion: it reads the engine's own store in the
+  profile (`profiles/<p>/token-terminator/artifacts.sqlite3`, opened read-only)
+  and is true only when the engine staged context for **that run's session**.
+  Savings are never credited on an inactive path.
+* **Guard.** Cost is billed cost per **merged** unit over **all** its attempts
+  (failed, timed-out, retried) plus its reviews. A unit with any unknown attempt
+  cost is `null`, never `0`, and is excluded from the median. The next 6 merged
+  units are compared with the previous 6; if the median cost per merged unit is
+  not >= 15% lower, or first-attempt success fell, the engine is deselected and
+  uninstalled. Two units showing missing-context symptoms (the same file read to
+  exhaustion in one attempt) also force a revert. `ops/orchestrator.py` runs this
+  before dispatch each cycle and records the verdict in `state/tt.json` and the
+  STATE.md section "Token Terminator (builder context engine)".
+
+`python3 ops/tt_guard.py --check` prints the verdict; `--selftest` runs the
+deterministic checks. The engine is judgement-day-optional: reverting it restores
+`compressor` and the pipeline keeps running.
+
 ## Weekly audit and the consistency unit
 
 - **Item 4 - the audit.** Once a week (when no build is in flight), the

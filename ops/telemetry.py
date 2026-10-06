@@ -310,18 +310,74 @@ def estimate_cost(usage: dict, prices: dict | None = None) -> float | None:
     return round(in_tok / 1_000_000 * float(inp) + out_tok / 1_000_000 * float(outp), 8)
 
 
-def default_flags(profile: str = "", toolsets: str = "") -> dict:
+def default_flags(profile: str = "", toolsets: str = "",
+                  session: str = "") -> dict:
     """Run flags. ``context_engine`` is the configured engine, defaulting to the
     built-in compressor when config.yaml does not name one."""
     engine = os.environ.get("PHPRETRO_CONTEXT_ENGINE", "").strip()
     if not engine:
         engine = _context_engine_from_config(profile) or "compressor"
-    flags = {"context_engine": engine}
+    flags: dict = {"context_engine": engine}
     if toolsets:
         flags["toolsets"] = toolsets
     if profile:
         flags["profile"] = profile
+    flags["plugins"] = _plugin_marker(profile, session)
     return flags
+
+
+def _plugin_marker(profile: str, session: str = "") -> dict:
+    """Prove the token-terminator ContextEngine was actually active this run.
+
+    Requirement: savings must never be credited on an inactive path, so the
+    marker is EVIDENCE, not an assertion. It reads the engine's own store in
+    this profile (``<profile>/token-terminator/artifacts.sqlite3``) and reports
+    ``active`` only when the engine staged context for THIS run's session. The
+    SQLite access is opened read-only and never created, so a marker lookup can
+    never touch the engine's data.
+    """
+    home = (HOME / ".hermes" / "profiles" / profile) if profile else (HOME / ".hermes")
+    engine = _context_engine_from_config(profile)
+    out = {"tt": False, "plugin": "token-terminator", "engine": engine or "compressor",
+           "active": False}
+    if engine != "token-terminator":
+        return out
+    out["tt"] = True
+    plugin_yaml = home / "plugins" / "token-terminator" / "plugin.yaml"
+    try:
+        m = re.search(r"^version:\s*'?([\w.\-]+)'?", plugin_yaml.read_text(errors="replace"), re.M)
+        if m:
+            out["version"] = m.group(1)
+    except OSError:
+        pass
+    db = home / "token-terminator" / "artifacts.sqlite3"
+    if not db.is_file():
+        out["error"] = "no store"
+        return out
+    out["staged_sources"] = _tt_staged_sources(db, session=session or None)
+    out["active"] = bool(session) and out["staged_sources"] > 0
+    return out
+
+
+def _tt_staged_sources(db: Path, session: str | None = None) -> int:
+    """Count the engine's staged context rows; scoped to a session when known."""
+    import sqlite3
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2.0)
+    except sqlite3.Error:
+        return 0
+    try:
+        if session:
+            row = con.execute(
+                "SELECT COUNT(*) FROM tt_context_sources WHERE session_id = ?",
+                (session,)).fetchone()
+        else:
+            row = con.execute("SELECT COUNT(*) FROM tt_context_sources").fetchone()
+        return int(row[0]) if row else 0
+    except sqlite3.Error:
+        return 0
+    finally:
+        con.close()
 
 
 def _context_engine_from_config(profile: str) -> str:
