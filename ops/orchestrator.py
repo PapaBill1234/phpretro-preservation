@@ -442,6 +442,113 @@ def _load_quality():
 
 
 _TELEMETRY_MOD = None
+_TT_GUARD_MOD = None
+
+
+def _load_tt_guard():
+    """Import ops/tt_guard.py once (the builder context-engine guard)."""
+    global _TT_GUARD_MOD
+    if _TT_GUARD_MOD is not None:
+        return _TT_GUARD_MOD
+    try:
+        import importlib.util
+        gpath = Path(__file__).with_name("tt_guard.py")
+        spec = importlib.util.spec_from_file_location("phpretro_tt_guard", gpath)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"cannot load {gpath}")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _TT_GUARD_MOD = mod
+        return mod
+    except Exception as exc:
+        log(f"tt_guard: unavailable ({exc})")
+        return None
+
+
+def tt_lines() -> list:
+    """STATE.md's Token Terminator section: marker + the cost/quality verdict."""
+    mod = _load_tt_guard()
+    if mod is None:
+        return ["- tt_guard module unavailable"]
+    try:
+        return list(mod.summary_lines())
+    except Exception as exc:
+        return [f"- tt_guard reporting error: {exc}"]
+
+
+def _tt_revert(reason: str) -> bool:
+    """Deselect and uninstall Token Terminator from the builder profile.
+
+    A stopped pipeline would leave the guard unenforced, so a revert that cannot
+    complete is a hard failure (the caller keeps going and re-tries next cycle).
+    """
+    cfg = HOME / ".hermes" / "profiles" / "builder" / "config.yaml"
+    engine = tt_engine()
+    if engine and engine != "compressor":
+        try:
+            text = cfg.read_text()
+            text2 = re.sub(r"(?m)^(context:\n(?:^(?:[ \t]+.*)?\n)*?[ \t]*engine:)[ \t]*token-terminator[ \t]*$",
+                           r"\1 compressor", text)
+            if text2 == text:
+                text2 = re.sub(r"(?m)^([ \t]*engine:)[ \t]*token-terminator[ \t]*$",
+                               r"\1 compressor", text)
+            if text2 != text:
+                cfg.write_text(text2)
+                os.chmod(cfg, 0o600)
+        except OSError as exc:
+            log(f"tt revert: could not rewrite builder config: {exc}")
+            return False
+    venvpy = _hermes_venv_python()
+    if venvpy:
+        uv = shutil.which("uv") or str(HOME / ".hermes" / "tools" /
+                                       "uv-0.12.3-linux-x64" / "uv")
+        rc, out = sh([uv, "pip", "uninstall", "--python", str(venvpy),
+                      "token-terminator"], timeout=300)
+        if rc != 0:
+            log(f"tt revert: uninstall rc={rc}: {out[-300:]}")
+    log(f"tt revert: {reason}")
+    telemetry_event("parked", "", f"token-terminator reverted: {reason}")
+    return True
+
+
+def _hermes_venv_python() -> Path | None:
+    """The interpreter Hermes actually runs (the uv-managed runtime venv)."""
+    try:
+        import subprocess as _sp
+        out = _sp.run([str(HERMES), "--print-runtime-command"], capture_output=True,
+                      text=True, timeout=60).stdout
+        m = re.search(r"(/[\w./\-+]+/bin/python[\w.]*)", out)
+        if m and Path(m.group(1)).exists():
+            return Path(m.group(1))
+    except Exception:
+        pass
+    base = HOME / ".hermes" / "installs"
+    for cand in sorted(base.glob("*/environments/*/venv/bin/python")):
+        if cand.exists():
+            return cand
+    return None
+
+
+def tt_engine() -> str:
+    """The builder profile's configured context engine ('' if unset)."""
+    mod = _load_telemetry()
+    if mod is None:
+        return ""
+    return mod._context_engine_from_config("builder")
+
+
+def _tt_auto_revert() -> None:
+    """Revert the engine if the guard says it did not pay off. Never raises."""
+    mod = _load_tt_guard()
+    if mod is None:
+        return
+    try:
+        st = mod.record()
+    except Exception as exc:
+        log(f"tt_guard: check failed: {exc}")
+        return
+    if st.get("revert") and tt_engine():
+        _tt_revert(st.get("verdict") or "guard did not pay off")
 
 
 def _load_telemetry():
@@ -659,7 +766,12 @@ def _outcome_for_rc(rc) -> str:
 def log_model_run(role: str, model: str, unit: str, attempt, rc, outcome: str,
                   usage: dict, profile: str = "", toolsets: str = "",
                   ts_start: str = "", ts_end: str = "") -> None:
-    """Append one model call / agent run to state/runs.jsonl. Never raises."""
+    """Append one model call / agent run to state/runs.jsonl. Never raises.
+
+    The run's own session id (from the usage file the agent wrote) is passed to
+    the flag builder so the plugin marker can prove the context engine was
+    active for THIS run, not merely configured.
+    """
     mod = _load_telemetry()
     if mod is None:
         return
@@ -668,7 +780,8 @@ def log_model_run(role: str, model: str, unit: str, attempt, rc, outcome: str,
             ts_start=ts_start or now(), ts_end=ts_end or now(), role=role,
             model=model, unit=unit or "", attempt=attempt, rc=rc, outcome=outcome,
             usage=usage or {}, provider=PROVIDER,
-            flags=mod.default_flags(profile, toolsets))
+            flags=mod.default_flags(profile, toolsets,
+                                    session=str((usage or {}).get("session_id") or "")))
         mod.log_run(rec)
     except Exception as exc:
         log(f"telemetry: run log failed: {exc}")
@@ -3078,6 +3191,8 @@ def write_state_md(roadmap: dict, state: dict) -> None:
     lines += telemetry_lines(state)
     lines += ["", "## Jev", ""]
     lines += jev_lines()
+    lines += ["", "## Token Terminator (builder context engine)", ""]
+    lines += tt_lines()
     lines += ["", "## Nightly checks", ""]
     lines += nightly_lines()
     lines += ["", "## Alerts", ""]
@@ -3119,6 +3234,9 @@ def cycle() -> None:
         roadmap = load_roadmap(state)
         event(state, f"cycle start (merged_today={state['merged_today']}, "
                      f"tokens_today={state['tokens_today']})")
+        # Builder context-engine guard: revert Token Terminator if it did not pay
+        # off. Runs before dispatch so a failed engine never takes more work.
+        _tt_auto_revert()
         rc, out = git("fetch", "origin", "--prune")
         if rc != 0:
             event(state, f"git fetch failed: {out[-200:]}")
