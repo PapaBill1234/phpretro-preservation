@@ -482,6 +482,89 @@ def telemetry_event(kind: str, unit: str, reason: str = "", **extra) -> None:
         log(f"telemetry: event log failed: {exc}")
 
 
+_JEV_MOD = None
+_JEV_MISS: set = set()
+
+
+def _load_jev():
+    """Import ops/jev.py once. Never raises: Jev is optional routing help."""
+    global _JEV_MOD
+    if _JEV_MOD is not None:
+        return _JEV_MOD
+    try:
+        import importlib.util
+        jpath = Path(__file__).with_name("jev.py")
+        spec = importlib.util.spec_from_file_location("phpretro_jev", jpath)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"cannot load {jpath}")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _JEV_MOD = mod
+        return mod
+    except Exception as exc:
+        log(f"jev module unavailable: {exc}")
+        return None
+
+
+def jev_size_check(unit: dict) -> dict:
+    """Item 2a. Never raises; falls back to the rule when Jev is unavailable."""
+    mod = _load_jev()
+    if mod is None:
+        return {"action": "run_as_is", "source": "rule"}
+    try:
+        return mod.size_check(unit)
+    except Exception as exc:
+        log(f"jev (a) error: {exc}")
+        return {"action": "run_as_is", "source": "rule"}
+
+
+def jev_triage(unit: dict, output: str, attempt: int, at_last_rung: bool) -> dict:
+    """Item 2b. Never raises; falls back to the rule when Jev is unavailable."""
+    mod = _load_jev()
+    if mod is None:
+        return {"action": "retry_same", "source": "rule"}
+    try:
+        return mod.triage(unit, output, attempt, MAX_ATTEMPTS, at_last_rung)
+    except Exception as exc:
+        log(f"jev (b) error: {exc}")
+        return {"action": "retry_same", "source": "rule"}
+
+
+def jev_review_gate(unit: dict, diff: str, tests_pass: bool) -> dict:
+    """Item 2c. Never raises; on any problem the reviewer runs as before."""
+    mod = _load_jev()
+    if mod is None:
+        return {"skip": False, "source": "rule", "reason": "unavailable"}
+    try:
+        return mod.review_gate(unit, diff, tests_pass)
+    except Exception as exc:
+        log(f"jev (c) error: {exc}")
+        return {"skip": False, "source": "rule", "reason": f"error: {exc}"}
+
+
+def jev_note_miss(reason: str) -> list:
+    """Item 4: attribute a nightly failure / fix unit to recent Jev skips."""
+    mod = _load_jev()
+    if mod is None:
+        return []
+    try:
+        return mod.note_miss_recent(reason)
+    except Exception as exc:
+        log(f"jev miss-note error: {exc}")
+        return []
+
+
+def jev_note_merged(unit: dict) -> None:
+    """Item 4: track merged-unit tokens for the (a)+(b) median comparison."""
+    mod = _load_jev()
+    if mod is None:
+        return
+    try:
+        mod.record_merged(unit.get("id", ""), unit_tokens(unit))
+    except Exception as exc:
+        log(f"jev merged-note error: {exc}")
+
+
 def go_pin() -> str:
     try:
         return (REPO / ".go-version").read_text().strip()
@@ -1317,6 +1400,8 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
         telemetry_event("merged", unit["id"],
                         f"PR #{pr} merged (gate=check.sh, head {head_sha[:12]})",
                         pr=pr, head=head_sha[:12], tokens=unit.get("tokens", 0))
+        # Item 4: feed the (a)+(b) median comparison.
+        jev_note_merged(unit)
         git("fetch", "origin", "main")
         drop_worktree(unit)
         return True
@@ -1329,6 +1414,99 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
 def model_for_attempt(attempt: int) -> str:
     idx = min(max(attempt - 1, 0), len(LADDER) - 1)
     return MODEL[LADDER[idx]]
+
+
+def rung_index(model: str) -> int:
+    """Position of a model on the ladder (LAST match, so luna -> 1, not 0)."""
+    for i in range(len(LADDER) - 1, -1, -1):
+        if MODEL[LADDER[i]] == model:
+            return i
+    return -1
+
+
+# Ladder strength order, weakest first. Escalating means the next one up.
+_LADDER_ORDER = ["luna", "deepseek", "sol"]
+
+
+def _next_stronger_model(unit: dict, attempt: int) -> str:
+    """The model one step stronger than the unit's current one.
+
+    Falls back to the model the attempt number would have used, so escalation
+    is always a real change (never luna -> luna).
+    """
+    cur = unit.get("model", "")
+    tag = next((k for k in _LADDER_ORDER if MODEL[k] == cur), "")
+    if tag in _LADDER_ORDER:
+        i = _LADDER_ORDER.index(tag)
+        if i + 1 < len(_LADDER_ORDER):
+            return MODEL[_LADDER_ORDER[i + 1]]
+    return model_for_attempt(attempt)
+
+
+def _apply_failure_triage(unit: dict, state: dict, output: str,
+                          outcome_box: dict) -> None:
+    """Item 2b: after a failed attempt, Jev may choose the next move.
+
+    Jev only ever picks among options the remaining ladder allows; the
+    MAX_ATTEMPTS / token-cap park rule still wins, so Jev cannot extend a
+    unit's life. The default (Jev off or unusable) is the existing behaviour.
+    """
+    uid = unit["id"]
+    attempt = int(unit.get("attempts", 1))
+    at_last = rung_index(unit.get("model", "")) >= len(LADDER) - 1
+    allowed = allowed_triage_names(attempt, at_last)
+    tri = jev_triage(unit, output, attempt, at_last)
+    action = tri.get("action", "retry_same")
+    if action not in allowed:
+        action = "retry_same"
+    src = tri.get("source", "rule")
+    log(f"{uid}: triage -> {action} (source={src}, "
+        f"p={tri.get('probability')}, allowed={allowed})")
+
+    if action == "park" or attempt >= MAX_ATTEMPTS or unit["tokens"] >= PER_UNIT_TOKEN_CAP:
+        unit["status"] = "parked"
+        if action == "park":
+            unit["reason"] = (f"triage: park (source={src}) | " +
+                              str(unit.get("reason", "")))[:400]
+        event(state, f"{uid}: parked after {attempt} attempts "
+                     f"({unit['tokens']} tokens)")
+        telemetry_event("parked", uid, f"triage={action} after {attempt} attempts")
+        return
+    if action == "split_unit":
+        unit["split_requested"] = True
+        unit["status"] = "todo"
+        telemetry_event("split", uid, f"triage: split_unit (source={src})")
+        event(state, f"{uid}: triage -> split_unit")
+        return
+    if action == "shrink_unit":
+        unit["shrinks"] = int(unit.get("shrinks", 0)) + 1
+        unit["feedback"] = ("The failure looks structural, not transient: "
+                            "implement the smallest coherent slice of this unit "
+                            "and stay strictly inside the listed paths.")
+        unit["status"] = "todo"
+        event(state, f"{uid}: triage -> shrink_unit "
+                     f"(shrink {unit['shrinks']})")
+        return
+    if action == "escalate_model":
+        target = _next_stronger_model(unit, attempt)
+        unit["model_override"] = target
+        unit["status"] = "todo"
+        event(state, f"{uid}: triage -> escalate_model ({target})")
+        telemetry_event("escalated", uid, f"triage: escalate_model to {target}")
+        return
+    # retry_same
+    unit["status"] = "todo"
+    event(state, f"{uid}: triage -> retry_same (attempt {attempt})")
+
+
+def allowed_triage_names(attempt: int, at_last_rung: bool) -> list:
+    """The options the remaining ladder permits; mirrors ops/jev.py."""
+    if attempt >= MAX_ATTEMPTS:
+        return ["park"]
+    opts = ["retry_same", "shrink_unit", "split_unit", "park"]
+    if not at_last_rung:
+        opts.append("escalate_model")
+    return opts
 
 
 def paths_overlap(a, b) -> bool:
@@ -1566,6 +1744,41 @@ def select_ready(roadmap: dict, state: dict) -> list:
             continue
         if adopt_branch_unit(u, state):
             continue
+        # (a) pre-dispatch size check (Jev, routing only). A unit that already
+        # timed out is never run as is, whatever Jev says. The decision is
+        # cached per (attempts, timeouts) so a unit sitting in todo across
+        # cycles does not re-ask on every tick.
+        stamp = f"{int(u.get('attempts', 0))}:{int(u.get('timeouts', 0))}"
+        if u.get("size_check_at") == stamp and u.get("size_action"):
+            size = {"action": u["size_action"], "source": u.get("size_source", "rule"),
+                    "probability": None}
+        else:
+            size = jev_size_check(u)
+            u["size_check_at"] = stamp
+            u["size_action"] = size["action"]
+            u["size_source"] = size.get("source", "rule")
+        if size["action"] == "split":
+            if not u.get("split_requested"):
+                u["split_requested"] = True
+                u["reason"] = (f"size check: split "
+                               f"(source {size.get('source')}, p={size.get('probability')})")
+                telemetry_event("split", uid, f"size check routed to split "
+                                              f"(source={size.get('source')})")
+                event(state, f"{uid}: size check -> split")
+            continue
+        if size["action"] == "shrink":
+            if int(u.get("shrinks", 0)) < 2:
+                u["shrinks"] = int(u.get("shrinks", 0)) + 1
+                u["feedback"] = ("The size check found the goal clear but the "
+                                 "surface too wide: implement the smallest "
+                                 "coherent slice and stay inside the listed paths.")
+                event(state, f"{uid}: size check -> shrink "
+                             f"(attempt {u['shrinks']}/2)")
+            else:
+                u["reason"] = "size check kept choosing shrink"
+                u["split_requested"] = True
+                event(state, f"{uid}: size check -> split (shrink limit reached)")
+                continue
         ready.append(u)
     return ready
 
@@ -1573,7 +1786,8 @@ def select_ready(roadmap: dict, state: dict) -> list:
 def start_build(unit: dict, state: dict):
     unit["attempts"] = int(unit.get("attempts", 0)) + 1
     attempt = unit["attempts"]
-    model = model_for_attempt(attempt)
+    # triage (item 2b) may have escalated the model; honor it once, then clear.
+    model = unit.pop("model_override", "") or model_for_attempt(attempt)
     unit["model"] = model
     unit["status"] = "building"
     unit["updated"] = now()
@@ -1643,6 +1857,7 @@ def finish_build(job, roadmap: dict, state: dict) -> None:
                                         f"({tokens} tokens, {source})")
         # A timeout is a size problem, not a model problem: ask the planner to
         # split the unit instead of retrying it whole at the same size.
+        unit["timeouts"] = int(unit.get("timeouts", 0)) + 1
         unit["split_requested"] = True
         unit["reason"] = f"timed out at {RUN_TIMEOUT}s ({tokens} tokens, {source})"
     elif rc not in (0, None):
@@ -1728,14 +1943,8 @@ def _publish_attempt(unit: dict, wt: Path, state: dict, outcome_box: dict) -> No
         unit["feedback"] = ("scripts/check.sh failed:\n" + tail(out, 60))
         unit["reason"] = "check.sh failed: " + tail(out, 3).replace("\n", " | ")
         telemetry_event("gate_fail", uid, "check.sh: " + tail(out, 2).replace("\n", " | ")[:200])
-        if unit["attempts"] >= MAX_ATTEMPTS or unit["tokens"] >= PER_UNIT_TOKEN_CAP:
-            unit["status"] = "parked"
-            event(state, f"{uid}: parked after {unit['attempts']} attempts "
-                         f"({unit['tokens']} tokens)")
-            telemetry_event("parked", uid, f"gate failed after {unit['attempts']} attempts")
-        else:
-            unit["status"] = "todo"
-            event(state, f"{uid}: check failed, attempt {unit['attempts']} -> retry")
+        # (b) failure triage: Jev picks the next move among ladder-legal options.
+        _apply_failure_triage(unit, state, tail(out, 80), outcome_box)
         return
 
     event(state, f"{uid}: check.sh PASSED on attempt {unit['attempts']}")
@@ -1790,17 +1999,31 @@ def _publish_attempt(unit: dict, wt: Path, state: dict, outcome_box: dict) -> No
     telemetry_event("pr_opened", uid, f"PR #{pr} opened", pr=pr)
 
     # --- review (one round maximum) -------------------------------------
-    verdict, findings, rtokens = run_review(unit, wt, state, unit.get("model", MODEL["luna"]))
-    add_tokens(state, unit, rtokens)
-    if diff_touches_sensitive(current_diff(wt)):
-        v2, f2, t2 = run_second_review(unit, wt, state)
-        add_tokens(state, unit, t2)
-        if v2 == "block" or (v2 == "fix" and f2):
-            verdict, findings = v2, f2
-        event(state, f"{uid}: second review ({MODEL['sol']}) verdict={v2}")
-        telemetry_event("review_verdict", uid, f"second review (sol): {v2}", verdict=v2)
-    event(state, f"{uid}: review verdict={verdict}")
-    telemetry_event("review_verdict", uid, f"reviewer verdict={verdict}", verdict=verdict)
+    # (c) review cascade: Jev may skip the deepseek review only when the diff is
+    # small, tests pass, no sensitive path is touched, and Jev is >=0.9 on both
+    # probability and confidence. check.sh stays the gate either way.
+    diff_now = current_diff(wt)
+    rgate = jev_review_gate(unit, diff_now, tests_pass=True)
+    if rgate.get("skip"):
+        unit["review_skipped_by_jev"] = True
+        verdict, findings, rtokens = "pass", "", 0
+        event(state, f"{uid}: deepseek review SKIPPED by Jev "
+                     f"(p={rgate.get('probability')}, c={rgate.get('confidence')})")
+        telemetry_event("review_verdict", uid,
+                        f"skipped via Jev (p={rgate.get('probability')}, "
+                        f"c={rgate.get('confidence')})", verdict="skipped")
+    else:
+        verdict, findings, rtokens = run_review(unit, wt, state, unit.get("model", MODEL["luna"]))
+        add_tokens(state, unit, rtokens)
+        if diff_touches_sensitive(diff_now):
+            v2, f2, t2 = run_second_review(unit, wt, state)
+            add_tokens(state, unit, t2)
+            if v2 == "block" or (v2 == "fix" and f2):
+                verdict, findings = v2, f2
+            event(state, f"{uid}: second review ({MODEL['sol']}) verdict={v2}")
+            telemetry_event("review_verdict", uid, f"second review (sol): {v2}", verdict=v2)
+        event(state, f"{uid}: review verdict={verdict}")
+        telemetry_event("review_verdict", uid, f"reviewer verdict={verdict}", verdict=verdict)
     if verdict in ("fix", "block") and findings and int(unit.get("review_rounds", 0)) < 1:
         outcome_box["v"] = "review_fix"
         unit["review_rounds"] = int(unit.get("review_rounds", 0)) + 1
@@ -2074,6 +2297,10 @@ def queue_nightly_fixes(roadmap: dict, state: dict) -> None:
     if integ.get("ok"):
         state["nightly_fix_queue"] = []
         return
+    # Item 4: a nightly integration failure counts as a miss against the most
+    # recent Jev-skipped review within 24h.
+    for missed in jev_note_miss("nightly integration failure"):
+        event(state, f"jev: miss counted for {missed} (nightly integration failure)")
     failing = integ.get("failing_routes") or []
     if not failing and integ.get("error"):
         # The server would not build or start: that is a whole-server fix, not
@@ -2570,6 +2797,23 @@ def telemetry_unit_totals() -> dict:
         return {}
 
 
+def jev_lines() -> list:
+    """STATE.md's Jev section: call count, spend, changed rate, disables."""
+    mod = _load_jev()
+    if mod is None:
+        return ["- jev module unavailable; rules only"]
+    try:
+        lines = list(mod.report_lines())
+    except Exception as exc:
+        return [f"- jev reporting error: {exc}"]
+    try:
+        if not mod.api_key():
+            lines.append("- setup: " + mod.SETUP_STEPS)
+    except Exception:
+        pass
+    return lines
+
+
 def report_lines(roadmap: dict, state: dict) -> list:
     """The five-line report: merged, stuck, median tokens/unit, caps, unresolved."""
     merged = sorted(u["id"] for u in roadmap.values() if u.get("status") == "merged")
@@ -2649,6 +2893,8 @@ def write_state_md(roadmap: dict, state: dict) -> None:
     lines += quality_lines(roadmap)
     lines += ["", "## Telemetry", ""]
     lines += telemetry_lines(state)
+    lines += ["", "## Jev", ""]
+    lines += jev_lines()
     lines += ["", "## Nightly checks", ""]
     lines += nightly_lines()
     lines += ["", "## Alerts", ""]
