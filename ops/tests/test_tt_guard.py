@@ -223,6 +223,18 @@ class WiringTest(unittest.TestCase):
         self.assertIn('toolsets = "file,terminal,context_engine"', src)
         self.assertIn("file,terminal,context_engine", src)
 
+    def test_revert_targets_the_dependency_venv_not_the_launcher(self):
+        """The package lives in the uv venv, not the launcher interpreter."""
+        import orchestrator as o
+        src = (self.OPS / "orchestrator.py").read_text()
+        self.assertIn("_venv_has", src)
+        self.assertIn("environments", src)
+        # The helper must pick a venv that actually holds the distribution when
+        # one exists on this machine; otherwise it is a no-op we cannot assert.
+        p = o._hermes_venv_python()
+        if p is not None:
+            self.assertIn("environments", str(p))
+
 
 if __name__ == "__main__":
     unittest.main()
