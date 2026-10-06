@@ -49,3 +49,19 @@ func TestWindowExpiryBoundary(t *testing.T) {
 		t.Fatal("first invalid instant was accepted")
 	}
 }
+
+// Evidence: docs/roadmap/F31-F45-candidate-design.md:56 requires wrong-staff
+// rejection; identity-scoped replay behavior is an explicit implementation contract.
+func TestWindowReplayIsScopedToStaffIdentity(t *testing.T) {
+	window := NewStepWindow()
+	now := time.Unix(300, 0)
+	if !window.Accept("staff-1", 10, now, now.Add(time.Minute)) {
+		t.Fatal("first staff identity was rejected")
+	}
+	if window.Accept("staff-1", 10, now, now.Add(time.Minute)) {
+		t.Fatal("replay for same staff identity was accepted")
+	}
+	if !window.Accept("staff-2", 10, now, now.Add(time.Minute)) {
+		t.Fatal("step accepted for one identity was incorrectly consumed for another")
+	}
+}
