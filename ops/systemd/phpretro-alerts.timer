@@ -1,0 +1,12 @@
+[Unit]
+Description=Check the PHP-Retro failure-alert conditions every hour
+Documentation=file:/home/ubuntu/phpretro-preservation/ops/README.md
+
+[Timer]
+Unit=phpretro-alerts.service
+OnCalendar=hourly
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

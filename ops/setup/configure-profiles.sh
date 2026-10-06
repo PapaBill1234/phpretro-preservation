@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ops/setup/configure-profiles.sh
 #
-# Configure the headless builder/reviewer/planner profiles so no run can ever
-# wait on a prompt. Idempotent; run as the repo user.
+# Configure the headless builder/reviewer/planner/auditor profiles so no run can
+# ever wait on a prompt. Idempotent; run as the repo user.
 #
 #   approvals.single_query_mode deny   headless -z runs can never hang: a
 #                                      dangerous command is refused instantly
@@ -24,7 +24,7 @@
 #   * secrets live in ~/.hermes/.env, outside every worktree.
 set -euo pipefail
 
-PROFILES=(builder reviewer planner)
+PROFILES=(builder reviewer planner auditor)
 REPO="${PHPRETRO_REPO:-$HOME/phpretro-preservation}"
 
 DENY='["git push --force*", "git push -f *", "git push --delete*", "git push *refs/heads/main*", "git reset --hard*", "git checkout main*", "git update-ref -d*", "git filter-branch*", "git branch -D main*", "rm -rf /*", "rm -rf ~*", "rm -rf $HOME*", "rm -rf ..*", "rm -rf /home/ubuntu*", "gh auth*", "gh repo delete*", "gh api *-X DELETE*", "sudo*", "dd *of=/dev/*", "chmod -R 777*"]'
@@ -47,17 +47,20 @@ for p in "${PROFILES[@]}"; do
   echo "configured $p"
 done
 
-# Hermes resolves `-s <name>` in the active profile's skills dir, so the three
-# role skills are installed there under their registered names.
+# Hermes resolves `-s <name>` in the active profile's skills dir, so each role
+# skill is installed there under its registered name.
 install -d "$HOME/.hermes/profiles/builder/skills/unit-builder"
 install -d "$HOME/.hermes/profiles/reviewer/skills/unit-reviewer"
 install -d "$HOME/.hermes/profiles/planner/skills/unit-planner"
+install -d "$HOME/.hermes/profiles/auditor/skills/unit-auditor"
 install -m 0644 "$REPO/ops/skills/builder/SKILL.md" \
   "$HOME/.hermes/profiles/builder/skills/unit-builder/SKILL.md"
 install -m 0644 "$REPO/ops/skills/reviewer/SKILL.md" \
   "$HOME/.hermes/profiles/reviewer/skills/unit-reviewer/SKILL.md"
 install -m 0644 "$REPO/ops/skills/planner/SKILL.md" \
   "$HOME/.hermes/profiles/planner/skills/unit-planner/SKILL.md"
+install -m 0644 "$REPO/ops/skills/auditor/SKILL.md" \
+  "$HOME/.hermes/profiles/auditor/skills/unit-auditor/SKILL.md"
 echo "role skills installed"
 
 echo "profiles configured: ${PROFILES[*]}"

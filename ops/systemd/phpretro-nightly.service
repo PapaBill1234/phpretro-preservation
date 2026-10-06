@@ -1,0 +1,21 @@
+[Unit]
+Description=PHP-Retro nightly integration check and self-check
+Documentation=file:/home/ubuntu/phpretro-preservation/ops/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/phpretro-preservation
+Environment=HOME=/home/ubuntu
+Environment=PATH=/home/ubuntu/.local/bin:/home/ubuntu/.local/go-bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/python3 /home/ubuntu/phpretro-preservation/ops/nightly.py --integration --selfcheck
+# The integration build and the hook self-check can take a few minutes.
+TimeoutStartSec=1800
+StandardOutput=append:/home/ubuntu/phpretro-ops/logs/nightly.log
+StandardError=append:/home/ubuntu/phpretro-ops/logs/nightly.log
+
+[Install]
+WantedBy=multi-user.target

@@ -7,7 +7,11 @@
 #   * never delete a protected branch;
 #   * never force-update any branch except a unit/<id> branch (the merge queue
 #     rebases unit branches, which is a non-fast-forward update);
-#   * every other non-fast-forward update is refused.
+#   * every other non-fast-forward update is refused;
+#   * never publish a branch that adds, changes or deletes a path a builder may
+#     not touch (ops/, CI, skills, AGENTS.md, scripts/check.sh). The
+#     orchestrator's diff guard is the first layer; this is the one that holds
+#     even if a model talks its way past the guard.
 #
 # stdin (one line per ref): <local ref> <local sha> <remote ref> <remote sha>
 set -uo pipefail
@@ -15,7 +19,13 @@ zero=0000000000000000000000000000000000000000
 protected='refs/heads/main refs/heads/integration'
 status=0
 
-while read -r local_ref local_sha remote_ref remote_sha; do
+# Paths a builder may never publish. Kept in sync with PROTECTED_PREFIXES and
+# PROTECTED_FILES in ops/orchestrator.py.
+protected_paths() {
+  grep -E '(^|/)(ops/|\.github/workflows/|\.agents/skills/|skills/)|^AGENTS\.md$|^scripts/check\.sh$'
+}
+
+while read -r local_ref local_sha remote_ref remote_sha || [ -n "${remote_ref:-}" ]; do
   [ -n "${remote_ref:-}" ] || continue
   for p in $protected; do
     if [ "$remote_ref" = "$p" ]; then
@@ -24,15 +34,45 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     fi
   done
   case "$remote_ref" in
-    refs/heads/unit/*) continue ;; # unit branches: fast-forward or rebase, allowed
+    refs/heads/unit/*) ;; # unit branches: fast-forward or rebase, allowed
+    *)
+      if [ "$local_sha" = "$zero" ]; then
+        echo "pre-push: refusing to delete $remote_ref" >&2
+        status=1
+        continue
+      fi
+      if [ "$remote_sha" != "$zero" ] && ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
+        echo "pre-push: refusing non-fast-forward (force) update of $remote_ref" >&2
+        status=1
+        continue
+      fi
+      ;;
   esac
-  if [ "$local_sha" = "$zero" ]; then
-    echo "pre-push: refusing to delete $remote_ref" >&2
-    status=1
-    continue
+
+  # Protected-path guard: what does THIS BRANCH add relative to the branch it
+  # targets? Anchor on the merge-base with main (origin/main first, then the
+  # local main), so main's own ops/ commits are never attributed to the branch
+  # and a merge-queue rebase is not blocked. Fall back to the range the push
+  # transfers, and refuse outright when no base can be determined - this guard
+  # must never fail open.
+  base=""
+  for ref in refs/remotes/origin/main origin/main refs/heads/main main; do
+    rev="$(git rev-parse -q --verify "$ref" 2>/dev/null || true)"
+    [ -n "$rev" ] || continue
+    mb="$(git merge-base "$rev" "$local_sha" 2>/dev/null || true)"
+    [ -n "$mb" ] && { base="$mb"; break; }
+  done
+  if [ -n "$base" ]; then
+    touched="$(git diff --name-only "$base..$local_sha" 2>/dev/null | protected_paths)"
+  elif [ "$remote_sha" != "$zero" ]; then
+    touched="$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null | protected_paths)"
+  else
+    echo "pre-push: cannot determine the base of $remote_ref to verify protected paths" >&2
+    touched="<undeterminable base>"
   fi
-  if [ "$remote_sha" != "$zero" ] && ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
-    echo "pre-push: refusing non-fast-forward (force) update of $remote_ref" >&2
+  if [ -n "$touched" ]; then
+    echo "pre-push: refusing to publish protected paths on $remote_ref:" >&2
+    printf '  %s\n' $touched >&2
     status=1
   fi
 done
