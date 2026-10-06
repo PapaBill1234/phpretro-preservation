@@ -2165,7 +2165,8 @@ def maybe_plan(roadmap: dict, state: dict) -> bool:
     if active:
         return False
     todo = [u for u in roadmap.values() if u.get("status") == "todo"
-            and not u.get("split_requested") and deps_merged(u, roadmap)]
+            and not u.get("split_requested") and deps_merged(u, roadmap)
+            and not is_advisory(u)]
     if todo:
         return False
     # A unit that timed out or produced no change gets split into smaller units
@@ -3342,6 +3343,33 @@ units:
     assert "no STOP file" in diag[2], diag
     assert diag[3].startswith("4. Timer:"), diag
     assert diag[4].startswith("5. Dispatch:") and "design" in diag[4], diag
+
+    # maybe_plan: an advisory (QA) todo - blocked or deps-merged - must never
+    # stop promotion of the design backlog (the live pipeline went idle this way).
+    _save_run = hermes_run
+    globals()["hermes_run"] = lambda *a, **k: (0, "", {})
+    st_mp = {"events": [], "tokens_today": 0}
+    ran = maybe_plan({"QA3": {"id": "QA3", "status": "todo", "kind": "audit-fix",
+                              "depends_on": ["QA1"], "tokens": 0},
+                      "QA1": {"id": "QA1", "kind": "audit-fix", "status": "parked"},
+                      "F32": {"id": "F32", "status": "design", "depends_on": [],
+                              "design_doc": "", "planner_retries": 0}}, st_mp)
+    assert ran is True, ran
+    assert any(e["msg"].startswith("F32: planner") for e in st_mp["events"]), st_mp["events"]
+    st_mp2 = {"events": [], "tokens_today": 0}
+    ran2 = maybe_plan({"QA3": {"id": "QA3", "status": "todo", "kind": "audit-fix",
+                               "depends_on": [], "tokens": 0},
+                       "F32": {"id": "F32", "status": "design", "depends_on": [],
+                               "design_doc": "", "planner_retries": 0}}, st_mp2)
+    assert ran2 is True, ran2
+    # ...but a real (non-advisory) todo still holds the planner back
+    assert maybe_plan({"F32": {"id": "F32", "status": "todo", "depends_on": [],
+                               "tokens": 0}}, {"events": []}) is False
+    globals()["hermes_run"] = _save_run
+
+    # select_ready keeps zeroing out advisory QA work while promotion is pending
+    assert planner_pending({"F32": {"id": "F32", "status": "design", "planner_retries": 0}})
+    assert not planner_pending({"F32": {"id": "F32", "status": "design-blocked", "planner_retries": 2}})
 
     # the guard/quality diff must compare against the merge base (three-dot), so
     # a file that only main gained after the branch point is not blamed on the
