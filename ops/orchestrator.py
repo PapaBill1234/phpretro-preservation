@@ -2926,12 +2926,18 @@ def diagnosis_lines(roadmap: dict, state: dict) -> list:
         return uid.startswith("F") and uid[1:].isdigit() and int(uid[1:]) >= 31
 
     # 1. parked units and the exact reason
-    parked = sorted(u for u in roadmap.values() if u.get("status") == "parked")
-    if parked:
-        line1 = ("1. Parked: " + "; ".join(
-            f"{u['id']} (attempts {u.get('attempts',0)}, "
-            f"{str(u.get('reason','') or 'no reason recorded')[:80]})"
-            for u in parked))
+    parked = sorted((u for u in roadmap.values() if u.get("status") == "parked"),
+                    key=lambda u: u["id"])
+    parked_final = sorted((u for u in roadmap.values()
+                           if u.get("status") == "parked-final"), key=lambda u: u["id"])
+    if parked or parked_final:
+        parts = [f"{u['id']} parked (attempts {u.get('attempts',0)}, "
+                 f"{str(u.get('reason','') or 'no reason recorded')[:80]})"
+                 for u in parked]
+        parts += [f"{u['id']} parked-final "
+                  f"({str(u.get('reason','') or 'no reason recorded')[:70]})"
+                  for u in parked_final]
+        line1 = "1. Parked: " + "; ".join(parts)
     else:
         line1 = "1. Parked: none"
 
@@ -3270,16 +3276,21 @@ units:
     assert adv["F40"]["depends_on"] == [], adv["F40"]
     assert adv["QA2"]["depends_on"] == ["QA1"], adv["QA2"]  # QA may depend on QA
     # a QA todo blocked on a parked QA unit is not ready, and must not stop the
-    # planner from promoting the design backlog.
+    # planner from promoting the design backlog. Two parked units exercise the
+    # multi-element sort that a single parked unit would not (regression: a bare
+    # sorted() over dicts raises TypeError).
     stuck = {"QA3": {"id": "QA3", "status": "todo", "depends_on": ["QA1"]},
-             "QA1": {"id": "QA1", "kind": "audit-fix", "status": "parked"},
+             "QA1": {"id": "QA1", "kind": "audit-fix", "status": "parked",
+                     "attempts": 4, "reason": "diff guard"},
+             "QA2": {"id": "QA2", "kind": "audit-fix", "status": "parked",
+                     "attempts": 4, "reason": "quality"},
              "F32": {"id": "F32", "status": "design"}}
     assert not deps_merged(stuck["QA3"], stuck)
     assert any(u.get("status") == "design" for u in stuck.values())
     # diagnosis renders exactly five lines covering all five questions.
     diag = diagnosis_lines(stuck, {"merged_today": 0, "tokens_today": 0, "events": []})
     assert len(diag) == 5, diag
-    assert diag[0].startswith("1. Parked:") and "QA1" in diag[0], diag
+    assert diag[0].startswith("1. Parked:") and "QA1" in diag[0] and "QA2" in diag[0], diag
     assert diag[1].startswith("2. F31+") and "F32" in diag[1], diag
     assert "no STOP file" in diag[2], diag
     assert diag[3].startswith("4. Timer:"), diag
