@@ -50,6 +50,10 @@ NIGHTLY_LOG_DIR = OPS / "logs" / "nightly"
 UNITS_STATE = STATE_DIR / "units.state.json"
 ALERT_STATE = STATE_DIR / "alerts.json"
 STOP_FILE = OPS / "STOP"
+# The merge-cap revert override, written by ops/orchestrator.py's throughput
+# guard. Read here (never imported) so alerting does not depend on the
+# orchestrator module.
+MERGE_CAP_FILE = STATE_DIR / "merge-cap.json"
 
 HERMES = shutil.which("hermes") or str(HOME / ".local" / "bin" / "hermes")
 GO_TOOLBIN = os.environ.get("PHPRETRO_TOOLBIN", str(HOME / ".local" / "go-bin"))
@@ -87,7 +91,8 @@ NO_MERGE_HOURS = float(os.environ.get("PHPRETRO_NO_MERGE_HOURS", "24"))
 DISK_PCT = float(os.environ.get("PHPRETRO_DISK_PCT", "85"))
 # Caps mirror ops/orchestrator.py; kept as plain numbers so alerting does not
 # depend on importing the orchestrator.
-MAX_MERGE_PER_DAY = int(os.environ.get("PHPRETRO_MAX_MERGE_PER_DAY", "12"))
+MAX_MERGE_PER_DAY = int(os.environ.get("PHPRETRO_MAX_MERGE_PER_DAY", "30"))
+MERGE_CAP_REVERTED = int(os.environ.get("PHPRETRO_MERGE_CAP_REVERTED", "12"))
 DAILY_TOKEN_CAP = int(os.environ.get("PHPRETRO_DAILY_TOKEN_CAP", "60000000"))
 PER_UNIT_TOKEN_CAP = int(os.environ.get("PHPRETRO_UNIT_TOKEN_CAP", "6000000"))
 
@@ -140,6 +145,22 @@ def read_json(path, default):
         return json.loads(Path(path).read_text())
     except Exception:
         return default
+
+
+def effective_merge_cap() -> int:
+    """The merge cap in force: 30 normally, or the revert value (12).
+
+    Mirrors ops/orchestrator.py's ``effective_merge_cap`` so alerting uses the
+    same number the dispatcher enforces. The revert override is recorded by the
+    orchestrator's throughput guard in ``state/merge-cap.json``.
+    """
+    rec = read_json(MERGE_CAP_FILE, {})
+    if isinstance(rec, dict) and rec.get("reverted"):
+        try:
+            return int(rec.get("value") or MERGE_CAP_REVERTED)
+        except (TypeError, ValueError):
+            return MERGE_CAP_REVERTED
+    return MAX_MERGE_PER_DAY
 
 
 def write_json(path, data) -> None:
@@ -604,8 +625,9 @@ def active_conditions() -> list:
     st = read_json(UNITS_STATE, {})
     merged = int(st.get("merged_today", 0))
     tokens = int(st.get("tokens_today", 0))
-    if merged >= MAX_MERGE_PER_DAY:
-        conds.append(f"merge cap hit ({merged}/{MAX_MERGE_PER_DAY})")
+    cap = effective_merge_cap()
+    if merged >= cap:
+        conds.append(f"merge cap hit ({merged}/{cap})")
     if tokens >= DAILY_TOKEN_CAP:
         conds.append(f"daily token cap hit ({tokens}/{DAILY_TOKEN_CAP})")
     for name in ("integration", "selfcheck"):

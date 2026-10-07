@@ -1,0 +1,4161 @@
+{
+  "schema_version": 1,
+  "available": true,
+  "generated_at": "2026-10-07T00:53:09Z",
+  "assessment_date": "2026-10-07",
+  "scope_authority": "docs/decisions/2026-10-07-maintenance-B.md",
+  "classes": [
+    "not started",
+    "designed",
+    "scaffold",
+    "implemented",
+    "verified"
+  ],
+  "areas": [
+    "legacy preserved behavior",
+    "Redis",
+    "Go backend",
+    "React frontend",
+    "themes: Habbo",
+    "themes: Atom CMS",
+    "themes: theme system",
+    "Polaris integration",
+    "staff",
+    "infrastructure"
+  ],
+  "counts_by_area": {
+    "legacy preserved behavior": {
+      "not started": 0,
+      "designed": 5,
+      "scaffold": 14,
+      "implemented": 0,
+      "verified": 0
+    },
+    "Redis": {
+      "not started": 0,
+      "designed": 1,
+      "scaffold": 0,
+      "implemented": 0,
+      "verified": 0
+    },
+    "Go backend": {
+      "not started": 0,
+      "designed": 8,
+      "scaffold": 2,
+      "implemented": 0,
+      "verified": 0
+    },
+    "React frontend": {
+      "not started": 0,
+      "designed": 8,
+      "scaffold": 1,
+      "implemented": 0,
+      "verified": 0
+    },
+    "themes: Habbo": {
+      "not started": 0,
+      "designed": 0,
+      "scaffold": 0,
+      "implemented": 0,
+      "verified": 0
+    },
+    "themes: Atom CMS": {
+      "not started": 0,
+      "designed": 0,
+      "scaffold": 0,
+      "implemented": 0,
+      "verified": 0
+    },
+    "themes: theme system": {
+      "not started": 0,
+      "designed": 3,
+      "scaffold": 2,
+      "implemented": 0,
+      "verified": 0
+    },
+    "Polaris integration": {
+      "not started": 0,
+      "designed": 0,
+      "scaffold": 1,
+      "implemented": 0,
+      "verified": 0
+    },
+    "staff": {
+      "not started": 0,
+      "designed": 3,
+      "scaffold": 3,
+      "implemented": 0,
+      "verified": 0
+    },
+    "infrastructure": {
+      "not started": 0,
+      "designed": 3,
+      "scaffold": 0,
+      "implemented": 2,
+      "verified": 0
+    }
+  },
+  "canonical_total": 56,
+  "runtime_total": 68,
+  "git_merged_units": 39,
+  "merged_scaffold_units": [
+    "F2",
+    "F3",
+    "F5",
+    "F6",
+    "F7",
+    "F8",
+    "F18",
+    "F19",
+    "F20",
+    "F21",
+    "F22",
+    "F23",
+    "F24",
+    "F25",
+    "F26",
+    "F27",
+    "F28",
+    "F29",
+    "F30",
+    "F35",
+    "F36",
+    "F37",
+    "F38-a",
+    "F38-ba",
+    "QA1",
+    "QA2"
+  ],
+  "units": [
+    {
+      "id": "F0",
+      "title": "Repository and CI baseline",
+      "area": "infrastructure",
+      "roadmap_item": true,
+      "classification": "implemented",
+      "assessment_current": true,
+      "reason": "Executable Go/CI foundation exists; infrastructure utility, not product completion.",
+      "canonical_status": "merged",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 19,
+          "head": "d60186af8621",
+          "merged_at": "2026-10-02T13:49:27Z",
+          "branch": "auto/foundation-completion-state"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 27,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"foundation CI green on main\"]",
+          "statements": [
+            "foundation CI green on main"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "go.mod",
+          "line": 1,
+          "fingerprint": "1d0f03fab3fedb55"
+        },
+        {
+          "path": "cmd/phpretro/main.go",
+          "line": 1,
+          "fingerprint": "d68cb8e380bdb78e"
+        }
+      ],
+      "runtime_acceptance": [
+        "foundation CI green on main"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "CLI and CI invoke the foundation utility.",
+      "tests": [
+        "scripts/check.sh (historical green main gate)"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F1",
+      "title": "PolarIS password-scheme evidence",
+      "area": "infrastructure",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Evidence document delivery; no product implementation claim.",
+      "canonical_status": "merged",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 5,
+          "head": "ff714ca2e2c2",
+          "merged_at": "2026-10-02T11:50:13Z",
+          "branch": "auto/f1-scope-approval"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 37,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"pinned original source hash recorded\"]",
+          "statements": [
+            "pinned original source hash recorded"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/evidence/F1-password-scheme.md",
+          "line": 1,
+          "fingerprint": "334773029ef57db1"
+        }
+      ],
+      "runtime_acceptance": [
+        "pinned original source hash recorded"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F2",
+      "title": "Account and session contract",
+      "area": "Go backend",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Contract helper and synthetic tests exist; intended backend/HTTP integration is incomplete.",
+      "canonical_status": "merged",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 12,
+          "head": "045714382d43",
+          "merged_at": "2026-10-02T12:51:41Z",
+          "branch": "auto/f2-verifier-evidence"
+        },
+        {
+          "pr": 9,
+          "head": "4146f841ac40",
+          "merged_at": "2026-10-02T12:29:46Z",
+          "branch": "auto/f2-account-session"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 47,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"PolarIS BCrypt/$2y verifier is source-backed\"]",
+          "statements": [
+            "PolarIS BCrypt/$2y verifier is source-backed"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/account/account.go",
+          "line": 1,
+          "fingerprint": "b75d8ff34144063f"
+        },
+        {
+          "path": "internal/account/account_test.go",
+          "line": 1,
+          "fingerprint": "622f298764ae7525"
+        },
+        {
+          "path": "internal/session/session.go",
+          "line": 1,
+          "fingerprint": "446e6363afde9846"
+        },
+        {
+          "path": "internal/server/server.go",
+          "line": 1,
+          "fingerprint": "6757cb2749abf4d4"
+        }
+      ],
+      "runtime_acceptance": [
+        "PolarIS BCrypt/$2y verifier is source-backed"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/account/account_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F3",
+      "title": "Profile read",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Contract helper and synthetic tests exist; intended backend/HTTP integration is incomplete.",
+      "canonical_status": "merged",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 14,
+          "head": "fc4949c74abc",
+          "merged_at": "2026-10-02T13:15:22Z",
+          "branch": "auto/f3-profile-implementation"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 57,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"bounded read contract with synthetic tests\"]",
+          "statements": [
+            "bounded read contract with synthetic tests"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/profile/profile.go",
+          "line": 1,
+          "fingerprint": "37aa7f906397704c"
+        },
+        {
+          "path": "internal/profile/profile_test.go",
+          "line": 1,
+          "fingerprint": "524ed09fa186e7c6"
+        },
+        {
+          "path": "internal/server/fixtures.go",
+          "line": 1,
+          "fingerprint": "ffbdb57e85893834"
+        }
+      ],
+      "runtime_acceptance": [
+        "bounded read contract with synthetic tests"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/profile/profile_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F4",
+      "title": "Golden capture harness",
+      "area": "infrastructure",
+      "roadmap_item": true,
+      "classification": "implemented",
+      "assessment_current": true,
+      "reason": "Deterministic comparator utility uses its real implementation; synthetic inputs are its intended contract, not a product datastore.",
+      "canonical_status": "merged",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 16,
+          "head": "294dfd193571",
+          "merged_at": "2026-10-02T13:31:36Z",
+          "branch": "auto/f4-golden-implementation"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 67,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"deterministic comparator with synthetic mismatch tests\"]",
+          "statements": [
+            "deterministic comparator with synthetic mismatch tests"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "tests/golden/golden_test.go",
+          "line": 1,
+          "fingerprint": "ab873a41c874c540"
+        },
+        {
+          "path": "tests/golden/golden.go",
+          "line": 1,
+          "fingerprint": "fe822445f3b61c77"
+        }
+      ],
+      "runtime_acceptance": [
+        "deterministic comparator with synthetic mismatch tests"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "Comparator tests call the real comparator package utility.",
+      "tests": [
+        "tests/golden/golden_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F5",
+      "title": "Content read",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Contract helper and synthetic tests exist; intended backend/HTTP integration is incomplete.",
+      "canonical_status": "merged",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 18,
+          "head": "42aa39b359a2",
+          "merged_at": "2026-10-02T13:44:38Z",
+          "branch": "auto/f5-content-implementation"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 77,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"source-backed hotelview_news contract\"]",
+          "statements": [
+            "source-backed hotelview_news contract"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/content/content.go",
+          "line": 1,
+          "fingerprint": "9b79162aa3f4161e"
+        },
+        {
+          "path": "internal/content/content_test.go",
+          "line": 1,
+          "fingerprint": "fad79371e8dcd136"
+        },
+        {
+          "path": "internal/polaris/store.go",
+          "line": 1,
+          "fingerprint": "5977daaf4675299a"
+        }
+      ],
+      "runtime_acceptance": [
+        "source-backed hotelview_news contract"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/content/content_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F6",
+      "title": "PolarIS adapter boundary",
+      "area": "Polaris integration",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Bound SQL read adapters exist but server.New does not wire them to the intended MariaDB backend.",
+      "canonical_status": "merged",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 20,
+          "head": "0fd95a4706da",
+          "merged_at": "2026-10-02T18:47:25Z",
+          "branch": "feat/f6-f7-react-redis"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 87,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"synthetic read-only adapter boundary\"]",
+          "statements": [
+            "synthetic read-only adapter boundary"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/polaris/store.go",
+          "line": 1,
+          "fingerprint": "5977daaf4675299a"
+        },
+        {
+          "path": "internal/polaris/store_test.go",
+          "line": 1,
+          "fingerprint": "a94042e7ed4a37c7"
+        },
+        {
+          "path": "internal/server/server.go",
+          "line": 1,
+          "fingerprint": "6757cb2749abf4d4"
+        }
+      ],
+      "runtime_acceptance": [
+        "synthetic read-only adapter boundary"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/polaris/store_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F7",
+      "title": "React and Redis boundary",
+      "area": "themes: theme system",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Typed presentation and RedisLike boundaries exist; only StarterShell and memory cache double, not backend integration.",
+      "canonical_status": "merged",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 20,
+          "head": "0fd95a4706da",
+          "merged_at": "2026-10-02T18:47:25Z",
+          "branch": "feat/f6-f7-react-redis"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 97,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"typed view models; themes cannot select routes or identity\"]",
+          "statements": [
+            "typed view models; themes cannot select routes or identity"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "frontend/src/themeManifest.ts",
+          "line": 1,
+          "fingerprint": "d3a1a5c8a05cc48a"
+        },
+        {
+          "path": "frontend/src/StarterShell.tsx",
+          "line": 1,
+          "fingerprint": "ffc57cc586719301"
+        },
+        {
+          "path": "internal/cache/cache.go",
+          "line": 1,
+          "fingerprint": "4c90126e7c11dc5d"
+        }
+      ],
+      "runtime_acceptance": [
+        "typed view models; themes cannot select routes or identity"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F8",
+      "title": "Localization contract",
+      "area": "React frontend",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Data-only localization helpers exist with synthetic catalogs and a cache double.",
+      "canonical_status": "merged",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 21,
+          "head": "031a336088a7",
+          "merged_at": "2026-10-03T06:49:35Z",
+          "branch": "recovery/f8-kanban-failsafe"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 107,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"catalogs are data-only; locale is presentation metadata\"]",
+          "statements": [
+            "catalogs are data-only; locale is presentation metadata"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/localization/localization.go",
+          "line": 1,
+          "fingerprint": "c4422cad570574a6"
+        },
+        {
+          "path": "frontend/src/localization/index.ts",
+          "line": 1,
+          "fingerprint": "aa35f3fc0ce53d6c"
+        },
+        {
+          "path": "internal/cache/cache.go",
+          "line": 1,
+          "fingerprint": "4c90126e7c11dc5d"
+        }
+      ],
+      "runtime_acceptance": [
+        "catalogs are data-only; locale is presentation metadata"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F14",
+      "title": "Localization evidence and tests",
+      "area": "React frontend",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Evidence/test-only delivery; no product change.",
+      "canonical_status": "merged",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 24,
+          "head": "c522930634b1",
+          "merged_at": "2026-10-04T03:47:14Z",
+          "branch": "codex/f14-delivery"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 117,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"evidence and tests only; no product change\"]",
+          "statements": [
+            "evidence and tests only; no product change"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/evidence/F14-visual-localization.md",
+          "line": 1,
+          "fingerprint": "5854a5a813917893"
+        },
+        {
+          "path": "frontend/tests/visual-localization.test.ts",
+          "line": 1,
+          "fingerprint": "f2d77d17654d19f2"
+        }
+      ],
+      "runtime_acceptance": [
+        "evidence and tests only; no product change"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "frontend/tests/visual-localization.test.ts"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F15",
+      "title": "Public GET / route evidence and synthetic tests",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Synthetic route evidence tests do not implement a preserved route.",
+      "canonical_status": "merged",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 26,
+          "head": "f60470ba7d1d",
+          "merged_at": "2026-10-04T08:13:22Z",
+          "branch": "codex/f15-public-route-evidence"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 127,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"synthetic route tests with labelled UNKNOWNs\"]",
+          "statements": [
+            "synthetic route tests with labelled UNKNOWNs"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "tests/golden/public_route_test.go",
+          "line": 1,
+          "fingerprint": "9ea61a9c6e6ee2a3"
+        },
+        {
+          "path": "docs/evidence/F15-public-route.md",
+          "line": 1,
+          "fingerprint": "5e93f58cd504efe7"
+        }
+      ],
+      "runtime_acceptance": [
+        "synthetic route tests with labelled UNKNOWNs"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "tests/golden/public_route_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F16",
+      "title": "Public GET /login_popup.php evidence and tests",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Evidence and synthetic route tests; explicitly no authentication implementation.",
+      "canonical_status": "merged",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 29,
+          "head": "0e3721c857e5",
+          "merged_at": "2026-10-04T16:16:38Z",
+          "branch": "codex/f16-fresh-delivery-20261004"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 137,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"no auth or session implementation\"]",
+          "statements": [
+            "no auth or session implementation"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "tests/golden/login_route_test.go",
+          "line": 1,
+          "fingerprint": "b3a9d6847a3366b0"
+        },
+        {
+          "path": "docs/evidence/F16-public-login.md",
+          "line": 1,
+          "fingerprint": "5c6f0efce8cc3379"
+        }
+      ],
+      "runtime_acceptance": [
+        "no auth or session implementation"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "tests/golden/login_route_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F17",
+      "title": "Public GET /articles/archive evidence and tests",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Archive evidence and synthetic tests; no preserved archive handler.",
+      "canonical_status": "merged",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 30,
+          "head": "b398da5aa65e",
+          "merged_at": "2026-10-04T17:32:00Z",
+          "branch": "codex/f17-reviewed-delivery-20261004"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 147,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"evidence and synthetic tests only\"]",
+          "statements": [
+            "evidence and synthetic tests only"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "tests/golden/archive_route_test.go",
+          "line": 1,
+          "fingerprint": "eee7a42e822ca514"
+        },
+        {
+          "path": "docs/evidence/F17-public-archive.md",
+          "line": 1,
+          "fingerprint": "043d80868bf53847"
+        }
+      ],
+      "runtime_acceptance": [
+        "evidence and synthetic tests only"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "tests/golden/archive_route_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F18",
+      "title": "Profile presentation and read model",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Profile helpers/views are tested, but server and React entrypoint use fixed demo identity and synthetic fixtures.",
+      "canonical_status": "todo",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 42,
+          "head": "bbd27a821071",
+          "merged_at": "2026-10-04T23:45:06Z",
+          "branch": "f18/frontend-profile"
+        },
+        {
+          "pr": 39,
+          "head": "7b3f47cb4bb3",
+          "merged_at": "2026-10-04T22:31:45Z",
+          "branch": "f18/profile-read-model"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 158,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"tabs 1-5 render profile state\", \"an invalid or absent tab falls back to tab 1\", \"the six-field F3 Profile is preserved\", \"negative tests cover a missing user and malformed state\"]",
+          "statements": [
+            "tabs 1-5 render profile state",
+            "an invalid or absent tab falls back to tab 1",
+            "the six-field F3 Profile is preserved",
+            "negative tests cover a missing user and malformed state"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/profile/view.go",
+          "line": 1,
+          "fingerprint": "f39e471ffc2429d5"
+        },
+        {
+          "path": "internal/profile/view_test.go",
+          "line": 1,
+          "fingerprint": "077db7efcb608db0"
+        },
+        {
+          "path": "frontend/src/main.tsx",
+          "line": 1,
+          "fingerprint": "62437ea8f8b3aa2a"
+        },
+        {
+          "path": "internal/server/server.go",
+          "line": 1,
+          "fingerprint": "6757cb2749abf4d4"
+        }
+      ],
+      "runtime_acceptance": [
+        "tabs 1-5 render profile state",
+        "an invalid or absent tab falls back to tab 1",
+        "the six-field F3 Profile is preserved",
+        "negative tests cover a missing user and malformed state"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/profile/view_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F19",
+      "title": "Personal-home read boundary and presentation model",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Privacy/read helper is tested with synthetic stores; the HTTP handler uses a fixed demo owner.",
+      "canonical_status": "todo",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 44,
+          "head": "ee6bcda9b006",
+          "merged_at": "2026-10-05T01:15:14Z",
+          "branch": "wt/t_f980f2fb"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 169,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"name and ID lookup are equivalent\", \"an unknown owner is handled explicitly\", \"an owner sees their own hidden home\", \"an unauthorized viewer receives no private fields\"]",
+          "statements": [
+            "name and ID lookup are equivalent",
+            "an unknown owner is handled explicitly",
+            "an owner sees their own hidden home",
+            "an unauthorized viewer receives no private fields"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/home/home.go",
+          "line": 1,
+          "fingerprint": "c886f87ea5842895"
+        },
+        {
+          "path": "internal/home/home_test.go",
+          "line": 1,
+          "fingerprint": "bc2e705f112c7eea"
+        },
+        {
+          "path": "internal/server/fixtures.go",
+          "line": 1,
+          "fingerprint": "ffbdb57e85893834"
+        }
+      ],
+      "runtime_acceptance": [
+        "name and ID lookup are equivalent",
+        "an unknown owner is handled explicitly",
+        "an owner sees their own hidden home",
+        "an unauthorized viewer receives no private fields"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/home/home_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F20",
+      "title": "Account dashboard read model with principal boundary",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Principal boundary helper is tested; /account constructs principal 1 and fixture data.",
+      "canonical_status": "todo",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 46,
+          "head": "4a36e7ca3364",
+          "merged_at": "2026-10-05T01:06:31Z",
+          "branch": "wt/f20-frontend"
+        },
+        {
+          "pr": 45,
+          "head": "75d8a3e76d0a",
+          "merged_at": "2026-10-05T00:50:26Z",
+          "branch": "wt/f20-backend"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 180,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"one synthetic principal cannot read another principal's dashboard\", \"absent optional widgets do not fabricate state\", \"the field list stays read-only\"]",
+          "statements": [
+            "one synthetic principal cannot read another principal's dashboard",
+            "absent optional widgets do not fabricate state",
+            "the field list stays read-only"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/accountview/accountview.go",
+          "line": 1,
+          "fingerprint": "1e655bf80ca4592f"
+        },
+        {
+          "path": "internal/accountview/accountview_test.go",
+          "line": 1,
+          "fingerprint": "d100788dd66370ac"
+        },
+        {
+          "path": "internal/server/server.go",
+          "line": 1,
+          "fingerprint": "6757cb2749abf4d4"
+        }
+      ],
+      "runtime_acceptance": [
+        "one synthetic principal cannot read another principal's dashboard",
+        "absent optional widgets do not fabricate state",
+        "the field list stays read-only"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/accountview/accountview_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F21",
+      "title": "Profile appearance and preference mutations",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "ReadSettings validates read state; the approved mutation workflow is absent.",
+      "canonical_status": "todo",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 49,
+          "head": "a9940e220a82",
+          "merged_at": "2026-10-05T01:16:40Z",
+          "branch": "wt/t_92149aef"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 191,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"invalid gender or figure is rejected\", \"an overlong motto is rejected\", \"an unauthorized principal cannot write\", \"a validation failure causes no synthetic write\"]",
+          "statements": [
+            "invalid gender or figure is rejected",
+            "an overlong motto is rejected",
+            "an unauthorized principal cannot write",
+            "a validation failure causes no synthetic write"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/profile/settings.go",
+          "line": 1,
+          "fingerprint": "c11c17a1de1b9fee"
+        },
+        {
+          "path": "internal/profile/settings_test.go",
+          "line": 1,
+          "fingerprint": "ae8b80d162f3c4db"
+        }
+      ],
+      "runtime_acceptance": [
+        "invalid gender or figure is rejected",
+        "an overlong motto is rejected",
+        "an unauthorized principal cannot write",
+        "a validation failure causes no synthetic write"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/profile/settings_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F22",
+      "title": "Authenticated public login result transition",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Response contract values are tested; API result endpoints do not implement a credential/session flow.",
+      "canonical_status": "todo",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 50,
+          "head": "7fcff27e2839",
+          "merged_at": "2026-10-05T01:18:09Z",
+          "branch": "wt/f22-backend"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 202,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"the failed-login response contract is asserted\", \"the redirect to security-check is asserted\", \"wrong method, status and location negatives are covered\", \"no assertion of identity absent evidence\"]",
+          "statements": [
+            "the failed-login response contract is asserted",
+            "the redirect to security-check is asserted",
+            "wrong method, status and location negatives are covered",
+            "no assertion of identity absent evidence"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/authflow/authflow.go",
+          "line": 1,
+          "fingerprint": "3526ac2f6736045b"
+        },
+        {
+          "path": "internal/authflow/authflow_test.go",
+          "line": 1,
+          "fingerprint": "0e1890b8ed816ef5"
+        },
+        {
+          "path": "internal/server/server.go",
+          "line": 1,
+          "fingerprint": "6757cb2749abf4d4"
+        }
+      ],
+      "runtime_acceptance": [
+        "the failed-login response contract is asserted",
+        "the redirect to security-check is asserted",
+        "wrong method, status and location negatives are covered",
+        "no assertion of identity absent evidence"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/authflow/authflow_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F23",
+      "title": "Logout and post-logout public state transition",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "In-memory session transitions exist; the public endpoint constructs an empty manager rather than a real session backend.",
+      "canonical_status": "todo",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 51,
+          "head": "e4c412c353a4",
+          "merged_at": "2026-10-05T01:20:33Z",
+          "branch": "wt/f23-backend"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 213,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"logout invalidates only the synthetic session\", \"the post-logout page exposes no private fields\", \"a retained-cookie negative case is covered\"]",
+          "statements": [
+            "logout invalidates only the synthetic session",
+            "the post-logout page exposes no private fields",
+            "a retained-cookie negative case is covered"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/session/session.go",
+          "line": 1,
+          "fingerprint": "446e6363afde9846"
+        },
+        {
+          "path": "internal/session/session_test.go",
+          "line": 1,
+          "fingerprint": "fb03c19f7ec676b7"
+        },
+        {
+          "path": "internal/server/server.go",
+          "line": 1,
+          "fingerprint": "6757cb2749abf4d4"
+        }
+      ],
+      "runtime_acceptance": [
+        "logout invalidates only the synthetic session",
+        "the post-logout page exposes no private fields",
+        "a retained-cookie negative case is covered"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/session/session_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F24",
+      "title": "Public community read model",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Bounded projection over in-memory slices; HTTP and frontend consume demo community data.",
+      "canonical_status": "todo",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 48,
+          "head": "4bb32c9a5045",
+          "merged_at": "2026-10-05T01:13:31Z",
+          "branch": "wt/f24-visual"
+        },
+        {
+          "pr": 47,
+          "head": "1f599b23239e",
+          "merged_at": "2026-10-05T01:10:00Z",
+          "branch": "wt/f24-backend"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 224,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"bounded lists and an empty state are asserted\", \"private or unapproved fields are rejected\", \"malformed pagination is rejected\"]",
+          "statements": [
+            "bounded lists and an empty state are asserted",
+            "private or unapproved fields are rejected",
+            "malformed pagination is rejected"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/community/community.go",
+          "line": 1,
+          "fingerprint": "ccfe8ab3699475f1"
+        },
+        {
+          "path": "internal/community/community_test.go",
+          "line": 1,
+          "fingerprint": "ff00f47ae438b79e"
+        },
+        {
+          "path": "internal/server/fixtures.go",
+          "line": 1,
+          "fingerprint": "ffbdb57e85893834"
+        }
+      ],
+      "runtime_acceptance": [
+        "bounded lists and an empty state are asserted",
+        "private or unapproved fields are rejected",
+        "malformed pagination is rejected"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/community/community_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F25",
+      "title": "Account registration validation and creation",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Atomic/audited MemoryStore exists; no intended persistent adapter or route wiring.",
+      "canonical_status": "todo",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 59,
+          "head": "e2eab0d82e3d",
+          "merged_at": "2026-10-05T18:17:57Z",
+          "branch": "unit/F25"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 234,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"validation rejects malformed input\", \"creation is atomic and audited in the synthetic store\", \"no real email or credentials are used\"]",
+          "statements": [
+            "validation rejects malformed input",
+            "creation is atomic and audited in the synthetic store",
+            "no real email or credentials are used"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/registration/registration.go",
+          "line": 1,
+          "fingerprint": "a3e35018ce9ce363"
+        },
+        {
+          "path": "internal/registration/registration_test.go",
+          "line": 1,
+          "fingerprint": "65641486264b34ce"
+        }
+      ],
+      "runtime_acceptance": [
+        "validation rejects malformed input",
+        "creation is atomic and audited in the synthetic store",
+        "no real email or credentials are used"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/registration/registration_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F26",
+      "title": "Password recovery and account-list behaviour",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Reset behavior uses memory token state and fake identity/mailer dependencies; persistent wiring absent.",
+      "canonical_status": "todo",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 61,
+          "head": "a655beba8c28",
+          "merged_at": "2026-10-05T18:27:38Z",
+          "branch": "unit/F26"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 244,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"anti-enumeration responses are identical\", \"the reset token is single-use in the synthetic store\", \"synthetic mail and identity fixtures only\"]",
+          "statements": [
+            "anti-enumeration responses are identical",
+            "the reset token is single-use in the synthetic store",
+            "synthetic mail and identity fixtures only"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/recovery/recovery.go",
+          "line": 1,
+          "fingerprint": "9ae348419fc9f83e"
+        },
+        {
+          "path": "internal/recovery/recovery_test.go",
+          "line": 1,
+          "fingerprint": "d77f5d1ace6e60ac"
+        }
+      ],
+      "runtime_acceptance": [
+        "anti-enumeration responses are identical",
+        "the reset token is single-use in the synthetic store",
+        "synthetic mail and identity fixtures only"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/recovery/recovery_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F27",
+      "title": "Remember-token reauthentication and session expiry",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Replay/expiry behavior uses an in-memory RememberTokenStore; no required supporting-backend wiring.",
+      "canonical_status": "todo",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 60,
+          "head": "4e7978789a36",
+          "merged_at": "2026-10-05T18:48:02Z",
+          "branch": "unit/F27"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 254,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"an expired token is rejected\", \"a replayed token is rejected\", \"an IP transition is handled explicitly\", \"synthetic tokens only\"]",
+          "statements": [
+            "an expired token is rejected",
+            "a replayed token is rejected",
+            "an IP transition is handled explicitly",
+            "synthetic tokens only"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/session/token.go",
+          "line": 1,
+          "fingerprint": "98e5cdc0d1dfde22"
+        },
+        {
+          "path": "internal/session/token_test.go",
+          "line": 1,
+          "fingerprint": "f67396b7ea58e179"
+        }
+      ],
+      "runtime_acceptance": [
+        "an expired token is rejected",
+        "a replayed token is rejected",
+        "an IP transition is handled explicitly",
+        "synthetic tokens only"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/session/token_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F28",
+      "title": "Guestbook privacy read, write and delete",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Guestbook privacy/mutation behavior exists only in map-backed Store; route and real schema wiring absent.",
+      "canonical_status": "todo",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 64,
+          "head": "7f610f0c75d7",
+          "merged_at": "2026-10-05T18:45:19Z",
+          "branch": "unit/F28"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 265,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"the list privacy gate is enforced server-side\", \"delete requires a widget-owner predicate\", \"no private field leaks to a non-owner\"]",
+          "statements": [
+            "the list privacy gate is enforced server-side",
+            "delete requires a widget-owner predicate",
+            "no private field leaks to a non-owner"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/guestbook/guestbook.go",
+          "line": 1,
+          "fingerprint": "4b88e05b7cd24c96"
+        },
+        {
+          "path": "internal/guestbook/guestbook_test.go",
+          "line": 1,
+          "fingerprint": "3a7a2f67fd49ce60"
+        }
+      ],
+      "runtime_acceptance": [
+        "the list privacy gate is enforced server-side",
+        "delete requires a widget-owner predicate",
+        "no private field leaks to a non-owner"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/guestbook/guestbook_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F29",
+      "title": "Public article and category projection",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Escaping/allowlisting helper exists; /articles serves community fixtures rather than this implementation.",
+      "canonical_status": "todo",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 62,
+          "head": "082637232c8e",
+          "merged_at": "2026-10-05T18:30:41Z",
+          "branch": "unit/F29"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 275,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"the archive route reserved by F17 is excluded\", \"text rendering escapes hostile input\", \"image URLs are allowlisted\", \"no CMS mutations\"]",
+          "statements": [
+            "the archive route reserved by F17 is excluded",
+            "text rendering escapes hostile input",
+            "image URLs are allowlisted",
+            "no CMS mutations"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/articles/articles.go",
+          "line": 1,
+          "fingerprint": "a7cc5d1aa90bcc79"
+        },
+        {
+          "path": "internal/articles/articles_test.go",
+          "line": 1,
+          "fingerprint": "e6d768b4b5f85d28"
+        },
+        {
+          "path": "internal/server/server.go",
+          "line": 1,
+          "fingerprint": "6757cb2749abf4d4"
+        }
+      ],
+      "runtime_acceptance": [
+        "the archive route reserved by F17 is excluded",
+        "text rendering escapes hostile input",
+        "image URLs are allowlisted",
+        "no CMS mutations"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/articles/articles_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F30",
+      "title": "Theme and localization contract extension",
+      "area": "themes: theme system",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Manifest/localization validation extends scaffold contracts; no complete installed theme system.",
+      "canonical_status": "todo",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 63,
+          "head": "80ac9847c5d3",
+          "merged_at": "2026-10-05T18:50:36Z",
+          "branch": "unit/F30"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "units.yaml",
+          "line": 286,
+          "kind": "canonical acceptance",
+          "quote": "acceptance: [\"the presentation-only theme.v1/home.v1 boundary is preserved\", \"capability expansion is rejected\", \"malformed view models are rejected\"]",
+          "statements": [
+            "the presentation-only theme.v1/home.v1 boundary is preserved",
+            "capability expansion is rejected",
+            "malformed view models are rejected"
+          ]
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "frontend/src/themeManifest.ts",
+          "line": 1,
+          "fingerprint": "d3a1a5c8a05cc48a"
+        },
+        {
+          "path": "internal/localization/localization.go",
+          "line": 1,
+          "fingerprint": "c4422cad570574a6"
+        },
+        {
+          "path": "docs/units/F30.md",
+          "line": 1,
+          "fingerprint": "ab0ed710a0e63e88"
+        }
+      ],
+      "runtime_acceptance": [
+        "the presentation-only theme.v1/home.v1 boundary is preserved",
+        "capability expansion is rejected",
+        "malformed view models are rejected"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F31",
+      "title": "Design: account lookup and hash verification",
+      "area": "Go backend",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "promoted",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 49,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "Account lookup/hash verification is already implemented and evidenced by F1/F2/F6; the F18-F30 proposal owns the public login transition at F22. No additional observable boundary is defensible here."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 49,
+          "kind": "design acceptance/stop statement",
+          "quote": "Retain adapter and verifier tests under their accepted F1/F2/F6 contracts; do not relabel them as a new unit. Reopen only for a distinct account contract with new evidence."
+        }
+      ],
+      "gaps": [
+        "Reserved ID has no distinct acceptance boundary; retained without scope changes."
+      ],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 1,
+          "fingerprint": "588c27920e6dd66e"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F32",
+      "title": "Design: profile and content adapters",
+      "area": "Go backend",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "promoted",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 50,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "Profile/content PolarIS read adapters, explicit columns, bound arguments, limits, and enum handling are already accepted under F3/F5/F6, while F18/F29 own their feature behavior. No additional integration boundary is demonstrated."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 50,
+          "kind": "design acceptance/stop statement",
+          "quote": "Do not duplicate accepted adapter work. Reopen only with a new source-backed adapter contract or ownership decision."
+        }
+      ],
+      "gaps": [
+        "Reserved ID has no distinct acceptance boundary; retained without scope changes."
+      ],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 1,
+          "fingerprint": "588c27920e6dd66e"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F33",
+      "title": "Design: CSRF criteria",
+      "area": "Go backend",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 51,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "CSRF is a required security criterion for F22/F23/F25/F26/F27/F28 mutations, but no distinct F31-F45 contract can be assigned without duplicating those reserved proposals."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 51,
+          "kind": "design acceptance/stop statement",
+          "quote": "Fold the CSRF acceptance criteria into the owning F18-F30 unit; do not create a second numbered security implementation."
+        }
+      ],
+      "gaps": [
+        "Reserved ID has no distinct acceptance boundary; retained without scope changes."
+      ],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 1,
+          "fingerprint": "588c27920e6dd66e"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F34",
+      "title": "Design: return-target validation",
+      "area": "Go backend",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 52,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "Return-target validation is part of the reserved F22/F27 auth/session contracts, not a separate observable unit in this lane."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 52,
+          "kind": "design acceptance/stop statement",
+          "quote": "Fold open-redirect negative tests into the owning proposal; reopen only with a distinct source-backed boundary."
+        }
+      ],
+      "gaps": [
+        "Reserved ID has no distinct acceptance boundary; retained without scope changes."
+      ],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 1,
+          "fingerprint": "588c27920e6dd66e"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F35",
+      "title": "Design: atomic website-owned mutation with audit",
+      "area": "Go backend",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Synthetic MemoryStore and synthetic SQL schema exercise transactions; selected real mutation/schema remains unspecified.",
+      "canonical_status": "design",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 83,
+          "head": "bad064ec26f9",
+          "merged_at": "2026-10-06T22:38:47Z",
+          "branch": "unit/F35"
+        },
+        {
+          "pr": 68,
+          "head": "8c749969f266",
+          "merged_at": "2026-10-06T00:59:12Z",
+          "branch": "unit/F35"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 53,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "A website-owned mutation and its audit record commit atomically, including authorization, CSRF, validation, prepared SQL, and injected audit failure. This is a new audit integration, not F21 profile settings or F25 registration."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 53,
+          "kind": "design acceptance/stop statement",
+          "quote": "Coordinator chooses mutation, schema, actor fields, and transaction boundary. Negative: unauthorized, invalid, SQL failure, audit failure, partial commit, replay. Backend after gate; independent security reviewer. 32k / 135m. Stop on schema/audit ambiguity. Accept atomic synthetic store tests and no production enablement."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/audit/audit.go",
+          "line": 172,
+          "fingerprint": "0136f819a00893fe"
+        },
+        {
+          "path": "internal/audit/audit_test.go",
+          "line": 1,
+          "fingerprint": "5726f858dccd03ab"
+        },
+        {
+          "path": "docs/evidence/F35-audit-transaction.md",
+          "line": 1,
+          "fingerprint": "2b2e3339806c8b48"
+        }
+      ],
+      "runtime_acceptance": [
+        "an unauthorized or invalid mutation is rejected and writes nothing",
+        "the website-owned mutation and its audit record commit atomically in a synthetic store",
+        "an injected audit failure rolls the mutation back with no partial commit",
+        "all SQL is prepared and bound, and a replay attempt is rejected",
+        "no production enablement and no real rows"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/audit/audit_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F36",
+      "title": "Design: staff secret enrollment",
+      "area": "staff",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "EnrollmentStore holds enrollment/audit records in memory; real staff identity/secret-protection adapter is absent.",
+      "canonical_status": "design",
+      "runtime_status": "todo",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 70,
+          "head": "cb08ec7e381a",
+          "merged_at": "2026-10-06T15:32:18Z",
+          "branch": "unit/F36"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 54,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "Staff enrollment binds one approved TOTP secret to one staff identity without exposing it, and enrollment is denied to disabled/unauthorized staff. This is separate from F25 registration and F27 public token/session behavior."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 54,
+          "kind": "design acceptance/stop statement",
+          "quote": "Coordinator owns staff identity, secret protection, recovery, authorization, and audit schema. Negative: unauthorized, disabled, duplicate, leaked secret, DB failure. Backend after gate; independent security reviewer. 32k / 135m. Stop on absent staff schema or production credentials. Accept synthetic secrets only, atomic audit, no seeded admin."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/staff/enrollment.go",
+          "line": 1,
+          "fingerprint": "3eb684c4bf3b65c4"
+        },
+        {
+          "path": "internal/staff/enrollment_test.go",
+          "line": 1,
+          "fingerprint": "8f74f04a129399b8"
+        }
+      ],
+      "runtime_acceptance": [
+        "one approved TOTP secret binds to one staff identity without disclosure",
+        "enrollment is denied to disabled or unauthorized staff",
+        "duplicate enrollment and a DB failure are rejected atomically with no secret leaked",
+        "synthetic secrets only; no seeded admin and no production credentials",
+        "the audit record is written atomically with enrollment"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/staff/enrollment_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F37",
+      "title": "Design: per-staff TOTP step-up",
+      "area": "staff",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Library-backed per-staff TOTP and session binding exist; staff records and sessions remain in memory.",
+      "canonical_status": "design",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 84,
+          "head": "1c9b88a79e69",
+          "merged_at": "2026-10-06T22:42:59Z",
+          "branch": "unit/F37"
+        },
+        {
+          "pr": 65,
+          "head": "e725c1d28ca0",
+          "merged_at": "2026-10-05T21:12:46Z",
+          "branch": "unit/F37"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 55,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "Staff step-up validates a real per-staff TOTP code within an approved time window and binds success to the intended staff session."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 55,
+          "kind": "design acceptance/stop statement",
+          "quote": "Coordinator approves step-up scope, skew, rate limits, and failure response. Negative: missing, disabled, malformed, wrong, expired, wrong-user, and DB-error cases. Backend after F36; independent security reviewer. 32k / 135m. Stop on shape-only validation or absent per-staff secret. Accept library-backed synthetic tests and session binding."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/staff/totp.go",
+          "line": 1,
+          "fingerprint": "dadfedf0302a38e5"
+        },
+        {
+          "path": "internal/session/session.go",
+          "line": 1,
+          "fingerprint": "446e6363afde9846"
+        },
+        {
+          "path": "internal/session/stepup_test.go",
+          "line": 1,
+          "fingerprint": "b527abd39b57c3d3"
+        }
+      ],
+      "runtime_acceptance": [
+        "a real per-staff TOTP code within the approved time window validates step-up",
+        "success binds to the intended staff session",
+        "missing, disabled, malformed, wrong, expired and wrong-user codes fail explicitly",
+        "rate limits and the failure response follow coordinator-approved scope",
+        "library-backed validation only; a shape-only pass is rejected"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/session/stepup_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F38",
+      "title": "Design: durable TOTP replay prevention",
+      "area": "staff",
+      "roadmap_item": true,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "ReplayStoreGuard delegates to an interface; file persistence lives in test-local fake and StepWindow is memory-only.",
+      "canonical_status": "design",
+      "runtime_status": "todo",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 56,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "A previously accepted TOTP time step cannot be accepted again for the same staff identity, including concurrent submissions; replay state is durable rather than cache-only."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 56,
+          "kind": "design acceptance/stop statement",
+          "quote": "Coordinator owns persistence and compare/update locking. Negative: same-step replay, race, adjacent allowed step, expiry, wrong staff, outage. Backend after F36/F37; independent security reviewer. 28k / 120m. Stop on missing replay schema or non-atomic update. Accept race tests and durable-state proof."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/staff/replay.go",
+          "line": 1,
+          "fingerprint": "3591b79afbb98ad5"
+        },
+        {
+          "path": "internal/staff/replay_test.go",
+          "line": 82,
+          "fingerprint": "862d7b2ee4982b49"
+        },
+        {
+          "path": "internal/staff/window.go",
+          "line": 1,
+          "fingerprint": "5d175b5c1c04bb71"
+        }
+      ],
+      "runtime_acceptance": [
+        "a previously accepted time step cannot be accepted again for the same staff identity",
+        "concurrent submissions of one step cannot both succeed",
+        "replay state is durable rather than cache-only",
+        "adjacent allowed step, expiry, wrong-staff and outage cases are handled",
+        "the compare/update is atomic"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/staff/replay_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F38-a",
+      "title": "Durable atomic TOTP replay store",
+      "area": "staff",
+      "roadmap_item": false,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "ReplayStoreGuard delegates to an interface; file persistence lives in test-local fake and StepWindow is memory-only.",
+      "canonical_status": "n/a",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 71,
+          "head": "944e8d711d63",
+          "merged_at": "2026-10-06T15:35:09Z",
+          "branch": "unit/F38-a"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 56,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "A previously accepted TOTP time step cannot be accepted again for the same staff identity, including concurrent submissions; replay state is durable rather than cache-only."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 56,
+          "kind": "design acceptance/stop statement",
+          "quote": "Coordinator owns persistence and compare/update locking. Negative: same-step replay, race, adjacent allowed step, expiry, wrong staff, outage. Backend after F36/F37; independent security reviewer. 28k / 120m. Stop on missing replay schema or non-atomic update. Accept race tests and durable-state proof."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/staff/replay.go",
+          "line": 1,
+          "fingerprint": "3591b79afbb98ad5"
+        },
+        {
+          "path": "internal/staff/replay_test.go",
+          "line": 82,
+          "fingerprint": "862d7b2ee4982b49"
+        },
+        {
+          "path": "internal/staff/window.go",
+          "line": 1,
+          "fingerprint": "5d175b5c1c04bb71"
+        },
+        {
+          "path": "docs/units/F38-a.md",
+          "line": 1,
+          "fingerprint": "e511a2c0d065d01c"
+        }
+      ],
+      "runtime_acceptance": [
+        "a previously accepted (staff identity, time step) cannot be accepted a second time",
+        "concurrent submissions of one step admit exactly one success under -race",
+        "the compare/update is atomic and a store error fails closed with no accept",
+        "replay state survives a store reopen, so it is durable and not cache-only"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/staff/replay_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F38-b",
+      "title": "TOTP replay window, expiry boundary and staff scoping",
+      "area": "staff",
+      "roadmap_item": false,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "ReplayStoreGuard delegates to an interface; file persistence lives in test-local fake and StepWindow is memory-only.",
+      "canonical_status": "n/a",
+      "runtime_status": "parked-final",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 56,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "A previously accepted TOTP time step cannot be accepted again for the same staff identity, including concurrent submissions; replay state is durable rather than cache-only."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 56,
+          "kind": "design acceptance/stop statement",
+          "quote": "Coordinator owns persistence and compare/update locking. Negative: same-step replay, race, adjacent allowed step, expiry, wrong staff, outage. Backend after F36/F37; independent security reviewer. 28k / 120m. Stop on missing replay schema or non-atomic update. Accept race tests and durable-state proof."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/staff/replay.go",
+          "line": 1,
+          "fingerprint": "3591b79afbb98ad5"
+        },
+        {
+          "path": "internal/staff/replay_test.go",
+          "line": 82,
+          "fingerprint": "862d7b2ee4982b49"
+        },
+        {
+          "path": "internal/staff/window.go",
+          "line": 1,
+          "fingerprint": "5d175b5c1c04bb71"
+        },
+        {
+          "path": "docs/units/F38-b.md",
+          "line": 1,
+          "fingerprint": "40b52902c42b92ef"
+        }
+      ],
+      "runtime_acceptance": [
+        "an adjacent allowed step is accepted once and a duplicate of either adjacent step is rejected",
+        "a step outside the approved window is rejected",
+        "the expiry boundary accepts the last valid instant and rejects the first invalid one",
+        "a step accepted for one staff identity is not accepted for another identity"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/staff/replay_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F38-ba",
+      "title": "TOTP replay window acceptance and expiry boundary",
+      "area": "staff",
+      "roadmap_item": false,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "ReplayStoreGuard delegates to an interface; file persistence lives in test-local fake and StepWindow is memory-only.",
+      "canonical_status": "n/a",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 74,
+          "head": "9477e52ccd47",
+          "merged_at": "2026-10-06T16:18:52Z",
+          "branch": "unit/F38-ba"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 56,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "A previously accepted TOTP time step cannot be accepted again for the same staff identity, including concurrent submissions; replay state is durable rather than cache-only."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 56,
+          "kind": "design acceptance/stop statement",
+          "quote": "Coordinator owns persistence and compare/update locking. Negative: same-step replay, race, adjacent allowed step, expiry, wrong staff, outage. Backend after F36/F37; independent security reviewer. 28k / 120m. Stop on missing replay schema or non-atomic update. Accept race tests and durable-state proof."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/staff/replay.go",
+          "line": 1,
+          "fingerprint": "3591b79afbb98ad5"
+        },
+        {
+          "path": "internal/staff/replay_test.go",
+          "line": 82,
+          "fingerprint": "862d7b2ee4982b49"
+        },
+        {
+          "path": "internal/staff/window.go",
+          "line": 1,
+          "fingerprint": "5d175b5c1c04bb71"
+        }
+      ],
+      "runtime_acceptance": [
+        "an adjacent allowed step is accepted once and a duplicate of either adjacent step is rejected",
+        "a step outside the approved window is rejected",
+        "the expiry boundary accepts the last valid instant and rejects the first invalid one"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/staff/replay_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F38-bb",
+      "title": "TOTP step staff scoping and unit evidence record",
+      "area": "staff",
+      "roadmap_item": false,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Test/evidence-only delivery asserts staff scoping on the memory StepWindow; no production adapter delivered.",
+      "canonical_status": "n/a",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 75,
+          "head": "aa3797acd9eb",
+          "merged_at": "2026-10-06T16:40:26Z",
+          "branch": "unit/F38-bb"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 56,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "A previously accepted TOTP time step cannot be accepted again for the same staff identity, including concurrent submissions; replay state is durable rather than cache-only."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 56,
+          "kind": "design acceptance/stop statement",
+          "quote": "Coordinator owns persistence and compare/update locking. Negative: same-step replay, race, adjacent allowed step, expiry, wrong staff, outage. Backend after F36/F37; independent security reviewer. 28k / 120m. Stop on missing replay schema or non-atomic update. Accept race tests and durable-state proof."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/staff/replay.go",
+          "line": 1,
+          "fingerprint": "3591b79afbb98ad5"
+        },
+        {
+          "path": "internal/staff/replay_test.go",
+          "line": 82,
+          "fingerprint": "862d7b2ee4982b49"
+        },
+        {
+          "path": "internal/staff/window.go",
+          "line": 1,
+          "fingerprint": "5d175b5c1c04bb71"
+        },
+        {
+          "path": "docs/units/F38-bb.md",
+          "line": 1,
+          "fingerprint": "1bae9651404da44a"
+        }
+      ],
+      "runtime_acceptance": [
+        "a step accepted for one staff identity is not accepted for another identity",
+        "docs/units/F38-b.md records a literal `fidelity: guessed` line and the required independent security review note"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "internal/staff/replay_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F39",
+      "title": "Design: audit redaction",
+      "area": "Go backend",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 57,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "Audit redaction is a criterion of the new F35 mutation contract, while profile read is already reserved by F18; no independent F39 contract is defensible without double-counting."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 57,
+          "kind": "design acceptance/stop statement",
+          "quote": "Keep redaction and audit-event assertions inside F35 or a later owner-approved staff unit; do not duplicate F18."
+        }
+      ],
+      "gaps": [
+        "Reserved ID has no distinct acceptance boundary; retained without scope changes."
+      ],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 1,
+          "fingerprint": "588c27920e6dd66e"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F40",
+      "title": "Design: legacy FAQ category and search read projection",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Git delivery contains only blocker/evidence documents; no FAQ package or handler exists.",
+      "canonical_status": "design",
+      "runtime_status": "todo",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 67,
+          "head": "f88f3d922212",
+          "merged_at": "2026-10-06T00:44:31Z",
+          "branch": "unit/F40"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 58,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "Public legacy FAQ category and query-search read projection: source branches on GET `id` or POST `query`, renders category children or matching item/category labels. `help.php:18-23,26-32,51-73`; `.htaccess:72-73`. This is not F5 `hotelview_news`, F24 community, F29 articles, or F54 website-owned composition. GET `/help/{id}` and POST `/help/faqsearch` are source-indicated request shapes, not captured HTTP contracts."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 58,
+          "kind": "design acceptance/stop statement",
+          "quote": "Prerequisites: retained method/status/headers/cookies/body markers, FAQ field/schema ownership, prepared-query/escaping/limits policy, owner scope approval and independent review. Negative: missing/invalid category, empty search, malformed/overlong query, wrong method, unsafe text, private-field leakage; no writes. Backend/frontend after gates; reviewer independently checks source and response contract. 12k / 45m. Stop on missing capture, inferred schema or auth/write expansion. Accept bounded synthetic read tests only after decisions and exact response evidence. Later optional parity, not first-release accepted or code-ready."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/units/F40.md",
+          "line": 1,
+          "fingerprint": "c45e59afb025d39b"
+        },
+        {
+          "path": "docs/evidence/F40-faq-route.md",
+          "line": 1,
+          "fingerprint": "c43fc7c28f787a2f"
+        }
+      ],
+      "runtime_acceptance": [
+        "GET /help/{id} renders category children for a valid id",
+        "POST /help/faqsearch renders matching item and category labels",
+        "missing or invalid category and empty or overlong query are rejected",
+        "queries are prepared and bounded, no private field leaks and no write occurs",
+        "read-only bounded synthetic tests only, after capture and schema decisions"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F41",
+      "title": "Design: mutation and audit-event behaviour",
+      "area": "Go backend",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 59,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "No distinct source-backed unit remains. Website-owned mutation behavior and its audit-event/redaction criteria are represented together by F35."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 59,
+          "kind": "design acceptance/stop statement",
+          "quote": "Requires new evidence or an owner-approved decision that is not a subdivision of F35."
+        }
+      ],
+      "gaps": [
+        "Reserved ID has no distinct acceptance boundary; retained without scope changes."
+      ],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 1,
+          "fingerprint": "588c27920e6dd66e"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F42",
+      "title": "Design: staff TOTP subdivision",
+      "area": "staff",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 60,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "No distinct source-backed unit remains. Staff enrollment/step-up/replay are separately represented by F36-F38."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 60,
+          "kind": "design acceptance/stop statement",
+          "quote": "Do not split one TOTP observation into additional units."
+        }
+      ],
+      "gaps": [
+        "Reserved ID has no distinct acceptance boundary; retained without scope changes."
+      ],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 1,
+          "fingerprint": "588c27920e6dd66e"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F43",
+      "title": "Design: CSRF and redirect criteria",
+      "area": "Go backend",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 61,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "No distinct source-backed unit remains. CSRF and redirect-policy criteria belong inside the owning F18-F30 auth/session or mutation proposal, with audited-mutation enforcement in F35 where applicable."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 61,
+          "kind": "design acceptance/stop statement",
+          "quote": "Requires a new observable contract, not another negative case for the reserved F18-F30 units or F35."
+        }
+      ],
+      "gaps": [
+        "Reserved ID has no distinct acceptance boundary; retained without scope changes."
+      ],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 1,
+          "fingerprint": "588c27920e6dd66e"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F44",
+      "title": "Design: core backend and security contract",
+      "area": "Go backend",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 62,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "No retained capture or verified ownership evidence supports another core backend/security contract in this range."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 62,
+          "kind": "design acceptance/stop statement",
+          "quote": "Stop pending fresh source/capture/schema evidence."
+        }
+      ],
+      "gaps": [
+        "Reserved ID has no distinct acceptance boundary; retained without scope changes."
+      ],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 1,
+          "fingerprint": "588c27920e6dd66e"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F45",
+      "title": "Design: guestbook authorization concern",
+      "area": "legacy preserved behavior",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 63,
+          "kind": "closest written statement (no canonical acceptance)",
+          "quote": "Guestbook privacy/read/write is reserved by F28; the source-level delete/list authorization concern cannot be safely promoted into a second unit."
+        },
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 63,
+          "kind": "design acceptance/stop statement",
+          "quote": "Keep the concern as a F28 security gate; do not duplicate it here."
+        }
+      ],
+      "gaps": [
+        "Reserved ID has no distinct acceptance boundary; retained without scope changes."
+      ],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F31-F45-candidate-design.md",
+          "line": 1,
+          "fingerprint": "588c27920e6dd66e"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F46",
+      "title": "Design: typed view-model boundary",
+      "area": "React frontend",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 19,
+          "kind": "closest written statement (unfilled)",
+          "quote": "Accepted F7 already validates `home.v1`, version/malformed values, and presentation capability. The child proposal names no new approved schema, field inventory, or integration distinct from that boundary. Sanitization and unknown-field rejection belong to a later owning feature/API contract, not a duplicate numbered envelope."
+        }
+      ],
+      "gaps": [
+        "Reserved ID has no distinct acceptance boundary; retained without scope changes."
+      ],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 1,
+          "fingerprint": "8157f2b2863ebc6b"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F47",
+      "title": "Design: theme package acceptance",
+      "area": "themes: theme system",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 24,
+          "kind": "closest written statement (unfilled)",
+          "quote": "Accepted F7 already supplies `theme.v1`, `StarterShell`, `home.v1`, and presentation-only manifest validation. The child narrows the topic relative to ambiguous F30, but its observable acceptance repeats F7 without a measured new package/install or original-parity contract. F24 is a community read projection, not a theme proposal; it is not the reason for this gap."
+        }
+      ],
+      "gaps": [
+        "Reserved ID has no distinct acceptance boundary; retained without scope changes."
+      ],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 1,
+          "fingerprint": "8157f2b2863ebc6b"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F48",
+      "title": "Design: modern theme package and provenance-checked assets",
+      "area": "themes: theme system",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 29,
+          "kind": "design acceptance/observable statement",
+          "quote": "Observable contract: an optional modern theme may render only reviewed, provenance-recorded assets through a validated manifest; it cannot execute reference application code or access arbitrary paths."
+        },
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 35,
+          "kind": "design acceptance/observable statement",
+          "quote": "Acceptance: every selected asset has source, retrieval date, hash, creator/terms and a synthetic render fixture; otherwise leave unfilled. Stop on unresolved rights or Atom/Pixel63/SWF dependency."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 1,
+          "fingerprint": "8157f2b2863ebc6b"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F49",
+      "title": "Design: versioned locale catalog package boundary",
+      "area": "React frontend",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 39,
+          "kind": "design acceptance/observable statement",
+          "quote": "Observable contract: a versioned, data-only catalog package is validated as a complete release artifact before activation, including locale metadata, declared key inventory, fallback declarations, and catalog/content compatibility; this is a package/schema-validation boundary, not F8's already-accepted in-memory lookup and fallback behavior."
+        },
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 45,
+          "kind": "design acceptance/observable statement",
+          "quote": "Acceptance: synthetic package fixtures prove manifest validation and compatibility checks beyond F8's lookup tests, while preserving fixed `home.v1` keys and explicit missing state. Stop if persistence, signing, or activation requires schema/security decisions."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 1,
+          "fingerprint": "8157f2b2863ebc6b"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F50",
+      "title": "Design: locale-aware cache integration and invalidation",
+      "area": "Redis",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 49,
+          "kind": "design acceptance/observable statement",
+          "quote": "Observable contract: an approved locale-aware presentation response is stored and retrieved under a normalized locale-varying cache key, with explicit TTL and invalidation on catalog/package activation; a stale or unavailable cache cannot be reported as an authoritative publication."
+        },
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 55,
+          "kind": "design acceptance/observable statement",
+          "quote": "Acceptance: synthetic tests prove distinct normalized locale keys, explicit TTL, activation invalidation, and outage-as-miss/failure semantics using the F7 cache double; no production Redis or catalog write. Stop on unspecified TTL, cache authority, or invalidation ordering."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 1,
+          "fingerprint": "8157f2b2863ebc6b"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F51",
+      "title": "Design: housekeeping React capability shell",
+      "area": "staff",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 59,
+          "kind": "design acceptance/observable statement",
+          "quote": "Observable contract: an authenticated housekeeping React shell displays only server-authorized capabilities, uses a dedicated housekeeping style within the same theme architecture, and cannot grant permissions by UI visibility."
+        },
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 65,
+          "kind": "design acceptance/observable statement",
+          "quote": "Acceptance: only after an approved capability contract and negative browser tests; no staff implementation or production enablement from this design. Stop on rank-to-permission ambiguity."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 1,
+          "fingerprint": "8157f2b2863ebc6b"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F52",
+      "title": "Design: website-owned pages and safe slugs",
+      "area": "React frontend",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 69,
+          "kind": "design acceptance/observable statement",
+          "quote": "Observable contract: an approved website-owned page model has stable identifiers, validated route-safe slugs, locale variants, draft/published state, and presentation metadata without arbitrary template execution."
+        },
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 75,
+          "kind": "design acceptance/observable statement",
+          "quote": "Acceptance: explicit website-owned schema and atomic audited mutation contract approved before any implementation card. Stop on PolarIS ownership overlap."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 1,
+          "fingerprint": "8157f2b2863ebc6b"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F53",
+      "title": "Design: navigation and button management",
+      "area": "React frontend",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 79,
+          "kind": "design acceptance/observable statement",
+          "quote": "Observable contract: approved navigation entries render stable labels, destinations, visibility, ordering, locale variants, and theme-compatible metadata while route behavior remains server-owned."
+        },
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 85,
+          "kind": "design acceptance/observable statement",
+          "quote": "Acceptance: synthetic read fixture may be proposed; writes require approved schema, authorization, CSRF, prepared SQL, same-transaction audit, and browser contract."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 1,
+          "fingerprint": "8157f2b2863ebc6b"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F54",
+      "title": "Design: FAQ, banner and landing composition models",
+      "area": "React frontend",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 89,
+          "kind": "design acceptance/observable statement",
+          "quote": "Observable contract: website-owned view models expose only approved escaped fields and stable ordering for FAQ, banner, and landing compositions; this excludes the F24 community projection, F29 article/category projection, and F40 legacy FAQ category/search endpoint and query semantics. A composition may consume an approved FAQ read model later, but cannot duplicate F40's route tests. Public display does not imply editor or publication authority."
+        },
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 95,
+          "kind": "design acceptance/observable statement",
+          "quote": "Acceptance: no duplicate F17 archive, F24 community, F29 article/category, or F40 FAQ endpoint contract; synthetic fixtures must identify fields and unknowns. Stop on missing response facts or schema inference."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 1,
+          "fingerprint": "8157f2b2863ebc6b"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F55",
+      "title": "Design: publication, preview and rollback boundary",
+      "area": "React frontend",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 99,
+          "kind": "design acceptance/observable statement",
+          "quote": "Observable contract: a future approved publication operation activates one validated version atomically, preserves the prior version for rollback, and never partially activates a locale, page, navigation, theme, or catalog."
+        },
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 105,
+          "kind": "design acceptance/observable statement",
+          "quote": "Acceptance: only a design review may proceed until atomicity and audit semantics are source-backed or explicitly approved. Stop on any best-effort publication behavior."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 1,
+          "fingerprint": "8157f2b2863ebc6b"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F56",
+      "title": "Design: media metadata and safe asset selection",
+      "area": "React frontend",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 109,
+          "kind": "design acceptance/observable statement",
+          "quote": "Observable contract: content references media by validated website-owned metadata and allowlisted identifiers, never arbitrary filesystem paths, executable uploads, or unverified external URLs."
+        },
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 115,
+          "kind": "design acceptance/observable statement",
+          "quote": "Acceptance: metadata-only synthetic fixture can be designed; no upload or storage implementation without explicit safe-upload contract and review."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 1,
+          "fingerprint": "8157f2b2863ebc6b"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F57",
+      "title": "Design: status, maintenance and audit views",
+      "area": "staff",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 119,
+          "kind": "design acceptance/observable statement",
+          "quote": "Observable contract: an approved housekeeping view displays status/maintenance state, records explicit cache invalidation outcomes, and exposes immutable audit history without treating presentation state as authority."
+        },
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 125,
+          "kind": "design acceptance/observable statement",
+          "quote": "Acceptance: synthetic read-only fixture may record UNKNOWNs; mutation requires same-transaction audit and explicit cache contract. Stop on arbitrary settings or production operations."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 1,
+          "fingerprint": "8157f2b2863ebc6b"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F58",
+      "title": "Design: browser contracts for themes and housekeeping",
+      "area": "themes: theme system",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 129,
+          "kind": "design acceptance/observable statement",
+          "quote": "Observable contract: browser tests verify initial rendering, navigation, locale display, failure states, keyboard/accessible names, and housekeeping authorization without allowing theme or locale selection to change security behavior."
+        },
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 135,
+          "kind": "design acceptance/observable statement",
+          "quote": "Acceptance: use only configured runner and synthetic fixtures; record exact viewport/method. Stop if no approved runner or capture baseline exists; do not claim visual regression coverage otherwise."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 1,
+          "fingerprint": "8157f2b2863ebc6b"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F59",
+      "title": "Design: release candidate verification matrix",
+      "area": "infrastructure",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 139,
+          "kind": "design acceptance/observable statement",
+          "quote": "Observable contract: a release candidate is accepted only when typed view-model, theme manifest, locale, asset provenance, browser, cache, audit, and golden-contract checks report explicit pass/blocked/UNKNOWN states."
+        },
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 145,
+          "kind": "design acceptance/observable statement",
+          "quote": "Acceptance: list base/head SHA, changed paths, test output, unresolved UNKNOWNs, and no production claims. Stop on unexplained red CI or missing required evidence."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 1,
+          "fingerprint": "8157f2b2863ebc6b"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "F60",
+      "title": "Design: first-release readiness packet",
+      "area": "infrastructure",
+      "roadmap_item": true,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "design",
+      "runtime_status": "design",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 149,
+          "kind": "design acceptance/observable statement",
+          "quote": "Observable contract: the first-release decision packet distinguishes synthetic presentation contracts, source-backed public behavior, gated CMS design, and production enablement; no design label silently grants implementation authority."
+        },
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 155,
+          "kind": "design acceptance/observable statement",
+          "quote": "Acceptance: synthesis must reconcile numbering against F18-F45, count distinct defensible units, preserve missing gates, and create no implementation cards until the owner accepts scope. Stop on unresolved numbering or absent independent review."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/roadmap/F46-F60-candidate-design.md",
+          "line": 1,
+          "fingerprint": "8157f2b2863ebc6b"
+        }
+      ],
+      "runtime_acceptance": [],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "QA1",
+      "title": "Reject mismatched staff identities returned by the TOTP store",
+      "area": "infrastructure",
+      "roadmap_item": false,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Staff identity-validation fix calls real TOTP code; staff data still uses MemoryStore and lacks backend integration.",
+      "canonical_status": "n/a",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 72,
+          "head": "abe78cadfc5d",
+          "merged_at": "2026-10-06T15:52:35Z",
+          "branch": "unit/QA1"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "docs/units/QA1.md",
+          "line": 1,
+          "kind": "support delivery note (not product criteria)",
+          "quote": "fidelity: guessed"
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/staff/totp.go",
+          "line": 1,
+          "fingerprint": "dadfedf0302a38e5"
+        },
+        {
+          "path": "tests/staff/totp_test.go",
+          "line": 1,
+          "fingerprint": "dac100911b83d9b5"
+        },
+        {
+          "path": "docs/units/QA1.md",
+          "line": 1,
+          "fingerprint": "62b23fec581c82a6"
+        }
+      ],
+      "runtime_acceptance": [
+        "Validation rejects empty or mismatched record identities before accepting a code.",
+        "A synthetic store returning Bob's record for Alice's lookup produces ErrWrongUser even with Bob's valid code.",
+        "Valid test records explicitly declare their staff identities.",
+        "Matching enabled identities continue to validate correctly."
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "tests/staff/totp_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "RF1",
+      "title": "Consistency pass: fix the open audit findings and align package structure",
+      "area": "infrastructure",
+      "roadmap_item": false,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Git delivery is only a consistency document; it does not implement product code.",
+      "canonical_status": "n/a",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 69,
+          "head": "2728270602df",
+          "merged_at": "2026-10-06T01:25:20Z",
+          "branch": "unit/RF1"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "docs/units/RF1.md",
+          "line": 1,
+          "kind": "support delivery note (not product criteria)",
+          "quote": "RF1 consistency pass"
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/units/RF1.md",
+          "line": 1,
+          "fingerprint": "e33f40210ffe7ef2"
+        }
+      ],
+      "runtime_acceptance": [
+        "the open audit findings are fixed or explicitly ruled out",
+        "package layout and naming follow the neighbours' convention",
+        "no behaviour changes; existing tests still pass"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "QA2",
+      "title": "Replace handwritten TOTP cryptography with library-backed validation",
+      "area": "infrastructure",
+      "roadmap_item": false,
+      "classification": "scaffold",
+      "assessment_current": true,
+      "reason": "Library-backed TOTP replaces custom computation, but staff storage/session wiring remains a scaffold.",
+      "canonical_status": "n/a",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 73,
+          "head": "87dab9167983",
+          "merged_at": "2026-10-06T16:01:18Z",
+          "branch": "unit/QA2"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "docs/units/QA2.md",
+          "line": 1,
+          "kind": "support delivery note (not product criteria)",
+          "quote": "QA2 library-backed TOTP validation"
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "internal/staff/totp.go",
+          "line": 1,
+          "fingerprint": "dadfedf0302a38e5"
+        },
+        {
+          "path": "tests/staff/totp_test.go",
+          "line": 1,
+          "fingerprint": "dac100911b83d9b5"
+        },
+        {
+          "path": "docs/units/QA2.md",
+          "line": 1,
+          "fingerprint": "1ad3bfdabde05937"
+        },
+        {
+          "path": "go.mod",
+          "line": 1,
+          "fingerprint": "1d0f03fab3fedb55"
+        },
+        {
+          "path": "go.sum",
+          "line": 1,
+          "fingerprint": "9ce971d540cc83b2"
+        },
+        {
+          "path": "docs/units/F37.md",
+          "line": 1,
+          "fingerprint": "0800c7a5c6732d07"
+        }
+      ],
+      "runtime_acceptance": [
+        "Validation delegates TOTP computation to a maintained TOTP library rather than handwritten truncation logic.",
+        "Deterministic external vectors verify the configured algorithm, digit count, and period.",
+        "Current-step acceptance and adjacent-step rejection are explicitly tested.",
+        "Comments and documentation identify the timing policy as synthetic and do not claim owner approval.",
+        "Missing, disabled, malformed, wrong-user, and store-error cases remain fail-closed."
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "tests/staff/totp_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "RF2",
+      "title": "Consistency pass: fix the open audit findings and align package structure",
+      "area": "infrastructure",
+      "roadmap_item": false,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "n/a",
+      "runtime_status": "parked-final",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/units/RF2.md",
+          "line": 3,
+          "kind": "support delivery note (not product criteria)",
+          "quote": "This record covers the RF2 consistency pass and package alignment attempt in RF2c."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/units/RF2.md",
+          "line": 1,
+          "fingerprint": "0965dd28f2562e44"
+        }
+      ],
+      "runtime_acceptance": [
+        "the open audit findings are fixed or explicitly ruled out",
+        "package layout and naming follow the neighbours' convention",
+        "no behaviour changes; existing tests still pass"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "RF2a",
+      "title": "Fix the open QA3 audit findings in the staff TOTP test",
+      "area": "infrastructure",
+      "roadmap_item": false,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Test-finding fixes in a test-only delivery; no product implementation.",
+      "canonical_status": "n/a",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 76,
+          "head": "760a8fb7336c",
+          "merged_at": "2026-10-06T16:49:37Z",
+          "branch": "unit/RF2a"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "docs/units/RF2a.md",
+          "line": 3,
+          "kind": "support delivery note (not product criteria)",
+          "quote": "- Corrected the per-staff isolation assertion: Alice's generated code must not"
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "tests/staff/totp_test.go",
+          "line": 1,
+          "fingerprint": "dac100911b83d9b5"
+        },
+        {
+          "path": "docs/units/RF2a.md",
+          "line": 1,
+          "fingerprint": "7fb67957a0840221"
+        }
+      ],
+      "runtime_acceptance": [
+        "the open QA3 audit findings in tests/staff/totp_test.go are fixed or explicitly ruled out",
+        "the test file's package path and naming follow the neighbours' convention",
+        "no behaviour changes; existing tests still pass"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [
+        "tests/staff/totp_test.go"
+      ],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "RF2b",
+      "title": "Record QA3 audit-finding dispositions",
+      "area": "infrastructure",
+      "roadmap_item": false,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Audit disposition documentation only.",
+      "canonical_status": "n/a",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 77,
+          "head": "5bc3ddb49c35",
+          "merged_at": "2026-10-06T16:57:33Z",
+          "branch": "unit/RF2b"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "docs/units/RF2b.md",
+          "line": 3,
+          "kind": "support delivery note (not product criteria)",
+          "quote": "- QA3 disposition record documents the missing finding input and blocks unsupported fixed/ruled-out claims."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/units/QA3.md",
+          "line": 1,
+          "fingerprint": "caf0492a943b3c43"
+        },
+        {
+          "path": "docs/units/RF2b.md",
+          "line": 1,
+          "fingerprint": "b5ef6d7effb5db32"
+        }
+      ],
+      "runtime_acceptance": [
+        "each open QA3 finding is marked fixed or explicitly ruled out",
+        "each disposition cites the file and line that resolved it",
+        "no behaviour changes"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "RF2c",
+      "title": "Document the RF2 consistency pass and package alignment",
+      "area": "infrastructure",
+      "roadmap_item": false,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Consistency documentation only.",
+      "canonical_status": "n/a",
+      "runtime_status": "merged",
+      "git_status": "merged",
+      "deliveries": [
+        {
+          "pr": 78,
+          "head": "099536d25d71",
+          "merged_at": "2026-10-06T17:00:02Z",
+          "branch": "unit/RF2c"
+        }
+      ],
+      "criteria": [
+        {
+          "path": "docs/units/RF2c.md",
+          "line": 3,
+          "kind": "support delivery note (not product criteria)",
+          "quote": "fidelity: guessed"
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/units/RF2.md",
+          "line": 1,
+          "fingerprint": "0965dd28f2562e44"
+        },
+        {
+          "path": "docs/units/RF2c.md",
+          "line": 1,
+          "fingerprint": "a37c8e60f81c2db7"
+        }
+      ],
+      "runtime_acceptance": [
+        "the record states which findings were fixed and which were ruled out",
+        "the record confirms package layout and naming match the neighbours",
+        "no behaviour changes; existing tests still pass"
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    },
+    {
+      "id": "QA3",
+      "title": "Replace circular TOTP tests with independent identity and timing cases",
+      "area": "infrastructure",
+      "roadmap_item": false,
+      "classification": "designed",
+      "assessment_current": true,
+      "reason": "Written design only; no corresponding integrated implementation delivery.",
+      "canonical_status": "n/a",
+      "runtime_status": "todo",
+      "git_status": "not found",
+      "deliveries": [],
+      "criteria": [
+        {
+          "path": "docs/units/QA3.md",
+          "line": 5,
+          "kind": "support delivery note (not product criteria)",
+          "quote": "- No QA3 finding text was supplied or present at the authorized input path when RF2b ran; therefore there are no findings that can be responsibly marked fixed or ruled out. This is an input gap, not a claim that all findings were resolved."
+        }
+      ],
+      "gaps": [],
+      "evidence": [
+        {
+          "path": "docs/units/QA3.md",
+          "line": 1,
+          "fingerprint": "caf0492a943b3c43"
+        }
+      ],
+      "runtime_acceptance": [
+        "Positive validation cases use fixed independently sourced vectors rather than production-generated expected codes.",
+        "Alice and Bob have distinct synthetic secrets, and Alice's fixed code is rejected for Bob at the selected test instant.",
+        "Previous-step and next-step codes explicitly exercise ErrExpiredCode under the documented synthetic policy.",
+        "A code outside the adjacent window explicitly exercises ErrWrongCode.",
+        "Tests do not claim session binding or escalation coverage when no session operation is exercised."
+      ],
+      "runtime_acceptance_source": "state/units.live.yaml (runtime snapshot; not canonical approval)",
+      "production_wiring": "n/a: incomplete product integration",
+      "tests": [],
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+    }
+  ],
+  "platform_obligations": [
+    {
+      "area": "Go backend",
+      "classification": "scaffold",
+      "source": "AGENTS.md:3",
+      "criteria": [
+        {
+          "path": "AGENTS.md",
+          "line": 3,
+          "kind": "closest written platform statement",
+          "quote": "Goal: reimplement the public PHP-Retro site as a Go backend plus a React"
+        }
+      ],
+      "reason": "Go HTTP server exists but its feature handlers use synthetic data.",
+      "evidence": [
+        {
+          "path": "internal/server/server.go",
+          "line": 1,
+          "fingerprint": "6757cb2749abf4d4"
+        },
+        {
+          "path": "cmd/phpretro/main.go",
+          "line": 1,
+          "fingerprint": "d68cb8e380bdb78e"
+        },
+        {
+          "path": "AGENTS.md",
+          "line": 1,
+          "fingerprint": "09e6d9eab8089a23"
+        }
+      ],
+      "assessment_current": true
+    },
+    {
+      "area": "React frontend",
+      "classification": "scaffold",
+      "source": "DECISIONS.md:23",
+      "criteria": [
+        {
+          "path": "DECISIONS.md",
+          "line": 23,
+          "kind": "closest written platform statement",
+          "quote": "- **Frontend/cache correction:** React is the required frontend and all supported themes must be implemented as versioned React theme packages behind typed Go API contracts. Redis is a required supporting service for approved cache/session-support workloads; MariaDB remains authoritative. Redis usage requires documented namespaces, TTLs, serialization, invalidation, outage behavior, and tests. This supersedes the older draft language that deferred React and Redis as technologies."
+        }
+      ],
+      "reason": "React renders fixed DemoUser models; no intended backend API wiring.",
+      "evidence": [
+        {
+          "path": "frontend/src/main.tsx",
+          "line": 1,
+          "fingerprint": "62437ea8f8b3aa2a"
+        },
+        {
+          "path": "DECISIONS.md",
+          "line": 1,
+          "fingerprint": "44639172b8a5a7cf"
+        }
+      ],
+      "assessment_current": true
+    },
+    {
+      "area": "Redis",
+      "classification": "designed",
+      "source": "DECISIONS.md:23",
+      "criteria": [
+        {
+          "path": "DECISIONS.md",
+          "line": 23,
+          "kind": "closest written platform statement",
+          "quote": "- **Frontend/cache correction:** React is the required frontend and all supported themes must be implemented as versioned React theme packages behind typed Go API contracts. Redis is a required supporting service for approved cache/session-support workloads; MariaDB remains authoritative. Redis usage requires documented namespaces, TTLs, serialization, invalidation, outage behavior, and tests. This supersedes the older draft language that deferred React and Redis as technologies."
+        }
+      ],
+      "reason": "Required supporting service is specified; only RedisLike/Memory boundary exists.",
+      "evidence": [
+        {
+          "path": "internal/cache/store.go",
+          "line": 1,
+          "fingerprint": "a31ca17e7e494f26"
+        },
+        {
+          "path": "internal/cache/cache.go",
+          "line": 1,
+          "fingerprint": "4c90126e7c11dc5d"
+        },
+        {
+          "path": "DECISIONS.md",
+          "line": 1,
+          "fingerprint": "44639172b8a5a7cf"
+        }
+      ],
+      "assessment_current": true
+    },
+    {
+      "area": "Polaris integration",
+      "classification": "scaffold",
+      "source": "docs/evidence/F6-polaris-read-adapter.md:7",
+      "criteria": [
+        {
+          "path": "docs/evidence/F6-polaris-read-adapter.md",
+          "line": 7,
+          "kind": "closest written platform statement",
+          "quote": "- Profile mapping follows `docs/evidence/F3-profile-schema.md`: `users.id`, `username`, `motto`, `look`, `gender`, and `account_created` only. Credential, authorization, contact, network, room, and token columns are not selected."
+        }
+      ],
+      "reason": "SQL read adapters are tested with a fake driver but not connected to server.New.",
+      "evidence": [
+        {
+          "path": "internal/polaris/store.go",
+          "line": 1,
+          "fingerprint": "5977daaf4675299a"
+        },
+        {
+          "path": "internal/server/server.go",
+          "line": 1,
+          "fingerprint": "6757cb2749abf4d4"
+        },
+        {
+          "path": "docs/evidence/F6-polaris-read-adapter.md",
+          "line": 1,
+          "fingerprint": "2af036f14c4b2c7d"
+        }
+      ],
+      "assessment_current": true
+    },
+    {
+      "area": "themes: theme system",
+      "classification": "scaffold",
+      "source": "DECISIONS.md:23",
+      "criteria": [
+        {
+          "path": "DECISIONS.md",
+          "line": 23,
+          "kind": "closest written platform statement",
+          "quote": "- **Frontend/cache correction:** React is the required frontend and all supported themes must be implemented as versioned React theme packages behind typed Go API contracts. Redis is a required supporting service for approved cache/session-support workloads; MariaDB remains authoritative. Redis usage requires documented namespaces, TTLs, serialization, invalidation, outage behavior, and tests. This supersedes the older draft language that deferred React and Redis as technologies."
+        }
+      ],
+      "reason": "theme.v1 validates presentation capability; versioned installed theme packages are incomplete.",
+      "evidence": [
+        {
+          "path": "frontend/src/themeManifest.ts",
+          "line": 1,
+          "fingerprint": "d3a1a5c8a05cc48a"
+        },
+        {
+          "path": "frontend/src/StarterShell.tsx",
+          "line": 1,
+          "fingerprint": "ffc57cc586719301"
+        },
+        {
+          "path": "DECISIONS.md",
+          "line": 1,
+          "fingerprint": "44639172b8a5a7cf"
+        }
+      ],
+      "assessment_current": true
+    },
+    {
+      "area": "themes: Habbo",
+      "classification": "not started",
+      "source": "docs/decisions/2026-10-07-maintenance-B.md:3",
+      "criteria": [
+        {
+          "path": "docs/decisions/2026-10-07-maintenance-B.md",
+          "line": 3,
+          "kind": "closest written platform statement",
+          "quote": "The owner's 2026-10-07 instruction fixes the approved scope: preserve original\nPHPRetro behavior where the roadmap specifies it, Redis, Go backend, React\nfrontend, new Habbo theme, extensible theme system, Atom CMS theme and Polaris\nintegration. This overrides older Atom deferrals and audit assumptions of a"
+        }
+      ],
+      "reason": "Approved theme remains in scope; concrete named-theme asset/render acceptance is unwritten.",
+      "evidence": [
+        {
+          "path": "frontend/src/StarterShell.tsx",
+          "line": 1,
+          "fingerprint": "ffc57cc586719301"
+        },
+        {
+          "path": "docs/decisions/2026-10-07-maintenance-B.md",
+          "line": 1,
+          "fingerprint": "21f1742622f703e1"
+        }
+      ],
+      "assessment_current": true
+    },
+    {
+      "area": "themes: Atom CMS",
+      "classification": "not started",
+      "source": "docs/decisions/2026-10-07-maintenance-B.md:3",
+      "criteria": [
+        {
+          "path": "docs/decisions/2026-10-07-maintenance-B.md",
+          "line": 3,
+          "kind": "closest written platform statement",
+          "quote": "The owner's 2026-10-07 instruction fixes the approved scope: preserve original\nPHPRetro behavior where the roadmap specifies it, Redis, Go backend, React\nfrontend, new Habbo theme, extensible theme system, Atom CMS theme and Polaris\nintegration. This overrides older Atom deferrals and audit assumptions of a"
+        }
+      ],
+      "reason": "Approved Atom theme remains in scope; no Atom package or written visual acceptance exists.",
+      "evidence": [
+        {
+          "path": "frontend/src/StarterShell.tsx",
+          "line": 1,
+          "fingerprint": "ffc57cc586719301"
+        },
+        {
+          "path": "docs/decisions/2026-10-07-maintenance-B.md",
+          "line": 1,
+          "fingerprint": "21f1742622f703e1"
+        }
+      ],
+      "assessment_current": true
+    }
+  ],
+  "divergences": [
+    {
+      "id": "F36",
+      "git": "merged",
+      "runtime": "todo"
+    },
+    {
+      "id": "F40",
+      "git": "merged",
+      "runtime": "todo"
+    }
+  ],
+  "gaps": [
+    "12 reserved canonical IDs have no distinct acceptance boundary: F31-F34, F39, F41-F47; all retained.",
+    "F35 selected real mutation/schema/actor fields and zero-row adapter semantics are unwritten; no invented persistence fix.",
+    "F38/F38-a real durable replay adapter and compare/update locking contract are unwritten; fake durability is not production proof.",
+    "F21 mutation acceptance exceeds the delivered read/validation helper.",
+    "Habbo and Atom named theme package/assets/visual acceptance inventory is unwritten; both remain approved scope.",
+    "Several real backend and frontend adapter replacements are not scheduled as concrete roadmap cards; inventory reports this without adding/reprioritizing features."
+  ],
+  "stand_ins": [
+    {
+      "path": "internal/registration/registration.go",
+      "line": 73,
+      "symbol": "MemoryStore",
+      "scheduled_replacement": false,
+      "authority": "F25 explicitly scopes the current synthetic store; no concrete real replacement unit."
+    },
+    {
+      "path": "internal/recovery/recovery.go",
+      "line": 66,
+      "symbol": "MemoryStore",
+      "scheduled_replacement": false,
+      "authority": "F26 scopes synthetic identity/mail/token behavior; no concrete replacement unit."
+    },
+    {
+      "path": "internal/guestbook/guestbook.go",
+      "line": 27,
+      "symbol": "Store",
+      "scheduled_replacement": false,
+      "authority": "F28 has unresolved schema/helper semantics; real replacement not scheduled."
+    },
+    {
+      "path": "internal/audit/audit.go",
+      "line": 172,
+      "symbol": "MemoryStore",
+      "scheduled_replacement": false,
+      "authority": "F35 leaves chosen mutation/schema unspecified; no concrete real replacement scheduled."
+    },
+    {
+      "path": "internal/audit/audit.go",
+      "line": 221,
+      "symbol": "SQLStore (synthetic schema)",
+      "scheduled_replacement": false,
+      "authority": "F35 adapter has only synthetic table selection; real mutation contract unspecified."
+    },
+    {
+      "path": "internal/session/session.go",
+      "line": 39,
+      "symbol": "Manager (sessions and step-up counters)",
+      "scheduled_replacement": true,
+      "authority": "DECISIONS.md:23 requires Redis supporting cache/session workloads; exact TTL/serialization contract gap retained."
+    },
+    {
+      "path": "internal/session/token.go",
+      "line": 29,
+      "symbol": "RememberTokenStore",
+      "scheduled_replacement": false,
+      "authority": "F27 leaves token storage coordinator-owned; no named persistent replacement scheduled."
+    },
+    {
+      "path": "internal/staff/enrollment.go",
+      "line": 33,
+      "symbol": "EnrollmentStore",
+      "scheduled_replacement": false,
+      "authority": "F36 leaves staff schema/secret protection unspecified; no concrete adapter scheduled."
+    },
+    {
+      "path": "internal/staff/totp.go",
+      "line": 32,
+      "symbol": "MemoryStore",
+      "scheduled_replacement": false,
+      "authority": "F36/F37 specify per-staff identity but no real secret-store replacement contract."
+    },
+    {
+      "path": "internal/staff/window.go",
+      "line": 14,
+      "symbol": "StepWindow",
+      "scheduled_replacement": true,
+      "authority": "F38/F38-a already require durable atomic replay; concrete persistence/locking remains a gap."
+    },
+    {
+      "path": "internal/cache/cache.go",
+      "line": 23,
+      "symbol": "Memory",
+      "scheduled_replacement": true,
+      "authority": "DECISIONS.md:23 and F50 require Redis supporting cache integration; not authoritative data."
+    },
+    {
+      "path": "internal/community/community.go",
+      "line": 61,
+      "symbol": "Model (slice-backed data)",
+      "scheduled_replacement": false,
+      "authority": "F24 scopes synthetic lists; no wired source/store replacement card."
+    },
+    {
+      "path": "internal/server/fixtures.go",
+      "line": 16,
+      "symbol": "fixtures",
+      "scheduled_replacement": false,
+      "authority": "Server fixture assembly lacks an explicitly scheduled real replacement unit."
+    },
+    {
+      "path": "internal/server/fixtures.go",
+      "line": 37,
+      "symbol": "homeFixtures",
+      "scheduled_replacement": false,
+      "authority": "F19 synthetic helper delivered; intended real home adapter not scheduled."
+    },
+    {
+      "path": "internal/server/fixtures.go",
+      "line": 53,
+      "symbol": "profileFixtures",
+      "scheduled_replacement": false,
+      "authority": "F6 existing ProfileStore is an unwired read adapter, not a new replacement card."
+    },
+    {
+      "path": "frontend/src/main.tsx",
+      "line": 1,
+      "symbol": "profile/account/home demo models",
+      "scheduled_replacement": false,
+      "authority": "Required React/Go contracts are broad scope; no API-wiring replacement card identified."
+    },
+    {
+      "path": "frontend/src/community/viewModel.ts",
+      "line": 68,
+      "symbol": "communityFixture",
+      "scheduled_replacement": false,
+      "authority": "F24 synthetic read model; no real dataset replacement scheduled."
+    },
+    {
+      "path": "frontend/src/community/viewModel.ts",
+      "line": 76,
+      "symbol": "emptyCommunityFixture",
+      "scheduled_replacement": false,
+      "authority": "Synthetic presentation fixture; no concrete real-data integration scheduled."
+    },
+    {
+      "path": "frontend/src/localization/index.ts",
+      "line": 16,
+      "symbol": "syntheticCatalogs",
+      "scheduled_replacement": true,
+      "authority": "F49 package and DECISIONS.md:24 authenticated housekeeping schedule catalog management."
+    }
+  ],
+  "test_doubles": [
+    {
+      "path": "internal/account/account_test.go",
+      "line": 8,
+      "symbol": "syntheticStore",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/account/account_test.go",
+      "line": 16,
+      "symbol": "syntheticVerifier",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/accountview/accountview_test.go",
+      "line": 12,
+      "symbol": "syntheticSource",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/audit/audit_test.go",
+      "line": 203,
+      "symbol": "fakeConn",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/audit/audit_test.go",
+      "line": 216,
+      "symbol": "fakeDriver",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/audit/audit_test.go",
+      "line": 217,
+      "symbol": "fakeTx",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/audit/audit_test.go",
+      "line": 246,
+      "symbol": "fakeStmt",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/cache/cache_test.go",
+      "line": 9,
+      "symbol": "fixture",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/content/content_test.go",
+      "line": 5,
+      "symbol": "syntheticStore",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/home/home_test.go",
+      "line": 8,
+      "symbol": "syntheticStore",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/polaris/store_test.go",
+      "line": 17,
+      "symbol": "fixture",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/polaris/store_test.go",
+      "line": 22,
+      "symbol": "fixtureDriver",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/polaris/store_test.go",
+      "line": 23,
+      "symbol": "fixtureConn",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/polaris/store_test.go",
+      "line": 24,
+      "symbol": "fixtureRows",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/profile/profile_test.go",
+      "line": 9,
+      "symbol": "syntheticStore",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/profile/settings_test.go",
+      "line": 8,
+      "symbol": "syntheticSettingsStore",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/recovery/recovery_test.go",
+      "line": 53,
+      "symbol": "fakeIdentity",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/recovery/recovery_test.go",
+      "line": 59,
+      "symbol": "fakeMailer",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/staff/replay_test.go",
+      "line": 78,
+      "symbol": "errorReplayStore",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    },
+    {
+      "path": "internal/staff/replay_test.go",
+      "line": 82,
+      "symbol": "fileReplayStore",
+      "purpose": "test-local dependency double; not a product replacement obligation"
+    }
+  ],
+  "unscheduled_stand_ins": 15,
+  "legacy_capture": {
+    "status": "skipped",
+    "reason": "Optional original Docker captures skipped: permission denied connecting to unix:///var/run/docker.sock. No real site or external capture was contacted."
+  },
+  "limitations": [
+    "Classification is a reviewed snapshot, not inferred from merge count or coverage.",
+    "Implemented requires real backend wiring plus tests; verified also needs an acceptance-source comparison.",
+    "Platform summaries overlap units and are excluded from unit totals.",
+    "A citation proves provenance only; independent review checks expected behavior."
+  ]
+}

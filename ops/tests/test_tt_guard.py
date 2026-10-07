@@ -198,9 +198,12 @@ class WiringTest(unittest.TestCase):
 
     OPS = Path(__file__).resolve().parent.parent
 
-    def test_cycle_calls_the_guard(self):
-        self.assertRegex((self.OPS / "orchestrator.py").read_text(),
-                         r"def cycle\(\)[\s\S]*?_tt_auto_revert\(\)")
+    def test_cycle_keeps_telemetry_but_never_runs_removed_guard(self):
+        import ast
+        source = (self.OPS / "orchestrator.py").read_text()
+        cycle = next(n for n in ast.parse(source).body if isinstance(n, ast.FunctionDef) and n.name == "cycle")
+        calls = {n.func.id for n in ast.walk(cycle) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+        self.assertNotIn("_tt_auto_revert", calls)
 
     def test_state_md_has_a_token_terminator_section(self):
         src = (self.OPS / "orchestrator.py").read_text()
