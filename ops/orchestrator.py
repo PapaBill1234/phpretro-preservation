@@ -29,6 +29,7 @@ import subprocess
 import sys
 import time
 import integrity as control
+import progress as roadmap_progress
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -1112,15 +1113,19 @@ label it "fidelity: guessed". Never edit AGENTS.md, skills, CI or ops/.
 Never ask questions; choose the safest reasonable option and record it.
 
 ## Quality safeguards (the pipeline enforces these; a failure re-runs the unit)
-1. Tests must exercise the change: with your implementation removed the new
-   tests must FAIL. A test that passes without the code is rejected as
-   "tests do not exercise the change".
+1. Tests exercise production code: removing behavior must produce a named
+   assertion failure in a compilable program. Compile errors, panics, timeouts
+   and tests exercising their own fake are not behavioral proof.
 2. Coverage: `go test -cover` on the changed files must reach {COVERAGE_FLOOR:.0f}%. Below
    that, add a line to the unit doc beginning `coverage-exempt:` saying why it
-   cannot be covered, or extend the tests.
-3. Evidence: every new test cites the evidence file or fixture its expected
-   values came from, in a comment. Tests built on guessed behaviour are allowed
-   only when the unit doc says "fidelity: guessed".
+   cannot be covered, or extend the tests. Missing/erroring coverage never passes.
+3. Evidence: preserved legacy behavior cites original source or a retained
+   capture (source-backed evidence records may link it). New features cite the
+   unchanged approved roadmap/design specification. Expected values come from
+   that acceptance source, not implementation code or a delivery note.
+   A "fidelity: guessed" label reports uncertainty; it never waives a gate.
+Keep the approved roadmap, Go/React/Redis/MariaDB choices, theme design and
+Polaris scope. Report missing concrete contracts without inventing a new store.
 Finish with exactly one JSON line: {{"status":"done|partial","notes":"..."}}
 """
 
@@ -2302,12 +2307,11 @@ def _publish_attempt(unit: dict, wt: Path, state: dict, outcome_box: dict) -> No
         outcome_box["v"] = "gate_failed"
         unit["feedback"] = ("Quality safeguards rejected the attempt:\n"
                             + (qreport.get("detail") or qreport.get("reason", ""))
-                            + "\n\nRepair the tests, not the check. Every new test must fail "
-                              "when the implementation is removed (item 1); changed files must "
-                              "reach the coverage floor or the unit doc must carry a "
-                              "`coverage-exempt:` line (item 2); every new test must cite the "
-                              "evidence file or fixture it uses, or the unit doc must say "
-                              "`fidelity: guessed` (item 3).")
+                            + "\n\nRepair the tests using production behavior and compilable "
+                              "assertion failures (item 1). Valid coverage must reach the floor "
+                              "or have a documented exemption; unavailable coverage never passes "
+                              "(item 2). Cite an acceptance source for the feature type "
+                              "(item 3); a guessed label does not waive the gate.")
         unit["reason"] = "quality: " + str(qreport.get("reason", ""))[:280]
         unit["status"] = "todo" if unit["attempts"] < MAX_ATTEMPTS else "parked"
         event(state, f"{uid}: QUALITY rejected the attempt "
@@ -3447,7 +3451,12 @@ def configure_jev_accounting(state: dict, roadmap: dict) -> None:
     mod.CONTROL_AFTER = after
 
 
+_progress_inventory = None
+
+
 def reconcile_deliveries(roadmap: dict, state: dict) -> list[str]:
+    global _progress_inventory
+    _progress_inventory = None
     rc, out = sh(["gh", "pr", "list", "--repo", GH_REPO, "--state", "merged", "--limit", "1000",
                   "--json", "number,headRefName,mergeCommit,mergedAt"], cwd=REPO, timeout=120)
     if rc:
@@ -3485,7 +3494,28 @@ def reconcile_deliveries(roadmap: dict, state: dict) -> list[str]:
     if changed:
         save_roadmap(roadmap)
         write_json(STATE_JSON, state)
+    _progress_inventory = prs
     return changed
+
+
+def publish_roadmap_progress(roadmap: dict) -> dict:
+    """Publish independent measurement; never mutate the scheduler board."""
+    target = STATE_DIR / "progress.json"
+    try:
+        if _progress_inventory is None:
+            raise ValueError("Git inventory unavailable")
+        canonical = {u["id"]: u for u in validated_units(REPO_UNITS)["units"]}
+        rc, ancestors = git("rev-list", "origin/main")
+        if rc:
+            raise ValueError("Git ancestry unavailable")
+        known = set(ancestors.splitlines())
+        deliveries = roadmap_progress.delivery_map(REPO, _progress_inventory, roadmap, lambda commit: commit in known)
+        return roadmap_progress.publish(REPO, canonical, roadmap, deliveries, target, control.atomic_json)
+    except (OSError, ValueError, KeyError, TypeError):
+        report = {"schema_version": 1, "available": False, "generated_at": now(),
+                  "reason": "roadmap measurement unavailable; scheduling unchanged"}
+        control.atomic_json(target, report)
+        return report
 
 
 def cycle(*, no_dispatch: bool = False) -> None:
@@ -3534,10 +3564,12 @@ def cycle(*, no_dispatch: bool = False) -> None:
             else:
                 event(state, "dispatch-disabled maintenance cycle: no workers, review or merges")
             save_roadmap(roadmap)
+            publish_roadmap_progress(roadmap)
             event(state, "cycle end")
             write_json(STATE_JSON, state)
             write_state_md(roadmap, state)
         except DeliveryUnavailable as exc:
+            publish_roadmap_progress(roadmap)
             event(state, str(exc))
             write_json(STATE_JSON, state)
             write_state_md(roadmap, state)

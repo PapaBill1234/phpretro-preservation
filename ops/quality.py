@@ -8,9 +8,8 @@ the PR is opened:
   taken away, otherwise they do not exercise the change.
 * ``coverage_check`` (item 2) ``go test -cover`` over the changed packages; the
   changed files must reach the floor, unless the unit doc records why.
-* ``evidence_check`` (item 3) every changed test must cite the evidence file or
-  fixture its expected values came from, or the unit must be labelled
-  ``fidelity: guessed``.
+* ``evidence_check`` (item 3) changed tests cite an acceptance source appropriate
+  to the feature. A guessed label reports uncertainty, never waives a gate.
 
 Everything here is pure or takes an explicit worktree, so it can be exercised
 without the orchestrator. ``ops/quality.py --selftest`` checks the parsers.
@@ -19,9 +18,13 @@ without the orchestrator. ``ops/quality.py --selftest`` checks the parsers.
 from __future__ import annotations
 
 import argparse
+import json
 import re
+import shlex
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 COVERAGE_FLOOR = 60.0
@@ -30,21 +33,21 @@ COVERAGE_FLOOR = 60.0
 COVERAGE_EXEMPT_RE = re.compile(r"^coverage-exempt:\s*(\S.*)$", re.M)
 GUESSED_RE = re.compile(r"fidelity:\s*guessed", re.I)
 # Evidence roots a test may cite; the unit's own fixtures are added per unit.
-EVIDENCE_ROOTS = ("docs/evidence", "docs/roadmap", "tests/golden", "docs/units")
+EVIDENCE_ROOTS = ("docs/evidence", "docs/roadmap", "docs/decisions", "tests/golden/original")
 
 
 # --------------------------------------------------------------------------
 # tiny process helper (kept local so quality.py has no import cycle)
 # --------------------------------------------------------------------------
 
-def run(cmd, cwd=None, timeout=900, env=None) -> tuple[int, str]:
+def run(cmd, cwd=None, timeout=900, env=None, input_text=None) -> tuple[int, str]:
     full = None
     if env:
         import os
         full = {**os.environ, **env}
     try:
         p = subprocess.run(cmd, cwd=str(cwd) if cwd else None, env=full,
-                           capture_output=True, text=True, timeout=timeout)
+                           capture_output=True, text=True, timeout=timeout, input=input_text)
         return p.returncode, (p.stdout or "") + (p.stderr or "")
     except subprocess.TimeoutExpired:
         return 124, f"[timeout after {timeout}s: {' '.join(cmd)}]"
@@ -61,7 +64,7 @@ def git(wt: Path, *args, timeout=180) -> tuple[int, str]:
 # --------------------------------------------------------------------------
 
 def is_test_file(path: str) -> bool:
-    return path.endswith("_test.go")
+    return path.endswith(("_test.go", ".test.ts", ".test.tsx", ".test.js", ".test.jsx"))
 
 
 def is_doc_file(path: str) -> bool:
@@ -118,64 +121,230 @@ def split_changes(files) -> tuple[list, list]:
 # item 1 - do the tests exercise the change?
 # --------------------------------------------------------------------------
 
-def _hide(paths, wt: Path, base: str) -> list:
-    """Return the implementation paths to their base version.
-
-    A file that exists at ``base`` is checked out from it; a file the unit
-    created is removed. Returns the list of paths, so the caller can restore
-    them from HEAD afterwards.
-    """
-    for p in paths:
-        rc, _ = git(wt, "cat-file", "-e", f"{base}:{p}")
-        if rc == 0:
-            git(wt, "checkout", base, "--", p)
-        else:
-            full = wt / p
-            if full.exists():
-                full.unlink()
-    return list(paths)
-
-
-def _restore(paths, wt: Path) -> None:
-    if paths:
-        git(wt, "checkout", "HEAD", "--", *paths)
-
-
 def removal_check(wt: Path, base: str, impl_files, test_cmds, env=None,
-                  timeout: int = 900) -> dict:
-    """Item 1: with the implementation gone the tests must fail.
+                  timeout: int = 900, test_files=None, test_only=False) -> dict:
+    """Require a named behavioral assertion against a compilable mutant.
 
-    Returns ``{"ok", "reason", "detail"}``. ``ok`` is True when the tests fail
-    without the implementation (they really exercise it), or when the check
-    does not apply (no implementation files, or no runnable test command).
+    First try the base behavior. For new APIs, zero one function while retaining
+    its signature/imports/type-checked body. Build errors, panics, timeouts and
+    tool failures never prove a test exercised production behavior. Original
+    bytes are restored, including uncommitted work; the Git index is untouched.
     """
+    impl_files = [p for p in impl_files if is_go_file(p)]
     if not impl_files:
         return {"ok": True, "reason": "no implementation files changed", "applicable": False}
-    cmds = [c for c in (test_cmds or []) if str(c).strip().startswith("go test")]
+    cmds = [shlex.split(str(c)) for c in (test_cmds or []) if str(c).strip().startswith("go test ")]
+    if not cmds and any(is_go_file(p) for p in impl_files):
+        cmds = [["go", "test", *go_package_dirs(impl_files)]]
     if not cmds:
         return {"ok": True, "reason": "no `go test` command listed for this unit",
                 "applicable": False}
-    hidden = []
-    try:
-        hidden = _hide(impl_files, wt, base)
-        results = []
-        all_passed = True
+    snapshots = {}
+    names = None
+    if test_files is not None:
+        names = set()
+        for tf in test_files:
+            names.update(re.findall(r"\bfunc\s+(Test\w+)\s*\(", (wt / tf).read_text()))
+    results = []
+    deadline = time.monotonic() + timeout
+    def remaining():
+        return max(0.01, deadline - time.monotonic())
+    def restore():
+        for path, content in snapshots.items():
+            (wt / path).write_bytes(content)
+    def judged(label):
         for c in cmds:
-            rc, out = run(["bash", "-lc", c], cwd=wt, timeout=timeout, env=env)
-            passed = rc == 0
-            all_passed = all_passed and passed
-            results.append(f"$ {c} -> rc={rc}\n{out[-600:]}")
-        detail = "\n\n".join(results)
-        if all_passed:
-            return {"ok": False, "applicable": True,
-                    "reason": "tests do not exercise the change",
-                    "detail": "every listed test still passed with the "
-                              "implementation removed:\n" + detail}
-        return {"ok": True, "applicable": True,
-                "reason": "tests fail without the implementation (they exercise it)",
-                "detail": detail}
+            if c[:2] != ["go", "test"] or any(v in (";", "&&", "||", "|", "-args") for v in c):
+                results.append("unsupported focused test command")
+                continue
+            cmd = [*c[:2], "-json", "-count=1", *c[2:]]
+            rc, out = run(cmd, cwd=wt, timeout=remaining(), env=env)
+            proof = assertion_failure(rc, out, names)
+            results.append(f"{label}: rc={rc}; {proof['reason']}")
+            if proof["ok"]:
+                return {"ok": True, "applicable": True, "reason": "a named test assertion rejects removed behavior",
+                        "method": label, "failed_tests": proof["failed_tests"], "detail": "\n".join(results)[-3000:]}
+        return None
+    try:
+        for p in impl_files:
+            target = wt / p
+            if target.is_symlink() or not target.resolve().is_relative_to(wt.resolve()):
+                raise ValueError("removal path escapes worktree")
+            if target.exists():
+                snapshots[p] = target.read_bytes()
+        changed = False
+        for p in snapshots:
+            rc, original = git(wt, "show", f"{base}:{p}")
+            if rc == 0 and original.encode() != snapshots[p]:
+                (wt / p).write_text(original)
+                changed = True
+        if changed:
+            proof = judged("base behavior")
+            if proof:
+                return proof
+        restore()
+        helper = Path(__file__).with_name("go-removal") / "main.go"
+        candidates = []
+        for p, content in snapshots.items():
+            if not p.endswith(".go"):
+                continue
+            rc, out = run(["go", "run", str(helper)], cwd=wt, env=env,
+                          timeout=remaining(), input_text=content.decode())
+            if rc:
+                results.append("Go mutation helper failed")
+                continue
+            functions = json.loads(out) or []
+            if not test_only:
+                rc, diff = git(wt, "diff", "--no-ext-diff", "--unified=0", base, "--", p)
+                if rc:
+                    raise ValueError("cannot identify changed Go functions")
+                ranges = [(int(a), max(int(b or 1), 1)) for a, b in re.findall(r"^@@.*\+(\d+)(?:,(\d+))? @@", diff, re.M)]
+                # An untracked source file is entirely new.
+                tracked, _ = git(wt, "ls-files", "--error-unmatch", "--", p)
+                if tracked:
+                    ranges = [(1, len(content.splitlines()))]
+                functions = [fn for fn in functions if any(start <= fn["end_line"] and start + size - 1 >= fn["line"] for start, size in ranges)]
+            candidates.extend((fn.get("constructor", False), p, fn) for fn in functions)
+        # At most eight individually tested mutations, inside one wall timeout.
+        for _, p, fn in sorted(candidates, key=lambda row: (row[0], row[1], row[2]["index"]))[:8]:
+            if time.monotonic() >= deadline:
+                break
+            restore()
+            rc, mutant = run(["go", "run", str(helper), "-index", str(fn["index"])],
+                             cwd=wt, env=env, timeout=remaining(), input_text=snapshots[p].decode())
+            if rc:
+                results.append("Go mutation helper failed")
+                continue
+            (wt / p).write_text(mutant)
+            proof = judged(f"zero behavior: {p}:{fn['name']}")
+            if proof:
+                return proof
+        return {"ok": False, "applicable": True, "reason": "tests do not exercise the change",
+                "detail": "No compilable mutation produced a named assertion failure.\n" + "\n".join(results)[-2400:]}
+    except (OSError, ValueError, TypeError) as exc:
+        return {"ok": False, "applicable": True, "reason": "behavioral removal check unavailable",
+                "detail": str(exc)[:600]}
     finally:
-        _restore(hidden, wt)
+        restore()
+
+
+def assertion_failure(rc: int, output: str, test_names=None) -> dict:
+    """Only go-test JSON with a named test and an assertion location is proof."""
+    fail = {"ok": False, "failed_tests": [], "reason": "no behavioral assertion failed"}
+    if rc != 1:
+        fail["reason"] = "tests passed" if rc == 0 else "test runner failed or timed out"
+        return fail
+    if re.search(r"(?im)\bpanic:|\bfatal error:|\bbuild failed\b|DATA RACE|\bundefined:", output):
+        fail["reason"] = "compile, panic or infrastructure failure is not behavioral evidence"
+        return fail
+    assertions, failures = set(), set()
+    for line in output.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            fail["reason"] = "test runner output is not complete JSON"
+            return fail
+        if not isinstance(event, dict):
+            return fail
+        name = event.get("Test")
+        if not isinstance(event.get("Output", ""), str) or (name is not None and not isinstance(name, str)):
+            return fail
+        if name and event.get("Action") == "fail":
+            failures.add(name)
+        if name and re.search(r"(?m)^\s*[^\s/]+_test\.go:\d+:\s+\S", event.get("Output", "")):
+            assertions.add(name)
+        if event.get("Action") in ("build-fail", "build-output"):
+            fail["reason"] = "compile failure is not behavioral evidence"
+            return fail
+    proven = sorted(name for name in assertions & failures
+                    if test_names is None or name.split("/", 1)[0] in test_names)
+    return {"ok": bool(proven), "failed_tests": proven,
+            "reason": "named assertion failed" if proven else fail["reason"]}
+
+
+def frontend_assertion_failure(rc, output):
+    """A Node test assertion, not TypeError/module/compile failure, is proof."""
+    failures = []
+    if rc != 1:
+        return False
+    try:
+        for line in output.splitlines():
+            event = json.loads(line)
+            if event.get("type") == "test:fail":
+                failures.append(event)
+    except (ValueError, AttributeError):
+        return False
+    # File-level suite failures may wrap the child assertion; the reporter
+    # distinguishes those from failures in named tests.
+    tests = [e for e in failures if e.get("failure_type") != "subtestsFailed"]
+    return bool(tests) and all(e.get("assertion") is True for e in tests)
+
+
+def frontend_removal_check(wt, impl_files, test_files, env=None, timeout=900):
+    tests = [tf for tf in test_files if tf.startswith("frontend/tests/") and not tf.endswith(".go")]
+    sources = [p for p in impl_files if p.startswith("frontend/src/") and p.endswith((".ts", ".tsx"))]
+    for tf in tests:
+        text = (wt / tf).read_text()
+        for relative in re.findall(r'from\s+["\']([^"\']+)["\']', text):
+            if not relative.startswith("."):
+                continue
+            target = (wt / tf).parent / relative
+            for extension in (".ts", ".tsx"):
+                p = target.with_suffix(extension).resolve()
+                if p.is_relative_to((wt / "frontend/src").resolve()) and p.is_file():
+                    sources.append(str(p.relative_to(wt.resolve())))
+    if not tests and not sources:
+        return {"ok": True, "applicable": False, "reason": "no frontend code/tests changed"}
+    if not tests or not sources:
+        return {"ok": False, "applicable": True, "reason": "frontend change lacks production behavioral tests"}
+    frontend = wt / "frontend"
+    module = frontend / "node_modules/typescript/lib/typescript.js"
+    helper = Path(__file__).with_name("frontend-removal.mjs")
+    reporter = Path(__file__).with_name("assertion-reporter.mjs")
+    deadline = time.monotonic() + timeout
+    original = {}
+    def remaining():
+        return max(.01, deadline - time.monotonic())
+    def restore():
+        for path, content in original.items():
+            (wt / path).write_bytes(content)
+    try:
+        if not module.is_file():
+            raise ValueError("pinned TypeScript dependency unavailable")
+        for p in sorted(set(sources)):
+            target = wt / p
+            if target.is_symlink() or not target.resolve().is_relative_to(wt.resolve()):
+                raise ValueError("frontend mutation path escapes worktree")
+            original[p] = target.read_bytes()
+        candidates = []
+        for p, content in original.items():
+            rc, out = run(["node", str(helper), str(module), p], cwd=frontend, timeout=remaining(), env=env, input_text=content.decode())
+            if rc:
+                raise ValueError("TypeScript mutation helper unavailable")
+            candidates.extend((p, index) for index in json.loads(out))
+        for p, index in candidates[:8]:
+            if time.monotonic() >= deadline:
+                break
+            restore()
+            rc, mutant = run(["node", str(helper), str(module), p, str(index)], cwd=frontend, timeout=remaining(), env=env, input_text=original[p].decode())
+            if rc:
+                continue
+            (wt / p).write_text(mutant)
+            # Compile to a fresh directory inside frontend so Node resolves the
+            # pinned dependencies. Old emitted files can never prove a mutant.
+            with tempfile.TemporaryDirectory(prefix=".quality-compiled-", dir=frontend) as temporary:
+                rc, out = run(["node", str(frontend / "node_modules/typescript/bin/tsc"), "-p", "tsconfig.json", "--outDir", temporary], cwd=frontend, timeout=remaining(), env=env)
+                if rc:
+                    continue
+                emitted = [str(Path(temporary) / Path(tf).relative_to("frontend").with_suffix(".js")) for tf in tests]
+                rc, out = run(["node", "--test", f"--test-reporter={reporter}", *emitted], cwd=frontend, timeout=remaining(), env=env)
+                if frontend_assertion_failure(rc, out):
+                    return {"ok": True, "applicable": True, "reason": "named frontend assertion rejects removed production behavior", "method": f"zero behavior: {p}"}
+        return {"ok": False, "applicable": True, "reason": "no compilable frontend mutation produced an assertion failure"}
+    except (OSError, ValueError, TypeError) as exc:
+        return {"ok": False, "applicable": True, "reason": "frontend behavioral check unavailable", "detail": str(exc)[:400]}
+    finally:
+        restore()
 
 
 # --------------------------------------------------------------------------
@@ -235,37 +404,57 @@ def coverage_check(wt: Path, impl_files, test_cmds, env=None,
     if not go_impl:
         return {"ok": True, "percent": None, "files": {},
                 "reason": "no changed Go implementation files"}
-    pkgs = _packages_from_cmds(test_cmds) or go_package_dirs(go_impl)
-    profile = Path(wt).parent / f".cover-{abs(hash(tuple(sorted(go_impl)))) % 10**8}.out"
-    cmd = ["go", "test", "-covermode=count", f"-coverprofile={profile}", *pkgs]
-    rc, out = run(cmd, cwd=wt, timeout=timeout, env=env)
-    if rc != 0 and not profile.exists():
-        return {"ok": True, "percent": None, "files": {},
-                "reason": f"coverage run did not produce a profile (rc={rc}); not judged",
-                "detail": out[-600:]}
-    text = profile.read_text() if profile.exists() else ""
-    try:
-        profile.unlink()
-    except OSError:
-        pass
+    # Focused commands cannot omit another changed package.
+    pkgs = list(dict.fromkeys(_packages_from_cmds(test_cmds) + go_package_dirs(go_impl)))
+    with tempfile.TemporaryDirectory(prefix="phpretro-cover-") as temporary:
+        profile = Path(temporary) / "profile.out"
+        cmd = ["go", "test", "-count=1", "-covermode=count", f"-coverprofile={profile}", *pkgs]
+        rc, out = run(cmd, cwd=wt, timeout=timeout, env=env)
+        if rc != 0 or not profile.exists():
+            return {"ok": False, "percent": None, "files": {}, "failure_kind": "unavailable",
+                    "reason": f"coverage failed or profile missing (rc={rc})", "detail": out[-600:]}
+        try:
+            text = profile.read_text()
+        except OSError:
+            return {"ok": False, "percent": None, "files": {}, "failure_kind": "unavailable",
+                    "reason": "coverage profile unreadable"}
+    rows = text.splitlines()
+    if not rows or rows[0] != "mode: count" or any(not re.fullmatch(r"\S+:\d+\.\d+,\d+\.\d+ \d+ \d+", row) for row in rows[1:] if row.strip()):
+        return {"ok": False, "percent": None, "files": {}, "failure_kind": "unavailable", "reason": "coverage profile malformed"}
     per = parse_coverprofile(text, go_impl)
     pct, covered, total = coverage_percent(per)
     if total == 0:
-        return {"ok": True, "percent": None, "files": per,
-                "reason": "changed files have no instrumented statements"}
+        return {"ok": False, "percent": None, "files": per, "failure_kind": "unavailable",
+                "reason": "no instrumented coverage for changed files"}
+    missing = [f for f, value in per.items() if value["total"] == 0]
+    if missing:
+        return {"ok": False, "percent": None, "files": per, "failure_kind": "unavailable",
+                "reason": "missing coverage for changed files: " + ", ".join(sorted(missing))}
     return {"ok": pct >= floor, "percent": round(pct, 1), "files": per,
             "covered": covered, "total": total,
+            "failure_kind": "below_floor" if pct < floor else None,
             "reason": f"coverage on changed files {pct:.1f}% (floor {floor:.0f}%)"}
 
 
 def _packages_from_cmds(test_cmds) -> list:
     pkgs = []
     for c in test_cmds or []:
-        m = re.match(r"\s*go test\s+(?:-[^\s]+\s+)*(\S+)", str(c))
-        if m and m.group(1).startswith(("./", "github.com/")):
-            target = m.group(1)
-            if target not in pkgs:
-                pkgs.append(target)
+        try:
+            args = shlex.split(str(c))
+        except ValueError:
+            continue
+        if args[:2] != ["go", "test"]:
+            continue
+        takes_value = {"-run", "-skip", "-timeout", "-count", "-parallel", "-tags", "-cpu", "-coverpkg"}
+        skip = False
+        for value in args[2:]:
+            if skip:
+                skip = False
+                continue
+            if value in takes_value:
+                skip = True
+            elif value.startswith(("./", "github.com/")) and value not in pkgs:
+                pkgs.append(value)
     return pkgs
 
 
@@ -273,20 +462,78 @@ def _packages_from_cmds(test_cmds) -> list:
 # item 3 - evidence tie
 # --------------------------------------------------------------------------
 
-def evidence_tokens(unit: dict) -> list:
-    toks = [str(f) for f in (unit.get("fixtures") or []) if str(f).strip()]
-    if unit.get("design_doc"):
-        toks.append(str(unit["design_doc"]))
-    toks.extend(EVIDENCE_ROOTS)
-    return toks
+SOURCE_RE = re.compile(r"(?:docs/(?:evidence|roadmap|decisions)/[\w./-]+\.md|DECISIONS\.md|stage3-original-phpretro/[\w./-]+\.(?:php|html)|tests/golden/original/[\w./-]+\.(?:json|html|txt))")
+LEGACY_IDS = {f"F{i}" for i in range(18, 30)} | {"F15", "F16", "F17", "F40"}
 
 
-def test_citations(wt: Path, test_file: str, tokens) -> list:
-    try:
-        text = (wt / test_file).read_text(errors="replace")
-    except OSError:
-        return []
-    return [t for t in tokens if t and t in text]
+def feature_policy(unit: dict, test_file: str) -> str:
+    """Evidence policy, not scheduling or scope. New security/theme contracts
+    use the approved design even when original behavior is adjacent context.
+    """
+    if test_file.startswith(("internal/cache/", "internal/localization/", "internal/staff/", "internal/audit/")):
+        return "new"
+    if unit["id"].split("-", 1)[0] in LEGACY_IDS:
+        return "legacy"
+    if unit["id"].split("-", 1)[0] in {"F7", "F8", "F30", "F35", "F36", "F37", "F38"} or re.fullmatch(r"F(?:4[6-9]|5\d|60)", unit["id"]):
+        return "new"
+    return "production"
+
+
+def _source_text(wt: Path, path: str, base=None) -> str | None:
+    """Only non-secret acceptance artifacts inside the worktree. Approved
+    specs must predate this candidate and be byte-identical to its base.
+    """
+    p = wt / path
+    if p.is_symlink() or not p.resolve().is_relative_to(wt.resolve()) or not p.is_file():
+        return None
+    if any(part.startswith(".") or re.search(r"(?i)secret|credential|config|\.env", part) for part in Path(path).parts):
+        return None
+    if p.stat().st_size > 512_000:
+        return None
+    text = p.read_text(errors="replace")
+    spec = path == "DECISIONS.md" or path.startswith(("docs/roadmap/", "docs/decisions/"))
+    if spec and base:
+        rc, approved = git(wt, "show", f"{base}:{path}")
+        if rc or approved != text:
+            return None
+    return text
+
+
+def source_supports(wt: Path, path: str, policy: str, base=None, seen=None) -> bool:
+    seen = set() if seen is None else seen
+    if path in seen or len(seen) >= 12:
+        return False
+    seen.add(path)
+    text = _source_text(wt, path, base)
+    if text is None:
+        return False
+    if path.startswith("tests/golden/original/"):
+        # A retained body alone is not provenance: captures require a manifest.
+        manifest = _source_text(wt, "tests/golden/original/manifest.json")
+        if not manifest:
+            return False
+        try:
+            entries = json.loads(manifest).get("captures", [])
+            return any(e.get("path") == path and e.get("synthetic_seed") is True and e.get("original_source") for e in entries if isinstance(e, dict))
+        except (ValueError, AttributeError, TypeError):
+            return False
+    if path.startswith("stage3-original-phpretro/"):
+        return policy in ("legacy", "production")
+    spec = path == "DECISIONS.md" or path.startswith(("docs/roadmap/", "docs/decisions/"))
+    if spec and policy != "legacy":
+        return True
+    # Retained original path/hash inventory lets a source-backed research doc
+    # link the original without copying its untracked (possibly secret) tree.
+    if policy == "legacy":
+        index = wt / "docs/stage3-original-phpretro-sha256.csv"
+        if index.is_file() and not index.is_symlink():
+            import csv
+            with index.open(newline="") as fh:
+                for row in csv.DictReader(fh):
+                    original = row.get("Path", "").replace("\\", "/").split("stage3-original-phpretro/", 1)[-1]
+                    if original.endswith(".php") and not re.search(r"(?i)config|secret|credential", original) and re.search(r"(?<![\w/])" + re.escape(original) + r"(?=[:`\s]|$)", text):
+                        return True
+    return any(source_supports(wt, ref, policy, base, seen) for ref in SOURCE_RE.findall(text) if ref != path)
 
 
 def unit_doc_text(wt: Path, unit: dict) -> str:
@@ -299,34 +546,30 @@ def unit_doc_text(wt: Path, unit: dict) -> str:
     return ""
 
 
-def evidence_check(wt: Path, unit: dict, test_files) -> dict:
-    """Item 3: each changed test cites its evidence, or the unit is 'guessed'.
-
-    A test with no citation is acceptable only when the unit doc is labelled
-    ``fidelity: guessed``; the label is then counted (item 6). A test with no
-    citation and no label fails the attempt.
+def evidence_check(wt: Path, unit: dict, test_files, base=None) -> dict:
+    """Validate real citation paths and their acceptance provenance. Review
+    still checks whether the assertion actually follows the cited statement.
     """
-    tokens = evidence_tokens(unit)
     doc = unit_doc_text(wt, unit)
     guessed = bool(GUESSED_RE.search(doc))
     unsourced = []
     cited = {}
+    policies = {}
     for tf in test_files:
-        hits = test_citations(wt, tf, tokens)
+        policy = feature_policy(unit, tf)
+        policies[tf] = policy
+        text = (wt / tf).read_text(errors="replace")
+        hits = sorted({path for path in SOURCE_RE.findall(text) if source_supports(wt, path, policy, base)})
         cited[tf] = hits
         if not hits:
             unsourced.append(tf)
-    ok = (not unsourced) or guessed
+    ok = not unsourced
     if not unsourced:
-        reason = "every changed test cites an evidence file or fixture"
-    elif guessed:
-        reason = ("tests without a citation, labelled `fidelity: guessed`: "
-                  + ", ".join(unsourced))
+        reason = "every changed test cites a retained acceptance source for its feature type"
     else:
-        reason = ("tests do not cite an evidence file or fixture and the unit "
-                  "doc is not labelled `fidelity: guessed`: " + ", ".join(unsourced))
+        reason = "missing retained acceptance source (guessed labels do not waive review): " + ", ".join(unsourced)
     return {"ok": ok, "unsourced": unsourced, "cited": cited,
-            "guessed": guessed, "reason": reason}
+            "guessed": guessed, "policies": policies, "reason": reason}
 
 
 # --------------------------------------------------------------------------
@@ -345,12 +588,23 @@ def evaluate(wt: Path, base: str, unit: dict, env=None,
     checks = {}
     failures = []
 
-    r1 = removal_check(wt, base, impl, unit.get("tests"), env=env)
+    # Test-only changes must also reject a mutation of their production package.
+    probes = [f for f in impl if is_go_file(f)]
+    test_only = not probes and bool(tests)
+    if test_only:
+        for tf in tests:
+            probes.extend(str(p.relative_to(wt)) for p in (wt / tf).parent.glob("*.go") if not is_test_file(str(p)))
+    r1 = removal_check(wt, base, sorted(set(probes)), unit.get("tests"), env=env,
+                       test_files=[tf for tf in tests if tf.endswith("_test.go")], test_only=test_only)
+    frontend_proof = frontend_removal_check(wt, impl, tests, env=env)
+    checks["frontend_tests_exercise_change"] = frontend_proof
+    if not frontend_proof["ok"]:
+        failures.append(("frontend tests do not exercise the change", frontend_proof))
     checks["tests_exercise_change"] = r1
     if not r1["ok"]:
         failures.append(("tests do not exercise the change", r1))
 
-    r3 = evidence_check(wt, unit, tests)
+    r3 = evidence_check(wt, unit, tests, base=base)
     checks["evidence"] = r3
     if not r3["ok"]:
         failures.append(("tests do not cite their evidence", r3))
@@ -362,7 +616,7 @@ def evaluate(wt: Path, base: str, unit: dict, env=None,
         r2["exempt_reason"] = exempt.group(1).strip()
     checks["coverage"] = r2
     if not r2["ok"]:
-        if exempt:
+        if exempt and r2.get("failure_kind") == "below_floor":
             r2["ok"] = True
             r2["reason"] += f" - accepted: {r2['exempt_reason']}"
         else:
@@ -372,7 +626,7 @@ def evaluate(wt: Path, base: str, unit: dict, env=None,
     if failures:
         parts = []
         for label, res in (("tests_exercise_change", r1), ("evidence", r3),
-                           ("coverage", r2)):
+                           ("frontend_tests_exercise_change", frontend_proof), ("coverage", r2)):
             if not res.get("ok"):
                 parts.append(f"{label}:\n{res.get('detail') or res.get('reason')}")
         return {"ok": False, "reason": failures[0][0], "failures": [f[0] for f in failures],

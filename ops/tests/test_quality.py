@@ -106,10 +106,10 @@ class RemovalCheckTest(unittest.TestCase):
         self.assertTrue(res["ok"])
         self.assertFalse(res.get("applicable", True))
 
-    def test_no_go_test_command_is_not_applicable(self):
+    def test_go_implementation_without_command_fails_closed(self):
         res = q.removal_check(tmpdir("nocmd-"), "HEAD", ["p/impl.go"], ["bash scripts/check.sh"])
-        self.assertTrue(res["ok"])
-        self.assertFalse(res.get("applicable", True))
+        self.assertFalse(res["ok"])
+        self.assertTrue(res.get("applicable"))
 
     def test_tests_that_exercise_the_code_fail_without_it(self):
         if not self._go():
@@ -136,14 +136,14 @@ class RemovalCheckTest(unittest.TestCase):
 
 
 class EvidenceTest(unittest.TestCase):
-    def test_guessed_label_accepts_an_uncited_test(self):
+    def test_guessed_label_does_not_accept_an_uncited_test(self):
         repo = tmpdir("evid-")
         (repo / "docs/units").mkdir(parents=True)
         (repo / "docs/units/F1.md").write_text("# F1\nfidelity: guessed\n")
         (repo / "p").mkdir()
         (repo / "p" / "x_test.go").write_text("package p\n")
         res = q.evidence_check(repo, {"id": "F1"}, ["p/x_test.go"])
-        self.assertTrue(res["ok"], res)
+        self.assertFalse(res["ok"], res)
         self.assertTrue(res["guessed"])
 
     def test_uncited_test_without_the_label_is_rejected(self):
@@ -159,6 +159,10 @@ class EvidenceTest(unittest.TestCase):
         repo = tmpdir("evid3-")
         (repo / "docs/units").mkdir(parents=True)
         (repo / "docs/units/F3.md").write_text("# F3\n")
+        (repo / "docs/roadmap").mkdir()
+        (repo / "docs/roadmap/spec.md").write_text("Bounded profile reads are required.\n")
+        (repo / "docs/evidence").mkdir()
+        (repo / "docs/evidence/F3.md").write_text("Acceptance: docs/roadmap/spec.md\n")
         (repo / "p").mkdir()
         (repo / "p" / "x_test.go").write_text("// source: docs/evidence/F3.md\npackage p\n")
         res = q.evidence_check(repo, {"id": "F3"}, ["p/x_test.go"])
