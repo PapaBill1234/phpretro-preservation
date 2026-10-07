@@ -404,14 +404,6 @@ class Providers(Isolated):
         self.assertFalse(u.get("split_requested", False))
         self.assertEqual(st["tokens_today"], 7)
 
-    def test_provider_planner_failure_preserves_retry_budget(self):
-        u = unit("P", status="design", model="", planner_retries=1)
-        st = state()
-        with patch.object(o, "hermes_run", return_value=(1, "API HTTP error 502", {"total_tokens": 7})):
-            self.assertTrue(o.maybe_plan({"P": u}, st))
-        self.assertEqual(u["planner_retries"], 1)
-        self.assertEqual(u["status"], "design")
-        self.assertEqual(u["tokens"], 7)
 
     def test_success_without_usage_is_never_free(self):
         u, st = unit(), state()

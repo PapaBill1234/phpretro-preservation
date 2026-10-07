@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import fcntl
 import fnmatch
 import json
@@ -30,6 +31,8 @@ import sys
 import time
 import integrity as control
 import progress as roadmap_progress
+import throughput
+import planner_stage as planning
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -69,7 +72,7 @@ DAILY_TOKEN_CAP = int(os.environ.get("PHPRETRO_DAILY_TOKEN_CAP", "60000000"))
 # nightly self-check has failed twice in a row (see apply_merge_cap_guard).
 MAX_MERGE_PER_DAY = int(os.environ.get("PHPRETRO_MAX_MERGE_PER_DAY", "30"))
 MERGE_CAP_REVERTED = int(os.environ.get("PHPRETRO_MERGE_CAP_REVERTED", "12"))
-MAX_ATTEMPTS = 4            # luna x2, deepseek x1, sol x1, then parked
+MAX_ATTEMPTS = 4            # Luna medium; high risk/fourth launch Sol medium
 PLANNER_RETRIES = 2
 DIFF_LINE_CAP = 700
 # Quality safeguards (see ops/quality.py).
@@ -111,7 +114,7 @@ MODEL = {
     "deepseek": "deepseek-v4.1-flash",
     "sol": "gpt-6.1-sol",
 }
-LADDER = ["luna", "luna", "deepseek", "sol"]
+LADDER = ["luna", "luna", "luna", "sol"]
 PROFILE_HOME = {name: HOME / ".hermes" / "profiles" / name
                 for name in ("builder", "reviewer", "planner", "auditor")}
 HERMES = shutil.which("hermes") or str(HOME / ".local" / "bin" / "hermes")
@@ -325,7 +328,8 @@ STATE_KEYS = ("status", "pr", "attempts", "tokens", "wall_s", "model", "reason",
               "kind", "fidelity", "severity", "updated", "timeouts", "shrinks",
               "size_check_at", "size_action", "size_source", "run_id", "revision_id",
               "review_head", "review_model", "review_verdict", "review_id", "review2_id", "review2_head",
-              "review2_model", "review2_verdict", "delivery_commit", "provider_retry_at", "review_admission_denied")
+              "review2_model", "review2_verdict", "delivery_commit", "provider_retry_at", "review_admission_denied",
+              "planner_root", "planner_depth", "planner_stale_revision")
 DEF_KEYS = ("title", "depends_on", "paths", "tests", "acceptance", "fixtures",
             "fidelity_notes", "size", "design_doc", "unclear_semantics")
 
@@ -483,6 +487,27 @@ def event(state: dict, msg: str) -> None:
     state["events"].append({"ts": now(), "msg": msg})
     state["events"] = state["events"][-200:]
     log(msg)
+
+
+def process_event(kind: str, unit="", **fields) -> None:
+    """Immutable metadata only; observer threads never write scheduler state."""
+    allowed = {"run_id", "role", "model", "reasoning", "revision_id", "attempt", "rc", "elapsed_s",
+               "stage_id", "stage", "head", "ready_depth", "target", "reason", "pr"}
+    if set(fields) - allowed - {"ts"}:
+        raise control.IntegrityError("unexpected process telemetry field")
+    ts=fields.pop("ts", now())
+    control.append_record(STATE_DIR / "process-events.jsonl", {
+        "event_id":control.identity(),"ts":ts,"kind":kind,"unit":unit,**fields})
+
+
+@contextlib.contextmanager
+def measured_stage(name, unit="", run_id="", head=""):
+    sid=control.identity();start=time.monotonic()
+    process_event("stage_started",unit,stage=name,stage_id=sid,run_id=run_id,head=head)
+    try:
+        yield
+    finally:
+        process_event("stage_completed",unit,stage=name,stage_id=sid,run_id=run_id,head=head,elapsed_s=time.monotonic()-start)
 
 
 def add_tokens(state: dict, unit: dict, tokens: int) -> None:
@@ -869,8 +894,10 @@ def bootstrap_accounting(state: dict, roadmap: dict) -> None:
 
 def hermes_run(profile: str, model: str, prompt: str, toolsets: str,
                cwd: Path, tag: str, timeout: int, *, unit: str = "", attempt=None,
-               role: str = "", outcome: str = "other", state=None, budget_unit=None) -> tuple[int, str, dict]:
+               role: str = "", outcome: str = "other", state=None, budget_unit=None,
+               reasoning=None) -> tuple[int, str, dict]:
     role = role or _role_for_profile(profile)
+    reasoning = reasoning or throughput.reasoning(role, budget_unit)
     if state is None:
         raise control.IntegrityError("paid role missing accounting state")
     try:
@@ -880,25 +907,50 @@ def hermes_run(profile: str, model: str, prompt: str, toolsets: str,
     usage = LOG_DIR / f"{tag}-{rid}.usage.json"
     env = {"HERMES_HOME": str(PROFILE_HOME[profile])}
     cmd = [HERMES, "-z", prompt, "--usage-file", str(usage), "-m", model,
-           "--provider", PROVIDER, "--reasoning", "low", "-t", toolsets,
+           "--provider", PROVIDER, "--reasoning", reasoning, "-t", toolsets,
            "-s", SKILL_NAME[profile], "--in", str(cwd), "--accept-hooks"]
     ts_start = now()
+    try:
+        process_event("process_dispatched", unit, run_id=rid, role=role, model=model, reasoning=reasoning)
+    except Exception as exc:
+        STOP_FILE.touch()
+        log_model_run(role, model, unit, attempt, 75, "admission_denied",
+                      {"total_tokens": 0, "api_calls": 0}, profile, toolsets, ts_start, now(),
+                      run_id=rid, charged_tokens=0, reasoning=reasoning)
+        release_paid(state, rid)
+        write_json(STATE_JSON, state)
+        raise control.IntegrityError("dispatch telemetry unavailable; no worker launched") from exc
     rc, out = sh(cmd, cwd=cwd, timeout=timeout, env=env)
+    metadata_error = False
+    try:
+        process_event("process_completed", unit, run_id=rid, role=role, model=model, reasoning=reasoning, rc=rc)
+    except Exception:
+        STOP_FILE.touch()
+        metadata_error = True
     data = read_json(usage, {}) or {}
     explicit_zero = data.get("api_calls") == 0 and data.get("total_tokens") == 0
     charge = usage_tokens(data) if data else TIMEOUT_FALLBACK_TOKENS
     if charge <= 0 and not explicit_zero:
         charge = TIMEOUT_FALLBACK_TOKENS
+    if not explicit_zero and (data.get("partial") or data.get("failed") and not data.get("completed")):
+        charge = max(charge, TIMEOUT_FALLBACK_TOKENS)
     data["accounted_tokens"] = charge
     outage = control.provider_error(rc, out)
     data["provider_error"] = outage
     log_model_run(role, model, unit, attempt, rc,
                   "provider_error" if outage else outcome if outcome != "other" else _outcome_for_rc(rc),
-                  data, profile, toolsets, ts_start, now(), run_id=rid, charged_tokens=charge)
+                  data, profile, toolsets, ts_start, now(), run_id=rid, charged_tokens=charge,
+                  reasoning=reasoning, revision_id=(budget_unit or {}).get("revision_id"))
     allowance = state["reservations"][rid]["reserved_tokens"]
     release_paid(state, rid)
     if charge > allowance:
         raise control.IntegrityError("paid role exceeded reserved token allowance")
+    if metadata_error:
+        add_tokens(state, budget_unit if budget_unit is not None else {}, charge)
+        # The durable ledger restores the affected unit on reload. Never
+        # serialize a single-unit dictionary over the complete live board.
+        write_json(STATE_JSON, state)
+        raise control.IntegrityError("completion telemetry unavailable; spend retained")
     if outage or rc == 0:
         note_provider(state, outage, unit)
     return rc, out, data
@@ -922,7 +974,7 @@ def _outcome_for_rc(rc) -> str:
 def log_model_run(role: str, model: str, unit: str, attempt, rc, outcome: str,
                   usage: dict, profile: str = "", toolsets: str = "",
                   ts_start: str = "", ts_end: str = "", *, run_id="", charged_tokens=None,
-                  provider_override="") -> None:
+                  provider_override="", reasoning=None, revision_id=None) -> None:
     mod = _load_telemetry()
     if mod is None:
         raise control.IntegrityError("required accounting ledger unavailable")
@@ -933,6 +985,10 @@ def log_model_run(role: str, model: str, unit: str, attempt, rc, outcome: str,
                     session=str((usage or {}).get("session_id") or "")))
     rec["run_id"] = run_id or control.identity()
     rec["record_type"] = "run"
+    rec["reasoning"] = reasoning
+    rec["effective_model"] = model
+    rec["unit_revision_id"] = revision_id
+    rec["price_coverage"] = "known" if rec.get("cost_estimate") is not None else "unknown"
     if charged_tokens is not None:
         rec["charged_tokens"] = charged_tokens
     mod.log_run(rec)
@@ -1021,9 +1077,9 @@ def normalize_verdict(raw) -> str:
     return raw if raw in ("pass", "fix", "block") else "unavailable"
 
 
-def reviewer_model_for(author: str) -> str:
+def reviewer_model_for(author: str, unit=None) -> str:
     """A reviewer never shares the author's model family."""
-    return MODEL["deepseek"] if author in (MODEL["luna"], MODEL["sol"]) else MODEL["luna"]
+    return MODEL["deepseek"] if control.model_family(author)=="gpt" else MODEL["sol"] if throughput.high_risk(unit or {}) else MODEL["luna"]
 
 
 # --------------------------------------------------------------------------
@@ -1080,7 +1136,35 @@ def builder_brief(unit: dict, attempt: int, model: str, feedback: str) -> str:
     tests = "\n".join(f"- {t}" for t in unit.get("tests", [])) or "- scripts/check.sh"
     acc = "\n".join(f"- {a}" for a in unit.get("acceptance", [])) or "- (none listed)"
     fixtures = "\n".join(f"- {f}" for f in unit.get("fixtures", [])) or "- (none)"
-    return f"""UNIT BRIEF {unit['id']} - {unit.get('title','')}
+    return f"""## Rules
+Read only this brief and the listed paths; never explore the wider repository.
+Write the tests first, from the fixtures listed below, and cite in each test the
+evidence file the assertion comes from. Implement until they pass. Then run
+`bash scripts/check.sh` in this worktree and fix every failure it reports -
+it is the only gate. Commit with the required unit commit prefix listed below.
+Write the required unit document listed below (30 lines maximum): what works, what is
+guessed, how to run it. Where evidence is missing, build from fixtures and
+label it "fidelity: guessed". Never edit AGENTS.md, skills, CI or ops/.
+Never ask questions; choose the safest reasonable option and record it.
+
+## Quality safeguards (the pipeline enforces these; a failure re-runs the unit)
+1. Tests exercise production code: removing behavior must produce a named
+   assertion failure in a compilable program. Compile errors, panics, timeouts
+   and tests exercising their own fake are not behavioral proof.
+2. Coverage: `go test -cover` on the changed files must reach {COVERAGE_FLOOR:.0f}%. Below
+   that, add a line to the unit doc beginning `coverage-exempt:` saying why it
+   cannot be covered, or extend the tests. Missing/erroring coverage never passes.
+3. Evidence: preserved legacy behavior cites original source or a retained
+   capture (source-backed evidence records may link it). New features cite the
+   unchanged approved roadmap/design specification. Expected values come from
+   that acceptance source, not implementation code or a delivery note.
+   A "fidelity: guessed" label reports uncertainty; it never waives a gate.
+Keep the approved roadmap, Go/React/Redis/MariaDB choices, theme design and
+Polaris scope. Report missing concrete contracts without inventing a new store.
+Finish with exactly one JSON line: {{"status":"done|partial","notes":"..."}}
+
+
+UNIT BRIEF {unit['id']} - {unit.get('title','')}
 attempt {attempt} of {MAX_ATTEMPTS} (model {model})
 
 ## Unit entry (from units.yaml)
@@ -1104,32 +1188,10 @@ attempt {attempt} of {MAX_ATTEMPTS} (model {model})
 ## Previous attempt feedback
 {feedback or '(first attempt - nothing to repair)'}
 
-## Rules
-Read only this brief and the listed paths; never explore the wider repository.
-Write the tests first, from the fixtures above, and cite in each test the
-evidence file the assertion comes from. Implement until they pass. Then run
-`bash scripts/check.sh` in this worktree and fix every failure it reports -
-it is the only gate. Commit with `unit({unit['id']}): <what changed>`.
-Write `docs/units/{unit['id']}.md` (30 lines maximum): what works, what is
-guessed, how to run it. Where evidence is missing, build from fixtures and
-label it "fidelity: guessed". Never edit AGENTS.md, skills, CI or ops/.
-Never ask questions; choose the safest reasonable option and record it.
 
-## Quality safeguards (the pipeline enforces these; a failure re-runs the unit)
-1. Tests exercise production code: removing behavior must produce a named
-   assertion failure in a compilable program. Compile errors, panics, timeouts
-   and tests exercising their own fake are not behavioral proof.
-2. Coverage: `go test -cover` on the changed files must reach {COVERAGE_FLOOR:.0f}%. Below
-   that, add a line to the unit doc beginning `coverage-exempt:` saying why it
-   cannot be covered, or extend the tests. Missing/erroring coverage never passes.
-3. Evidence: preserved legacy behavior cites original source or a retained
-   capture (source-backed evidence records may link it). New features cite the
-   unchanged approved roadmap/design specification. Expected values come from
-   that acceptance source, not implementation code or a delivery note.
-   A "fidelity: guessed" label reports uncertainty; it never waives a gate.
-Keep the approved roadmap, Go/React/Redis/MariaDB choices, theme design and
-Polaris scope. Report missing concrete contracts without inventing a new store.
-Finish with exactly one JSON line: {{"status":"done|partial","notes":"..."}}
+## Required unit identifiers
+Commit prefix: `unit({unit['id']}): <what changed>`
+Unit document: `docs/units/{unit['id']}.md`
 """
 
 
@@ -1194,7 +1256,8 @@ Output only the YAML block.
 # --------------------------------------------------------------------------
 
 def run_check(wt: Path) -> tuple[int, str]:
-    rc, out = sh(["bash", "scripts/check.sh"], cwd=wt, timeout=CHECK_TIMEOUT)
+    with measured_stage("check", wt.name):
+        rc, out = sh(["bash", "scripts/check.sh"], cwd=wt, timeout=CHECK_TIMEOUT)
     return rc, out
 
 
@@ -1350,7 +1413,8 @@ def validated_review(unit: dict, wt: Path, state: dict, model: str, slot: str) -
         prompt = reviewer_brief(unit, diff, chosen) + f"\nExact reviewed head: {head}\nRead-only: never write files.\n"
         rc, out, usage = hermes_run("reviewer", chosen, prompt, "file", wt,
                     f"{unit['id']}-{slot}", 900, unit=unit["id"], attempt=unit.get("attempts"),
-                    role="reviewer", state=state, budget_unit=unit)
+                    role="reviewer", state=state, budget_unit=unit,
+                    reasoning=throughput.reasoning("reviewer", unit, diff))
         if usage.get("admission_denied"):
             unit["review_admission_denied"] = True
         tokens = usage_tokens(usage)
@@ -1428,7 +1492,7 @@ def ensure_reviewed(unit: dict, wt: Path, state: dict) -> bool:
 
 
 def run_review(unit: dict, wt: Path, state: dict, author_model: str) -> tuple[str, str, int]:
-    return validated_review(unit, wt, state, reviewer_model_for(author_model), "review")
+    return validated_review(unit, wt, state, reviewer_model_for(author_model, unit), "review")
 
 
 def run_second_review(unit: dict, wt: Path, state: dict) -> tuple[str, str, int]:
@@ -1599,9 +1663,12 @@ def wait_for_checks(pr: int, timeout: int = CI_TIMEOUT) -> tuple[bool, str]:
 
 
 def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
-    """Local gate, quality and independent review on the exact rebased head."""
+    """Retain histories; gate and independently review the exact integrated head."""
+    wait_started = time.monotonic()
+    process_event("merge_queue_entered", unit["id"], run_id=unit.get("run_id", ""))
     with (LOCK_DIR / "merge.lock").open("w") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
+        process_event("merge_queue_acquired", unit["id"], run_id=unit.get("run_id", ""), elapsed_s=time.monotonic()-wait_started)
         if STOP_FILE.exists() or int(state.get("merged_today", 0)) >= effective_merge_cap(state):
             return False
         pr = int(unit.get("pr") or 0)
@@ -1612,11 +1679,11 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
         if rc:
             event(state, f"{unit['id']}: fetch failed; merge deferred")
             return False
-        rc, out = git("rebase", "origin/main", cwd=wt)
+        rc, out = git("merge", "--no-edit", "origin/main", cwd=wt)
         if rc:
-            git("rebase", "--abort", cwd=wt)
+            git("merge", "--abort", cwd=wt)
             unit["conflict_rounds"] = int(unit.get("conflict_rounds", 0)) + 1
-            unit["reason"] = "rebase conflict: " + tail(out, 6)
+            unit["reason"] = "main integration conflict: " + tail(out, 6)
             unit["status"] = "parked" if unit["conflict_rounds"] > 1 else "todo"
             return False
         violations = [] if GUARD_DISABLED else guard_violations(changed_files(wt), unit.get("paths"), unit["id"])
@@ -1624,16 +1691,16 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
             unit["status"], unit["reason"] = "parked", "protected/scope paths changed in merge queue"
             return False
         rc, out = run_check(wt)
-        control.atomic_text(LOG_DIR / f"{unit['id']}-rebase.check.log", out)
+        control.atomic_text(LOG_DIR / f"{unit['id']}-integration.check.log", out)
         if rc:
-            unit["feedback"] = "scripts/check.sh failed after rebase:\n" + tail(out, 60)
-            unit["reason"] = "check.sh failed after rebase"
+            unit["feedback"] = "scripts/check.sh failed after main integration:\n" + tail(out, 60)
+            unit["reason"] = "check.sh failed after main integration"
             unit["status"] = "todo" if int(unit.get("attempts", 0)) < MAX_ATTEMPTS else "parked"
             record_history(unit, "rebase-check-fail")
             return False
         qreport = quality_gate(wt, unit, state, BASE_REF)
         if not qreport.get("ok"):
-            unit["status"], unit["reason"] = "parked", "quality gate failed on rebased head"
+            unit["status"], unit["reason"] = "parked", "quality gate failed on integrated head"
             return False
         if not ensure_reviewed(unit, wt, state):
             return False
@@ -1644,7 +1711,7 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
         branch = unit_branch(unit)
         if branch == "main" or not branch.startswith("unit/"):
             raise control.IntegrityError("unit merge attempted a non-unit branch")
-        rc, out = git("push", "--force-with-lease", "origin", f"HEAD:refs/heads/{branch}", cwd=wt)
+        rc, out = git("push", "origin", f"HEAD:refs/heads/{branch}", cwd=wt)
         if rc:
             unit["status"], unit["reason"] = "parked", "unit push refused: " + tail(out, 3)
             return False
@@ -1667,6 +1734,7 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
         state["merged_today"] = int(state.get("merged_today", 0)) + 1
         event(state, f"{unit['id']}: MERGED PR #{pr} (head {head[:12]}, gate=check.sh)")
         telemetry_event("merged", unit["id"], f"PR #{pr} merged", pr=pr, head=head[:12], tokens=unit.get("tokens", 0))
+        process_event("merged", unit["id"], run_id=unit.get("run_id", ""), pr=pr, head=head[:12])
         jev_note_merged(unit)
         write_json(STATE_JSON, state)
         git("fetch", "origin", "main")
@@ -1681,6 +1749,10 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
 def model_for_attempt(attempt: int) -> str:
     idx = min(max(attempt - 1, 0), len(LADDER) - 1)
     return MODEL[LADDER[idx]]
+
+
+def builder_model(unit: dict, attempt: int) -> str:
+    return MODEL["sol"] if throughput.high_risk(unit) or attempt >= MAX_ATTEMPTS else MODEL["luna"]
 
 
 def rung_index(model: str) -> int:
@@ -1724,6 +1796,8 @@ def _apply_failure_triage(unit: dict, state: dict, output: str,
     allowed = allowed_triage_names(attempt, at_last)
     tri = jev_triage(unit, output, attempt, at_last)
     action = tri.get("action", "retry_same") if tri.get("source") != "jev" else "retry_same"
+    if action=="escalate_model":
+        action="retry_same"  # Effective builder selection is the owner's rule.
     if action not in allowed:
         action = "retry_same"
     src = tri.get("source", "rule")
@@ -1777,12 +1851,7 @@ def allowed_triage_names(attempt: int, at_last_rung: bool) -> list:
 
 
 def paths_overlap(a, b) -> bool:
-    for x in a or []:
-        for y in b or []:
-            xs, ys = str(x).rstrip("*").rstrip("/"), str(y).rstrip("*").rstrip("/")
-            if xs == ys or xs.startswith(ys + "/") or ys.startswith(xs + "/"):
-                return True
-    return False
+    return throughput.overlap(a, b)
 
 
 _ADOPT_CHECK_CACHE: dict = {}
@@ -1911,6 +1980,21 @@ def recover_branch(unit: dict, history: dict, state: dict) -> bool:
     if not ahead or ahead == "0":
         return False
     wt = attach_worktree(unit)
+    # Recovery must retain both sides of an existing remote branch. Never push
+    # an unexamined local checkout over remote work or crash the whole cycle.
+    remote = f"refs/remotes/origin/{branch}"
+    if git_out("status", "--porcelain", cwd=wt):
+        unit.update(status="parked", reason="recovery checkout has unfinished local edits; preserved")
+        event(state, f"{unit['id']}: recovery parked; unfinished local edits preserved")
+        return True
+    if git("merge-base", "--is-ancestor", remote, "HEAD", cwd=wt)[0]:
+        rc, detail = git("merge", "--no-edit", remote, cwd=wt)
+        if rc:
+            git("merge", "--abort", cwd=wt)
+            unit.update(status="parked", reason="remote branch recovery conflict; both histories preserved")
+            event(state, f"{unit['id']}: recovery conflict parked; no push or builder attempt")
+            return True
+        event(state, f"{unit['id']}: retained remote branch history before recovery gates")
     rc, out = run_check(wt)
     (LOG_DIR / f"{unit['id']}-recover.check.log").write_text(out)
     if rc != 0:
@@ -2106,17 +2190,7 @@ def select_ready(roadmap: dict, state: dict) -> list:
                 event(state, f"{uid}: size check -> split (shrink limit reached)")
                 continue
         ready.append(u)
-    # Advisory (QA) units never compete with real work: they run only when
-    # nothing else is ready. If any non-advisory unit is ready this cycle, the
-    # advisory ones wait.
-    if any(not is_advisory(u) for u in ready):
-        ready = [u for u in ready if not is_advisory(u)]
-    elif planner_pending(roadmap):
-        # Only advisory work is ready, but the planner can still turn design /
-        # parked / split units into real F work. Promoting a feature unit beats
-        # running advisory QA, so leave the board to the planner this cycle.
-        ready = []
-    return ready
+    return sorted(ready, key=throughput.priority)
 
 
 def start_build(unit: dict, state: dict, roadmap: dict | None = None):
@@ -2125,7 +2199,9 @@ def start_build(unit: dict, state: dict, roadmap: dict | None = None):
     wt = ensure_worktree(unit)
     rid = admit_paid(state, unit, "builder")
     attempt = int(unit.get("attempts", 0)) + 1
-    model = unit.pop("model_override", "") or model_for_attempt(attempt)
+    unit.setdefault("revision_id", control.identity())
+    unit.pop("model_override", None)  # Owner policy supersedes old ladder overrides.
+    model = builder_model(unit, attempt)
     prompt = builder_brief(unit, attempt, model, unit.get("feedback", ""))
     stem = f"{unit['id']}-attempt{attempt}-{rid}"
     control.atomic_text(BRIEF_DIR / (stem + ".md"), prompt)
@@ -2133,9 +2209,10 @@ def start_build(unit: dict, state: dict, roadmap: dict | None = None):
     logfile = log_path.open("x")
     toolsets = "file,terminal,context_engine"
     cmd = [HERMES, "-z", prompt, "--usage-file", str(usage), "-m", model,
-           "--provider", PROVIDER, "--reasoning", "low", "-t", toolsets,
+           "--provider", PROVIDER, "--reasoning", throughput.reasoning("builder", unit), "-t", toolsets,
            "-s", SKILL_NAME["builder"], "--in", str(wt), "--accept-hooks"]
     ts_start = now()
+    started = time.monotonic()
     try:
         proc = subprocess.Popen(cmd, cwd=str(wt), env={**os.environ, "HERMES_HOME": str(PROFILE_HOME["builder"])},
                      stdout=logfile, stderr=subprocess.STDOUT, text=True, start_new_session=True)
@@ -2143,35 +2220,64 @@ def start_build(unit: dict, state: dict, roadmap: dict | None = None):
         logfile.close()
         log_model_run("builder", model, unit["id"], attempt, 127, "provider_error",
                       {"total_tokens": 0, "api_calls": 0}, ts_start=ts_start,
-                      run_id=rid, charged_tokens=0)
+                      run_id=rid, charged_tokens=0, reasoning="medium")
         release_paid(state, rid)
         write_json(STATE_JSON, state)
         raise
     unit.update(attempts=attempt, model=model, status="building", updated=now(), run_id=rid)
-    save_roadmap(roadmap if roadmap is not None else {unit["id"]: unit})
-    telemetry_event("dispatched", unit["id"], f"attempt {attempt} on {model}",
-                    attempt=attempt, model=model, run_id=rid)
+    observer = throughput.Completion(proc, started, RUN_TIMEOUT, kill_process_group,
+        lambda result: process_event("process_completed", unit["id"], ts=throughput.iso(result.ended_wall),
+            run_id=rid, role="builder", model=model, reasoning="medium", rc=result.rc,
+            elapsed_s=result.ended-started, revision_id=unit.get("revision_id"))).start()
+    metadata_error = False
+    try:
+        save_roadmap(roadmap if roadmap is not None else {unit["id"]: unit})
+        process_event("process_dispatched", unit["id"], run_id=rid, role="builder", model=model,
+                      reasoning="medium", revision_id=unit.get("revision_id"), attempt=attempt, ts=ts_start)
+        telemetry_event("dispatched", unit["id"], f"attempt {attempt} on {model}",
+                        attempt=attempt, model=model, reasoning="medium", run_id=rid)
+    except Exception:
+        STOP_FILE.touch()
+        metadata_error = True  # Return the running job so the writer can drain/settle it.
     log(f"{unit['id']}: dispatch attempt {attempt} on {model}")
     return {"unit": unit, "proc": proc, "started": time.time(), "ts_start": ts_start,
-            "logfile": logfile, "log_path": log_path, "usage": usage, "wt": wt, "run_id": rid}
+            "logfile": logfile, "log_path": log_path, "usage": usage, "wt": wt, "run_id": rid,
+            "observer": observer, "started_mono": started, "metadata_error": metadata_error}
 
 
 def finish_build(job, roadmap: dict, state: dict) -> None:
     unit, proc = job["unit"], job["proc"]
     uid, wt, usage = unit["id"], job["wt"], job["usage"]
+    metadata_error = job.get("metadata_error", False)
     try:
         # Absolute launch deadline, so waiting behind another merge gives no
         # builder an extra RUN_TIMEOUT window.
-        remaining = max(0.01, RUN_TIMEOUT - (time.time() - job["started"]))
-        proc.communicate(timeout=remaining)
-        rc = proc.returncode
+        if job.get("observer"):
+            try:
+                rc = job["observer"].join()
+            except RuntimeError:
+                STOP_FILE.touch()
+                metadata_error = True
+                rc = job["observer"].rc
+                if job["observer"].ended is None:
+                    proc.wait()  # Preserve running work; settle only after exit.
+                    job["observer"].ended = time.monotonic()
+                    job["observer"].ended_wall = time.time()
+                    rc = proc.returncode
+        else:
+            remaining = max(0.01, RUN_TIMEOUT - (time.time() - job["started"]))
+            proc.communicate(timeout=remaining)
+            rc = proc.returncode
     except subprocess.TimeoutExpired:
         kill_process_group(proc)
         rc = 124
     with_suppress(job["logfile"].close)
-    wall = int(time.time() - job["started"])
+    observer = job.get("observer")
+    wall = int(observer.ended-job["started_mono"]) if observer else int(time.time() - job["started"])
     data = read_json(usage, {}) or {}
     tokens, source = usage_tokens(data), "usage-file"
+    if data.get("partial") or data.get("failed") and not data.get("completed"):
+        tokens = max(tokens, TIMEOUT_FALLBACK_TOKENS)
     if tokens <= 0 and rc == 124:
         tokens = tokens_from_state_db("builder", f"UNIT BRIEF {uid}")
         source = "state.db"
@@ -2185,11 +2291,16 @@ def finish_build(job, roadmap: dict, state: dict) -> None:
     # Ledger lands BEFORE publication/review. A crash cannot lose builder spend.
     log_model_run("builder", unit.get("model", ""), uid, unit.get("attempts"), rc,
                   outcome, data, "builder", "file,terminal,context_engine",
-                  job.get("ts_start", ""), now(), run_id=rid, charged_tokens=tokens)
+                  job.get("ts_start", ""), throughput.iso(observer.ended_wall) if observer else now(),
+                  run_id=rid, charged_tokens=tokens, reasoning="medium", revision_id=unit.get("revision_id"))
     release_paid(state, rid)
     add_tokens(state, unit, tokens)
     unit["wall_s"] = int(unit.get("wall_s", 0)) + wall
     unit["updated"] = now()
+    if metadata_error:
+        save_roadmap(roadmap)
+        write_json(STATE_JSON, state)
+        raise control.IntegrityError("builder completion telemetry unavailable; spend retained")
     if outage:
         unit["attempts"] = max(0, int(unit.get("attempts", 0)) - 1)
         unit["status"] = "todo"
@@ -2390,101 +2501,11 @@ def apply_planner_output(roadmap: dict, state: dict, unit: dict, out: str,
 
 
 def maybe_plan(roadmap: dict, state: dict) -> bool:
-    """Run one planner pass (split / rewrite / promote) if the board needs it.
-
-    Returns True when the planner was actually invoked (it consumed the cycle's
-    one agent call), False otherwise.
-    """
-    active = [u for u in roadmap.values() if u.get("status") in ("building", "pr_open", "queued")]
-    if active:
+    """Prepare exactly one immutable proposal, then apply through this writer."""
+    job = planning.start(sys.modules[__name__], roadmap, state)
+    if job is None:
         return False
-    todo = [u for u in roadmap.values() if u.get("status") == "todo"
-            and not u.get("split_requested") and deps_merged(u, roadmap)
-            and not is_advisory(u)]
-    if todo:
-        return False
-    # A unit that timed out or produced no change gets split into smaller units
-    # rather than retried at the same size. This takes precedence over the
-    # parked/design queues because it is the failure the pipeline just produced.
-    splits = sorted([u for u in roadmap.values()
-                     if u.get("split_requested") and u.get("status") == "todo"
-                     and int(u.get("planner_retries", 0)) < PLANNER_RETRIES],
-                    key=lambda u: u["id"])
-    if splits:
-        target, mode = splits[0], "split"
-    else:
-        parked = sorted([u for u in roadmap.values()
-                         if u.get("status") == "parked"
-                         and int(u.get("planner_retries", 0)) < PLANNER_RETRIES],
-                        key=lambda u: u["id"])
-        design = sorted([u for u in roadmap.values()
-                         if u.get("status") == "design"
-                         and int(u.get("planner_retries", 0)) < PLANNER_RETRIES],
-                        key=lambda u: u["id"])
-        if design:
-            target, mode = design[0], "promote"
-        elif parked:
-            target, mode = parked[0], "rewrite"
-        else:
-            for u in roadmap.values():
-                if u.get("status") == "parked":
-                    u["status"] = "parked-final"
-                if u.get("status") == "design" and int(u.get("planner_retries", 0)) >= PLANNER_RETRIES:
-                    u["status"] = "design-blocked"
-            return False
-
-    uid = target["id"]
-    if not paid_allowed(state, target, "planner"):
-        return False
-    target["split_requested"] = False
-    model = planner_model(target)
-    design_text = ""
-    if mode == "promote" and target.get("design_doc"):
-        p = REPO / str(target["design_doc"])
-        if p.exists():
-            design_text = p.read_text()[:12000]
-    prompt = planner_brief(target, mode, design_text)
-    prompt += ("\nExisting IDs are immutable and reserved: " + ", ".join(sorted(roadmap)) +
-               f"\nUse fresh IDs such as {uid}a and {uid}b. Never emit the parent ID. "
-               "New entries must have status todo, size S or M, no runtime counters, "
-               "no protected paths, and an acyclic dependency graph.\n")
-    (BRIEF_DIR / f"{uid}-planner.md").write_text(prompt)
-    event(state, f"{uid}: planner ({model}) {mode}")
-    role = "planner"
-    rc, out, usage = hermes_run("planner", model, prompt, "file", REPO,
-                                f"{uid}-planner", 900, unit=uid, role=role, state=state, budget_unit=target)
-    tokens = usage_tokens(usage)
-    add_tokens(state, target, tokens)
-    if usage.get("admission_denied") or control.provider_error(rc, out):
-        target["split_requested"] = mode == "split"
-        event(state, f"{uid}: planner deferred on provider/admission error")
-        return True
-    target["planner_retries"] = int(target.get("planner_retries", 0)) + 1
-    if rc == 0 and apply_planner_output(roadmap, state, target, out, old_id=uid, mode=mode):
-        if mode == "promote":
-            target["status"] = "promoted"
-        else:
-            target["status"] = "parked-final"
-        event(state, f"{uid}: planner produced replacement entries")
-        if mode == "split":
-            telemetry_event("split", uid,
-                            f"planner split the unit (retry {target['planner_retries']})")
-    else:
-        target["reason"] = (target.get("reason", "") + " | planner output rejected")[:400]
-        if target["planner_retries"] >= PLANNER_RETRIES:
-            if mode == "promote":
-                target["status"] = "design-blocked"
-            else:
-                # The split could not be produced: fall back to the retry ladder
-                # rather than silently dropping the unit. Clear split_requested,
-                # or select_ready would skip it forever while maybe_plan has no
-                # retries left to act on it - a deadlock.
-                target["status"] = "todo"
-                target["split_requested"] = False
-        elif mode == "split":
-            target["split_requested"] = True
-        event(state, f"{uid}: planner output rejected "
-                     f"({target['planner_retries']}/{PLANNER_RETRIES})")
+    planning.finish(sys.modules[__name__], job, roadmap, state)
     return True
 
 
@@ -2492,44 +2513,72 @@ def maybe_plan(roadmap: dict, state: dict) -> bool:
 # Cycle
 # --------------------------------------------------------------------------
 
-def dispatch(roadmap: dict, state: dict) -> None:
+def dispatch(roadmap: dict, state: dict) -> bool:
     if not paid_allowed(state, None, "builder"):
         event(state, "dispatch admission denied: STOP, caps or provider backoff/pause")
-        return
+        process_event("idle", reason="STOP, caps or provider backoff/pause")
+        return False
     ready = select_ready(roadmap, state)
-    if not ready:
-        return
+    process_event("ready_queue", ready_depth=len(throughput.ready_buffer(roadmap, REPO, PER_UNIT_TOKEN_CAP)), target=throughput.READY_TARGET)
     batch, used = [], []
     for u in ready:
         if len(batch) >= MAX_PARALLEL:
             break
-        if any(paths_overlap(u.get("paths"), p) for p in used):
+        if paths_overlap(u.get("paths"), used):
             continue
         batch.append(u)
         used.extend(u.get("paths") or [])
     if not batch:
-        return
+        process_event("idle", reason="no dispatchable disjoint work")
+        return False
     event(state, "dispatching " + ", ".join(u["id"] for u in batch))
     jobs = []
+    failure = None
     for u in batch:
+        if STOP_FILE.exists():
+            break
         try:
             jobs.append(start_build(u, state, roadmap))
-        except control.IntegrityError:
-            raise
+        except control.IntegrityError as exc:
+            STOP_FILE.touch()
+            failure = exc
+            break
         except Exception as exc:
             u["status"] = "todo"
             u["reason"] = f"dispatch error: {exc}"
             event(state, f"{u['id']}: dispatch error: {exc}")
-    for job in jobs:
-        try:
-            finish_build(job, roadmap, state)
-        except control.IntegrityError:
-            raise
-        except Exception as exc:
-            u = job["unit"]
-            u["status"] = "todo"
-            u["reason"] = f"pipeline error: {exc}"
-            event(state, f"{u['id']}: pipeline error: {exc}")
+    planner = None
+    try:
+        if failure is None and not state.get("nightly_fix_queue"):
+            planner = planning.start(sys.modules[__name__], roadmap, state)
+    except Exception as exc:
+        STOP_FILE.touch()
+        failure = exc
+    finally:
+        # A failing serial review must not abandon other already-running
+        # builders. Drain naturally and settle every reservation before exit.
+        for job in jobs:
+            if failure is not None:
+                job["metadata_error"] = True
+            try:
+                finish_build(job, roadmap, state)
+            except control.IntegrityError as exc:
+                STOP_FILE.touch()
+                failure = failure or exc
+            except Exception as exc:
+                u = job["unit"]
+                u["status"] = "todo"
+                u["reason"] = f"pipeline error: {exc}"
+                event(state, f"{u['id']}: pipeline error: {exc}")
+        if planner is not None:
+            try:
+                planning.finish(sys.modules[__name__], planner, roadmap, state)
+            except Exception as exc:
+                STOP_FILE.touch()
+                failure = failure or exc
+    if failure is not None:
+        raise failure
+    return planner is not None
 
 
 def _nightly_entry(name: str) -> dict:
@@ -3558,14 +3607,13 @@ def cycle(*, no_dispatch: bool = False) -> None:
                             continue
                         recover_branch(u, history, state)
                     resume_open_prs(roadmap, state)
-                dispatch(roadmap, state)
+                staged_planner_used = dispatch(roadmap, state)
                 queue_nightly_fixes(roadmap, state)
                 maybe_refactor_unit(roadmap, state)
-                used_agent = maybe_plan_nightly_fix(roadmap, state)
+                used_agent = staged_planner_used or maybe_plan_nightly_fix(roadmap, state)
                 if not used_agent:
                     used_agent = maybe_plan(roadmap, state)
-                if not used_agent:
-                    maybe_audit(roadmap, state)
+                maybe_audit(roadmap, state)
             else:
                 event(state, "dispatch-disabled maintenance cycle: no workers, review or merges")
             save_roadmap(roadmap)
@@ -3698,7 +3746,7 @@ units:
     assert reviewer_model_for(MODEL["luna"]) == MODEL["deepseek"]
     assert reviewer_model_for(MODEL["deepseek"]) == MODEL["luna"]
     assert model_for_attempt(1) == MODEL["luna"]
-    assert model_for_attempt(3) == MODEL["deepseek"]
+    assert model_for_attempt(3) == MODEL["luna"]
     assert model_for_attempt(4) == MODEL["sol"]
     # diff guard: protected paths and out-of-scope paths are rejected, the
     # unit's own listed paths (including its delivery note) are not.

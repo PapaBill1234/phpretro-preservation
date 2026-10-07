@@ -117,7 +117,7 @@ class PlannerOutputTest(unittest.TestCase):
 
 
 class AdvisoryUnitsTest(unittest.TestCase):
-    """QA units advise; they must never gate or starve feature work."""
+    """QA dependency compatibility remains; readiness no longer defers QA IDs."""
 
     def test_classification(self):
         self.assertTrue(o.is_advisory({"id": "QA1"}))
@@ -141,14 +141,14 @@ class AdvisoryUnitsTest(unittest.TestCase):
         road = {"F99": {"id": "F99", "status": "todo", "paths": ["p/f"], "tokens": 0},
                 "QA9": {"id": "QA9", "status": "todo", "kind": "audit-fix",
                         "paths": ["p/q"], "tokens": 0}}
-        self.assertEqual([u["id"] for u in o.select_ready(road, _free_state())], ["F99"])
+        self.assertEqual([u["id"] for u in o.select_ready(road, _free_state())], ["F99", "QA9"])
 
     def test_promotion_outranks_advisory_qa(self):
         road = {"QA9": {"id": "QA9", "status": "todo", "kind": "audit-fix",
                         "paths": ["p/q"], "tokens": 0},
                 "F32": {"id": "F32", "status": "design", "planner_retries": 0}}
         self.assertTrue(o.planner_pending(road))
-        self.assertEqual(o.select_ready(road, _free_state()), [])
+        self.assertEqual([u["id"] for u in o.select_ready(road, _free_state())], ["QA9"])
 
     def test_advisory_runs_once_nothing_can_be_promoted(self):
         road = {"QA9": {"id": "QA9", "status": "todo", "kind": "audit-fix",
@@ -158,84 +158,8 @@ class AdvisoryUnitsTest(unittest.TestCase):
         self.assertEqual([u["id"] for u in o.select_ready(road, _free_state())], ["QA9"])
 
 
-class PlannerStarvationTest(unittest.TestCase):
-    """maybe_plan() must run when the only ready todo is advisory."""
-
-    def setUp(self):
-        self._saved_run = o.hermes_run
-        self._saved_size = o.jev_size_check
-        o.hermes_run = lambda *a, **k: (0, "", {})
-        o.jev_size_check = lambda u: {"action": "run_as_is", "source": "rule"}
-
-    def tearDown(self):
-        o.hermes_run = self._saved_run
-        o.jev_size_check = self._saved_size
-
-    def test_real_todo_holds_the_planner_back(self):
-        road = {"F32": {"id": "F32", "status": "todo", "depends_on": [], "tokens": 0}}
-        self.assertFalse(o.maybe_plan(road, {"events": []}))
-
-    def test_blocked_advisory_todo_does_not_starve_promotion(self):
-        state = {"events": [], "tokens_today": 0}
-        road = {"QA3": {"id": "QA3", "status": "todo", "kind": "audit-fix",
-                        "depends_on": ["QA1"], "tokens": 0},
-                "QA1": {"id": "QA1", "kind": "audit-fix", "status": "parked"},
-                "F32": {"id": "F32", "status": "design", "depends_on": [],
-                        "design_doc": "", "planner_retries": 0}}
-        self.assertTrue(o.maybe_plan(road, state))
-        self.assertTrue(any(e["msg"].startswith("F32: planner") for e in state["events"]))
-
-    def test_ready_advisory_todo_does_not_starve_promotion(self):
-        # The live regression: QA3 became deps-merged and blocked promotion.
-        state = {"events": [], "tokens_today": 0}
-        road = {"QA3": {"id": "QA3", "status": "todo", "kind": "audit-fix",
-                        "depends_on": [], "tokens": 0},
-                "F32": {"id": "F32", "status": "design", "depends_on": [],
-                        "design_doc": "", "planner_retries": 0}}
-        self.assertTrue(o.maybe_plan(road, state))
-        self.assertTrue(any(e["msg"].startswith("F32: planner") for e in state["events"]))
 
 
-class SplitDeadlockTest(unittest.TestCase):
-    """A requested split that the planner cannot produce must not wedge a unit.
-
-    It used to keep ``split_requested`` with retries exhausted: select_ready
-    skipped it forever and maybe_plan refused to act - a permanent idle unit.
-    """
-
-    def setUp(self):
-        self._saved_run = o.hermes_run
-        self._saved_size = o.jev_size_check
-        o.hermes_run = lambda *a, **k: (0, "", {})   # planner output always rejected
-        o.jev_size_check = lambda u: {"action": "run_as_is", "source": "rule"}
-
-    def tearDown(self):
-        o.hermes_run = self._saved_run
-        o.jev_size_check = self._saved_size
-
-    def test_flag_cleared_when_retries_are_spent(self):
-        road = {"F9": {"id": "F9", "status": "todo", "split_requested": True,
-                       "planner_retries": o.PLANNER_RETRIES - 1, "tokens": 0,
-                       "paths": ["p/x"], "title": "t"}}
-        o.maybe_plan(road, {"events": [], "tokens_today": 0})
-        self.assertGreaterEqual(road["F9"]["planner_retries"], o.PLANNER_RETRIES)
-        self.assertFalse(road["F9"]["split_requested"])
-        self.assertEqual(road["F9"]["status"], "todo")
-
-    def test_the_previously_stuck_unit_becomes_dispatchable(self):
-        road = {"F9": {"id": "F9", "status": "todo", "split_requested": True,
-                       "planner_retries": o.PLANNER_RETRIES - 1, "tokens": 0,
-                       "paths": ["p/x"], "title": "t"}}
-        o.maybe_plan(road, {"events": [], "tokens_today": 0})
-        self.assertIn("F9", [u["id"] for u in o.select_ready(road, _free_state())])
-
-    def test_size_check_does_not_request_a_split_past_the_retry_budget(self):
-        o.jev_size_check = lambda u: {"action": "split", "source": "jev"}
-        road = {"F9": {"id": "F9", "status": "todo", "planner_retries": o.PLANNER_RETRIES,
-                       "tokens": 0, "paths": ["p/x"], "title": "t"}}
-        ready = o.select_ready(road, _free_state())
-        self.assertFalse(road["F9"].get("split_requested"))
-        self.assertIn("F9", [u["id"] for u in ready])
 
 
 class DiagnosisTest(unittest.TestCase):

@@ -278,7 +278,7 @@ def validate_plan(entries, roadmap, parent, old_id, mode, protected, split_cap):
         if e.get("status", "todo") != "todo" or e.get("size") not in ("S", "M"):
             raise IntegrityError("invalid status/size")
         forbidden = ("review_head", "review_id", "review_verdict", "review_model", "review2_head", "review2_id", "review2_verdict", "review2_model",
-                     "run_id", "revision_id", "delivery_commit", "split_requested", "model_override", "provider_retry_at")
+                     "run_id", "revision_id", "delivery_commit", "split_requested", "model_override", "provider_retry_at", "planner_root", "planner_depth")
         if any(k in e for k in forbidden) or any(e.get(k, 0) != 0 for k in runtime) or e.get("branch") or e.get("model"):
             raise IntegrityError("planner supplied runtime identity")
         if not isinstance(e.get("paths"), list) or not 1 <= len(e["paths"]) <= 8:

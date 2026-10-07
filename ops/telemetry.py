@@ -307,9 +307,27 @@ def estimate_cost(usage: dict, prices: dict | None = None) -> float | None:
     inp, outp = p.get("input"), p.get("output")
     if inp is None or outp is None:
         return None
-    in_tok = _int_or_none((usage or {}).get("input_tokens")) or 0
-    out_tok = _int_or_none((usage or {}).get("output_tokens")) or 0
+    in_tok = _int_or_none((usage or {}).get("input_tokens"))
+    out_tok = _int_or_none((usage or {}).get("output_tokens"))
+    if in_tok is None or out_tok is None or in_tok<0 or out_tok<0:
+        return None
+    cached=_int_or_none((usage or {}).get("cache_read_tokens")) or 0
+    written=_int_or_none((usage or {}).get("cache_write_tokens")) or 0
+    # Input/output-only rates cannot establish total spend on cached calls.
+    if cached or written:
+        return None
     return round(in_tok / 1_000_000 * float(inp) + out_tok / 1_000_000 * float(outp), 8)
+
+
+def safe_usage(usage):
+    """Retain accounting fields, never prompts/messages or request payloads."""
+    fields=("input_tokens","output_tokens","cache_read_tokens","cache_write_tokens",
+            "reasoning_tokens","total_tokens","accounted_tokens","api_calls",
+            "estimated_cost_usd","cost_status","model","provider","completed","failed","partial","provider_error")
+    result={key:usage[key] for key in fields if key in usage}
+    if isinstance(usage.get("total_including_auxiliary"),dict):
+        result["total_including_auxiliary"]={key:value for key,value in usage["total_including_auxiliary"].items() if key in fields}
+    return result
 
 
 def default_flags(profile: str = "", toolsets: str = "",
@@ -414,6 +432,9 @@ def build_run(*, ts_start: str, ts_end: str, role: str, model: str,
         est = estimate_cost(usage, prices)
         if est is not None:
             cost_source = "prices.yaml"
+    if usage.get("partial") or usage.get("failed") and not usage.get("completed"):
+        est=None
+        cost_source="unknown failed-call coverage"
     rec = {
         "ts_start": ts_start,
         "ts_end": ts_end,
@@ -425,13 +446,15 @@ def build_run(*, ts_start: str, ts_end: str, role: str, model: str,
         "input_tokens": norm["input_tokens"],
         "output_tokens": norm["output_tokens"],
         "cached_tokens": norm["cached_tokens"],
+        "cache_write_tokens": norm["cache_write_tokens"],
+        "reasoning_tokens": norm["reasoning_tokens"],
         "api_calls": norm["api_calls"],
         "cost_estimate": est,
         "cost_source": cost_source,
         "rc": _int_or_none(rc),
         "outcome": outcome if outcome in OUTCOMES else "other",
         "flags": flags or {},
-        "usage": usage,
+        "usage": safe_usage(usage),
     }
     unknown = [k for k in ("input_tokens", "output_tokens", "api_calls")
                if rec[k] is None]
