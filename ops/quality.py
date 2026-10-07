@@ -166,6 +166,13 @@ def removal_check(wt: Path, base: str, impl_files, test_cmds, env=None,
                         "method": label, "failed_tests": proof["failed_tests"], "detail": "\n".join(results)[-3000:]}
         return None
     try:
+        # The mutant must cause a failure; an already-red test proves nothing.
+        for c in cmds:
+            if c[:2] != ["go", "test"] or any(v in (";", "&&", "||", "|", "-args") for v in c):
+                raise ValueError("unsupported focused test command")
+            rc, out = run([*c[:2], "-json", "-count=1", *c[2:]], cwd=wt, timeout=remaining(), env=env)
+            if rc:
+                return {"ok": False, "applicable": True, "reason": "focused tests fail before behavior removal", "detail": out[-1200:]}
         for p in impl_files:
             target = wt / p
             if target.is_symlink() or not target.resolve().is_relative_to(wt.resolve()):
@@ -308,6 +315,13 @@ def frontend_removal_check(wt, impl_files, test_files, env=None, timeout=900):
     def restore():
         for path, content in original.items():
             (wt / path).write_bytes(content)
+    def test_current_source():
+        with tempfile.TemporaryDirectory(prefix=".quality-compiled-", dir=frontend) as temporary:
+            rc, out = run(["node", str(frontend / "node_modules/typescript/bin/tsc"), "-p", "tsconfig.json", "--outDir", temporary], cwd=frontend, timeout=remaining(), env=env)
+            if rc:
+                return rc, out
+            emitted = [str(Path(temporary) / Path(tf).relative_to("frontend").with_suffix(".js")) for tf in tests]
+            return run(["node", "--test", f"--test-reporter={reporter}", *emitted], cwd=frontend, timeout=remaining(), env=env)
     try:
         if not module.is_file():
             raise ValueError("pinned TypeScript dependency unavailable")
@@ -316,6 +330,9 @@ def frontend_removal_check(wt, impl_files, test_files, env=None, timeout=900):
             if target.is_symlink() or not target.resolve().is_relative_to(wt.resolve()):
                 raise ValueError("frontend mutation path escapes worktree")
             original[p] = target.read_bytes()
+        rc, out = test_current_source()
+        if rc:
+            return {"ok": False, "applicable": True, "reason": "frontend tests fail before behavior removal"}
         candidates = []
         for p, content in original.items():
             rc, out = run(["node", str(helper), str(module), p], cwd=frontend, timeout=remaining(), env=env, input_text=content.decode())
@@ -332,14 +349,9 @@ def frontend_removal_check(wt, impl_files, test_files, env=None, timeout=900):
             (wt / p).write_text(mutant)
             # Compile to a fresh directory inside frontend so Node resolves the
             # pinned dependencies. Old emitted files can never prove a mutant.
-            with tempfile.TemporaryDirectory(prefix=".quality-compiled-", dir=frontend) as temporary:
-                rc, out = run(["node", str(frontend / "node_modules/typescript/bin/tsc"), "-p", "tsconfig.json", "--outDir", temporary], cwd=frontend, timeout=remaining(), env=env)
-                if rc:
-                    continue
-                emitted = [str(Path(temporary) / Path(tf).relative_to("frontend").with_suffix(".js")) for tf in tests]
-                rc, out = run(["node", "--test", f"--test-reporter={reporter}", *emitted], cwd=frontend, timeout=remaining(), env=env)
-                if frontend_assertion_failure(rc, out):
-                    return {"ok": True, "applicable": True, "reason": "named frontend assertion rejects removed production behavior", "method": f"zero behavior: {p}"}
+            rc, out = test_current_source()
+            if frontend_assertion_failure(rc, out):
+                return {"ok": True, "applicable": True, "reason": "named frontend assertion rejects removed production behavior", "method": f"zero behavior: {p}"}
         return {"ok": False, "applicable": True, "reason": "no compilable frontend mutation produced an assertion failure"}
     except (OSError, ValueError, TypeError) as exc:
         return {"ok": False, "applicable": True, "reason": "frontend behavioral check unavailable", "detail": str(exc)[:400]}

@@ -75,6 +75,12 @@ class FrontendMutationIntegration(unittest.TestCase):
         self.assertFalse(q.frontend_removal_check(self.repo, ["frontend/src/a.ts"], ["frontend/tests/a.test.ts"])["ok"])
         self.assertFalse(list((self.repo / "frontend").glob(".quality-compiled-*")))
 
+    def test_already_failing_fake_is_not_removal_proof(self):
+        (self.repo / "frontend/tests/a.test.ts").write_text('import {strict as assert} from "node:assert"; import test from "node:test"; import {add} from "../src/a.js"; function fake(a:number,b:number){return a+b;} test("sum",()=>assert.equal(fake(1,2),99));\n')
+        result = q.frontend_removal_check(self.repo, ["frontend/src/a.ts"], ["frontend/tests/a.test.ts"])
+        self.assertFalse(result["ok"], result)
+        self.assertIn("before behavior removal", result["reason"])
+
 
 class FreshCoverage(unittest.TestCase):
     def setUp(self):
@@ -168,6 +174,12 @@ class MutationIntegration(unittest.TestCase):
         (self.repo / "p/impl_test.go").write_text('package p\nimport "testing"\nfunc fakeAdd(a,b int) int {return a+b}\nfunc TestAdd(t *testing.T) {if fakeAdd(1,2)!=3 {t.Fatal("wrong")}}\n')
         result = q.removal_check(self.repo, self.base, ["p/impl.go"], ["go test ./p"], test_files=["p/impl_test.go"])
         self.assertFalse(result["ok"], result)
+
+    def test_already_failing_go_fake_is_not_removal_proof(self):
+        (self.repo / "p/impl_test.go").write_text('package p\nimport "testing"\nfunc fakeAdd(a,b int) int {return a+b}\nfunc TestAdd(t *testing.T) {if fakeAdd(1,2)!=99 {t.Fatal("wrong")}}\n')
+        result = q.removal_check(self.repo, self.base, ["p/impl.go"], ["go test ./p"], test_files=["p/impl_test.go"])
+        self.assertFalse(result["ok"], result)
+        self.assertIn("before behavior removal", result["reason"])
 
 
 if __name__ == "__main__":

@@ -64,6 +64,8 @@ in DECISIONS.md:23. Missing acceptance details are gaps, not permission waits.
 
 Removal checks accept a named behavioral assertion against a compilable mutant;
 compilation errors, panics, race errors, timeouts and tool failures are not proof.
+The focused original tests must pass before mutation; an already failing test
+cannot prove that removing production behavior caused its assertion to fail.
 Mutations preserve source bytes and the Git index, and run in isolated worktrees.
 Missing, malformed or erroring coverage fails even with a documented exemption;
 only valid below-floor coverage retains the existing documented-exemption rule.
