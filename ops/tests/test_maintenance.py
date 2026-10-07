@@ -160,6 +160,15 @@ class ReviewBoundary(Isolated):
     def test_missing_quality_module_is_a_failed_gate(self):
         with patch.object(o, "_load_quality", return_value=None):
             self.assertFalse(o.quality_gate(self.repo, unit(), state(), "origin/main")["ok"])
+        self.assertTrue(o.STOP_FILE.exists())
+
+    def test_successful_exit_with_provider_outage_cannot_approve(self):
+        u, st = unit(), state()
+        for output, usage in [('{"verdict":"pass","findings":[]}', {"total_tokens": 2, "provider_error": True}),
+                              ('HTTP error 500\n{"verdict":"pass","findings":[]}', {"total_tokens": 2})]:
+            with patch.object(o, "git_out", side_effect=self.git_value), patch.object(o, "hermes_run", return_value=(0, output, usage)):
+                self.assertFalse(o.ensure_reviewed(u, self.repo, st))
+                self.assertNotEqual(u.get("review_verdict"), "pass")
 
     def test_merge_refusal_parks_without_protection_mutation(self):
         u = unit(attempts=1, pr=1, review_head="before-rebase", review_verdict="pass")
@@ -407,6 +416,9 @@ class Providers(Isolated):
                 o.start_build(u, st, {"X": u})
         self.assertEqual(u["attempts"], 0)
         self.assertEqual(st["reservations"], {})
+        ledger = c.accounting(c.ledger_records(o.STATE_DIR), o.now()[:10], o.TIMEOUT_FALLBACK_TOKENS)
+        self.assertFalse(ledger["unsettled"])
+        self.assertEqual(ledger["tokens_today"], 0)
 
     def test_real_launch_identifiers_and_files_never_reused(self):
         st, u = state(), unit()

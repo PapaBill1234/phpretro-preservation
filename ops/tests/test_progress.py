@@ -48,6 +48,11 @@ class ProgressTest(unittest.TestCase):
         row["tests"] = ["real behavior test"]
         self.assertEqual(self.build()["units"][0]["classification"], "implemented")
         row["classification"] = "verified"
+        row["verification"] = "n/a: not compared"
+        with self.assertRaises(ValueError):
+            self.build()
+        row["classification"] = "implemented"
+        row["production_wiring"] = "n/a: incomplete"
         with self.assertRaises(ValueError):
             self.build()
 

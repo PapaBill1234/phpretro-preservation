@@ -759,11 +759,13 @@ def quality_gate(wt: Path, unit: dict, state: dict, base: str) -> dict:
     """Run items 1-3 for the attempt in ``wt``. Never raises.
 
     Returns the quality report (``{"ok", "reason", "checks", "coverage",
-    "fidelity"}``), or a permissive stub if the module is missing so a broken
-    import cannot wedge the pipeline.
+    "fidelity"}``). An unavailable shared quality module halts new dispatch;
+    no unit can publish or merge without its quality result.
     """
     mod = _load_quality()
     if mod is None:
+        STOP_FILE.touch()
+        event(state, "quality module unavailable; STOP set, no gate waiver")
         return {"ok": False, "reason": "quality module unavailable",
                 "checks": {}, "coverage": None, "fidelity": "unknown"}
     env = {"PATH": f"{TOOLBIN}:{os.environ.get('PATH','')}"}
@@ -889,6 +891,7 @@ def hermes_run(profile: str, model: str, prompt: str, toolsets: str,
         charge = TIMEOUT_FALLBACK_TOKENS
     data["accounted_tokens"] = charge
     outage = control.provider_error(rc, out)
+    data["provider_error"] = outage
     log_model_run(role, model, unit, attempt, rc,
                   "provider_error" if outage else outcome if outcome != "other" else _outcome_for_rc(rc),
                   data, profile, toolsets, ts_start, now(), run_id=rid, charged_tokens=charge)
@@ -1356,6 +1359,8 @@ def validated_review(unit: dict, wt: Path, state: dict, model: str, slot: str) -
         total += tokens
         write_json(STATE_JSON, state)
         verdict, finding = control.review_result(rc, out)
+        if usage.get("provider_error") or control.provider_error(rc, out):
+            verdict, finding = "unavailable", "provider outage cannot approve a review"
         dirty = git_out("status", "--porcelain", cwd=wt)
         if git_out("rev-parse", "HEAD", cwd=wt) != head or dirty:
             verdict, finding = "unavailable", "reviewer changed reviewed checkout"

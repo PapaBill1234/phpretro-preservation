@@ -66,9 +66,11 @@ def build(repo: Path, canonical: dict, runtime: dict, deliveries: dict,
                 stale.append("Git delivery inventory changed")
             if not stale:
                 classification, reason = a["classification"], a["reason"]
-                if classification in ("implemented", "verified") and (not merged or not a.get("production_wiring") or not a.get("tests")):
+                wiring = str(a.get("production_wiring") or "n/a")
+                verification = str(a.get("verification") or "n/a")
+                if classification in ("implemented", "verified") and (not merged or wiring.lower().startswith(("n/a", "unknown")) or not a.get("tests")):
                     raise ValueError("implementation claim lacks Git, wiring or test evidence: " + uid)
-                if classification == "verified" and not a.get("verification"):
+                if classification == "verified" and verification.lower().startswith(("n/a", "unknown")):
                     raise ValueError("verification claim lacks acceptance comparison: " + uid)
             else:
                 reason = "Assessment stale; fresh review required: " + ", ".join(sorted(set(stale)))

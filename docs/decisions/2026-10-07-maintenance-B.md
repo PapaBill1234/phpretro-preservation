@@ -67,6 +67,9 @@ compilation errors, panics, race errors, timeouts and tool failures are not proo
 Mutations preserve source bytes and the Git index, and run in isolated worktrees.
 Missing, malformed or erroring coverage fails even with a documented exemption;
 only valid below-floor coverage retains the existing documented-exemption rule.
+If the shared quality module is unavailable, set STOP before another admission.
+A successful process exit accompanied by a provider-outage signal cannot approve
+review. Regression tests cover these cases and zero-spend worker-launch recovery.
 No overlapping product tests are removed: the evidence does not justify losing
 assertions, and missing F35/F38 contracts prevent replacement adapter tests.
 
