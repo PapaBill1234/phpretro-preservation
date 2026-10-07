@@ -9,18 +9,22 @@ from datetime import datetime,timezone
 from pathlib import Path
 
 READY_TARGET = 8
-RISK_PATHS = ('internal/auth','internal/account','internal/session','internal/security',
+RISK_PATHS = ('internal/auth','internal/authflow','internal/registration','internal/recovery',
+              'internal/account','internal/session','internal/security',
               'internal/audit','internal/staff','internal/polaris','internal/cache',
               'internal/storage','internal/persistence','internal/database','internal/server',
               'migrations','schema')
 RISK_WORDS = re.compile(r'\b(?:security|auth(?:entication|orization)?|sessions?|passwords?|csrf|ssrf|xss|totp|2fa|persist\w*|durab\w*|transactions?|replay|database|mariadb|redis|secrets?)\b',re.I)
+RISK_FILE = re.compile(r'(?:^|[/_.-])(?:auth|session|security|persist|storage|database|password|credential|csrf|secret)',re.I)
 
 def high_risk(unit, diff=''):
     paths=[str(p).split('*',1)[0].rstrip('/') for p in unit.get('paths',[])]
     return (any(p==r or p.startswith(r+'/') or r.startswith(p+'/') for p in paths for r in RISK_PATHS)
             or any(p.endswith('.sql') for p in paths)
+            or any(RISK_FILE.search(p) for p in paths)
             or bool(RISK_WORDS.search(' '.join([str(unit.get('title','')),*unit.get('acceptance',[])])))
-            or any('a/'+r in diff or 'b/'+r in diff for r in RISK_PATHS))
+            or any('a/'+r in diff or 'b/'+r in diff for r in RISK_PATHS)
+            or any(RISK_FILE.search(p) for p in re.findall(r'^diff --git a/(\S+) b/\S+',diff,re.M)))
 
 def reasoning(role, unit=None, diff=''):
     if role=='planner': return 'low'

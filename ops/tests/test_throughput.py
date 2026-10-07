@@ -21,6 +21,13 @@ class ModelPolicy(unittest.TestCase):
         self.assertEqual(t.reasoning('reviewer',{'paths':['internal/auth']}),'medium')
         self.assertEqual(t.reasoning('reviewer',{},'diff --git a/internal/session/x.go b/internal/session/x.go'),'medium')
         self.assertNotEqual(o.reviewer_model_for(o.MODEL['sol']),o.MODEL['sol'])
+    def test_authflow_and_frontend_security_paths_are_high_risk_without_title_hints(self):
+        for path in ('internal/authflow/flow.go','internal/registration/form.go','internal/recovery/reset.go',
+                     'frontend/src/auth.ts','frontend/src/sessionStore.ts','internal/x/storage.go'):
+            u={'paths':[path],'title':'view wiring'}
+            self.assertEqual(o.builder_model(u,1),o.MODEL['sol'],path)
+            self.assertEqual(t.reasoning('reviewer',u),'medium',path)
+        self.assertEqual(t.reasoning('reviewer',{},'diff --git a/frontend/src/auth.ts b/frontend/src/auth.ts'),'medium')
     def test_qa_priority_is_severity_not_id(self):
         items=[{'id':'F1','severity':'medium'},{'id':'QA3','severity':'high'},{'id':'F2','severity':'critical'}]
         self.assertEqual([u['id'] for u in sorted(items,key=t.priority)],['F2','QA3','F1'])
