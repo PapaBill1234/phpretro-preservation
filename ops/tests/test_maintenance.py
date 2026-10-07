@@ -116,6 +116,21 @@ class ReviewBoundary(Isolated):
             self.assertEqual(u["status"], "parked")
             self.assertEqual(u["attempts"], 2)
 
+    def test_admission_denied_review_defers_existing_pr(self):
+        u, st = unit(attempts=1, pr=7), state(merged_today=o.effective_merge_cap({}))
+        with patch.object(o, "git_out", side_effect=self.git_value), patch.object(o, "hermes_run", return_value=(75, "cap admission denied", {"total_tokens": 0, "api_calls": 0, "admission_denied": True})):
+            self.assertFalse(o.ensure_reviewed(u, self.repo, st))
+        self.assertEqual(u["status"], "pr_open")
+        self.assertEqual(u["pr"], 7)
+        self.assertEqual(u["attempts"], 1)
+
+    def test_sensitive_second_review_never_uses_author_family(self):
+        u = unit(attempts=4, model=o.MODEL["sol"], review_model=o.MODEL["deepseek"])
+        with patch.object(o, "git_out", side_effect=self.git_value), patch.object(o, "hermes_run", return_value=(0, '{"verdict":"pass","findings":[]}', {"total_tokens": 1})) as run:
+            self.assertEqual(o.run_second_review(u, self.repo, state())[0], "pass")
+        self.assertNotEqual(c.model_family(run.call_args.args[1]), c.model_family(u["model"]))
+        self.assertNotEqual(c.model_family(run.call_args.args[1]), c.model_family(u["review_model"]))
+
     def test_changed_head_discards_approval(self):
         u = unit(attempts=1)
         heads = iter(["old", "changed", "changed"])
@@ -241,6 +256,9 @@ class Accounting(Isolated):
         self.record(usage={})
         self.assertEqual(o.load_state()["tokens_today"], o.TIMEOUT_FALLBACK_TOKENS)
 
+    def test_decisions_usage_aliases_are_counted(self):
+        self.assertEqual(o.usage_tokens({"prompt_tokens": 120, "completion_tokens": 13}), 133)
+
     def test_accounting_counter_never_drops_below_ledger(self):
         self.record(charged_tokens=999)
         c.atomic_json(o.STATE_JSON, state(tokens_today=1))
@@ -344,6 +362,11 @@ class Providers(Isolated):
         self.assertTrue(c.provider_error(124, "gateway timeout"))
         self.assertFalse(c.provider_error(1, "compile failed at source line 503"))
 
+    def test_compile_and_test_source_locations_are_not_provider_statuses(self):
+        for output in ("internal/api/handler.go:503:12: undefined: foo", "internal/api/x_test.go:500: got 1 want 2",
+                       "internal/provider/error.go:402: syntax error", "internal/http/status.go:403: invalid operation"):
+            self.assertFalse(c.provider_error(1, output), output)
+
     def test_provider_failure_does_not_publish_split_park_or_consume_attempt(self):
         u, st = unit(attempts=1), state()
         usage, output = o.LOG_DIR / "usage.json", o.LOG_DIR / "builder.log"
@@ -436,6 +459,43 @@ class Reconciliation(Isolated):
         merge.assert_not_called()
         worker.assert_not_called()
         self.assertTrue(o.STOP_FILE.exists())
+
+    def test_inventory_transport_outage_defers_without_permanent_stop(self):
+        o.REPO_UNITS.write_text("units:\n" + o.dump_unit_yaml(unit()))
+        with patch.object(o, "git", return_value=(0, "")), patch.object(o, "sh", return_value=(1, "network unavailable")), \
+             patch.object(o, "apply_merge_cap_guard"), patch.object(o, "write_state_md"), patch.object(o, "dispatch") as dispatch:
+            o.cycle()
+        self.assertFalse(o.STOP_FILE.exists())
+        dispatch.assert_not_called()
+
+    def test_git_fetch_transport_outage_defers_without_permanent_stop(self):
+        o.REPO_UNITS.write_text("units:\n" + o.dump_unit_yaml(unit()))
+        with patch.object(o, "git", return_value=(1, "network unavailable")), \
+             patch.object(o, "apply_merge_cap_guard"), patch.object(o, "write_state_md"), patch.object(o, "dispatch") as dispatch:
+            o.cycle()
+        self.assertFalse(o.STOP_FILE.exists())
+        dispatch.assert_not_called()
+
+    def test_jev_cannot_swallow_critical_accounting_fault(self):
+        mod = Mock()
+        mod.size_check.side_effect = c.IntegrityError("accounting fault")
+        mod.triage.side_effect = c.IntegrityError("accounting fault")
+        with patch.object(o, "_load_jev", return_value=mod):
+            with self.assertRaises(c.IntegrityError):
+                o.jev_size_check(unit())
+            with self.assertRaises(c.IntegrityError):
+                o.jev_triage(unit(), "compile failed", 1, False)
+
+    def test_jev_telemetry_names_its_actual_provider(self):
+        mod = Mock(JEV_MODEL="typesafe/jev-1.13")
+        st, road = state(), {"X": unit()}
+        with patch.object(o, "_load_jev", return_value=mod):
+            o.configure_jev_accounting(st, road)
+        rid = mod.CONTROL_BEFORE("X")
+        mod.CONTROL_AFTER(rid, "X", {"prompt_tokens": 120, "completion_tokens": 13}, False)
+        rows = list(tel.read_runs())
+        self.assertEqual(rows[0]["provider"], "openrouter")
+        self.assertEqual(rows[0]["charged_tokens"], 133)
 
 
 class TerminatorMaintenance(Isolated):

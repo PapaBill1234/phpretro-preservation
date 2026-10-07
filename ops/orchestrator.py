@@ -324,7 +324,7 @@ STATE_KEYS = ("status", "pr", "attempts", "tokens", "wall_s", "model", "reason",
               "kind", "fidelity", "severity", "updated", "timeouts", "shrinks",
               "size_check_at", "size_action", "size_source", "run_id", "revision_id",
               "review_head", "review_model", "review_verdict", "review_id", "review2_id", "review2_head",
-              "review2_model", "review2_verdict", "delivery_commit", "provider_retry_at")
+              "review2_model", "review2_verdict", "delivery_commit", "provider_retry_at", "review_admission_denied")
 DEF_KEYS = ("title", "depends_on", "paths", "tests", "acceptance", "fixtures",
             "fidelity_notes", "size", "design_doc", "unclear_semantics")
 
@@ -691,6 +691,8 @@ def jev_size_check(unit: dict) -> dict:
         return {"action": "run_as_is", "source": "rule"}
     try:
         return mod.size_check(unit)
+    except control.IntegrityError:
+        raise
     except Exception as exc:
         log(f"jev (a) error: {exc}")
         return {"action": "run_as_is", "source": "rule"}
@@ -703,6 +705,8 @@ def jev_triage(unit: dict, output: str, attempt: int, at_last_rung: bool) -> dic
         return {"action": "retry_same", "source": "rule"}
     try:
         return mod.triage(unit, output, attempt, MAX_ATTEMPTS, at_last_rung)
+    except control.IntegrityError:
+        raise
     except Exception as exc:
         log(f"jev (b) error: {exc}")
         return {"action": "retry_same", "source": "rule"}
@@ -783,6 +787,10 @@ SKILL_NAME = {"builder": "unit-builder", "reviewer": "unit-reviewer",
 
 
 class BudgetDenied(RuntimeError):
+    pass
+
+
+class DeliveryUnavailable(RuntimeError):
     pass
 
 
@@ -909,14 +917,15 @@ def _outcome_for_rc(rc) -> str:
 
 def log_model_run(role: str, model: str, unit: str, attempt, rc, outcome: str,
                   usage: dict, profile: str = "", toolsets: str = "",
-                  ts_start: str = "", ts_end: str = "", *, run_id="", charged_tokens=None) -> None:
+                  ts_start: str = "", ts_end: str = "", *, run_id="", charged_tokens=None,
+                  provider_override="") -> None:
     mod = _load_telemetry()
     if mod is None:
         raise control.IntegrityError("required accounting ledger unavailable")
     rec = mod.build_run(
         ts_start=ts_start or now(), ts_end=ts_end or now(), role=role, model=model,
         unit=unit or "", attempt=attempt, rc=rc, outcome=outcome, usage=usage or {},
-        provider=PROVIDER, flags=mod.default_flags(profile, toolsets,
+        provider=provider_override or PROVIDER, flags=mod.default_flags(profile, toolsets,
                     session=str((usage or {}).get("session_id") or "")))
     rec["run_id"] = run_id or control.identity()
     rec["record_type"] = "run"
@@ -934,7 +943,7 @@ def usage_tokens(usage: dict) -> int:
             val = val.get("total_tokens")
         if isinstance(val, int):
             return val
-    return int(usage.get("input_tokens", 0)) + int(usage.get("output_tokens", 0))
+    return int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0) + int(usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0)
 
 
 def kill_process_group(proc, grace: int = TERM_GRACE) -> str:
@@ -1307,6 +1316,15 @@ def review_fallback(primary: str, author: str) -> str:
     return ""
 
 
+def second_reviewer_model(author: str, primary: str) -> str:
+    """Choose a sensitive-path reviewer from a family unlike both prior roles."""
+    for candidate in (MODEL["sol"], MODEL["luna"], MODEL["deepseek"], "claude-sonnet-5.5"):
+        family = control.model_family(candidate)
+        if family not in (control.model_family(author), control.model_family(primary)):
+            return candidate
+    return ""
+
+
 def validated_review(unit: dict, wt: Path, state: dict, model: str, slot: str) -> tuple[str, str, int]:
     head = git_out("rev-parse", "HEAD", cwd=wt)
     if not head:
@@ -1315,6 +1333,7 @@ def validated_review(unit: dict, wt: Path, state: dict, model: str, slot: str) -
     author = unit.get("model") or MODEL["luna"]
     unit.pop(slot + "_head", None)
     unit[slot + "_verdict"] = "unavailable"
+    unit["review_admission_denied"] = False
     total, finding = 0, "review unavailable"
     for index in range(2):
         chosen = model if index == 0 else review_fallback(model, author)
@@ -1324,6 +1343,8 @@ def validated_review(unit: dict, wt: Path, state: dict, model: str, slot: str) -
         rc, out, usage = hermes_run("reviewer", chosen, prompt, "file", wt,
                     f"{unit['id']}-{slot}", 900, unit=unit["id"], attempt=unit.get("attempts"),
                     role="reviewer", state=state, budget_unit=unit)
+        if usage.get("admission_denied"):
+            unit["review_admission_denied"] = True
         tokens = usage_tokens(usage)
         # Account before a possible fallback, so retry admission sees its spend.
         add_tokens(state, unit, tokens)
@@ -1333,7 +1354,7 @@ def validated_review(unit: dict, wt: Path, state: dict, model: str, slot: str) -
         dirty = git_out("status", "--porcelain", cwd=wt)
         if git_out("rev-parse", "HEAD", cwd=wt) != head or dirty:
             verdict, finding = "unavailable", "reviewer changed reviewed checkout"
-        if slot == "review" and control.model_family(chosen) == control.model_family(author):
+        if control.model_family(chosen) == control.model_family(author):
             verdict, finding = "unavailable", "review model shares author family"
         review_id = control.identity()
         control.atomic_json(LOG_DIR / f"{unit['id']}-{slot}-{review_id}.verdict.json",
@@ -1358,8 +1379,7 @@ def approval_valid(unit: dict, slot: str, head: str) -> bool:
     valid = (rec.get("unit") == unit["id"] and rec.get("head") == head and
              rec.get("rc") == 0 and rec.get("verdict") == "pass" and
              rec.get("model") == unit.get(slot + "_model"))
-    if slot == "review":
-        valid = valid and control.model_family(rec.get("model", "")) != control.model_family(unit.get("model") or MODEL["luna"])
+    valid = valid and control.model_family(rec.get("model", "")) != control.model_family(unit.get("model") or MODEL["luna"])
     return bool(valid)
 
 
@@ -1377,8 +1397,8 @@ def ensure_reviewed(unit: dict, wt: Path, state: dict) -> bool:
         if second != "pass":
             verdict, findings = second, details
     telemetry_event("review_verdict", unit["id"], f"review verdict={verdict}", verdict=verdict, head=head[:12])
-    if verdict == "unavailable" and int(state.get("provider_errors", 0)):
-        unit["status"], unit["reason"] = "pr_open", "review deferred: provider backoff/pause"
+    if verdict == "unavailable" and (unit.get("review_admission_denied") or int(state.get("provider_errors", 0))):
+        unit["status"], unit["reason"] = "pr_open", "review deferred: admission or provider backoff/pause"
         return False
     if verdict != "pass":
         unit["feedback"] = "Reviewer decision to repair:\n" + findings
@@ -1402,7 +1422,10 @@ def run_review(unit: dict, wt: Path, state: dict, author_model: str) -> tuple[st
 
 
 def run_second_review(unit: dict, wt: Path, state: dict) -> tuple[str, str, int]:
-    return validated_review(unit, wt, state, MODEL["sol"], "review2")
+    model = second_reviewer_model(unit.get("model") or MODEL["luna"], unit.get("review_model", ""))
+    if not model:
+        return "unavailable", "no independent sensitive-path reviewer family", 0
+    return validated_review(unit, wt, state, model, "review2")
 
 
 def strip_required_actions_check(state: dict) -> None:
@@ -3415,7 +3438,8 @@ def configure_jev_accounting(state: dict, roadmap: dict) -> None:
             tokens = 36864
         log_model_run("jev", mod.JEV_MODEL, uid, None, 1 if failed else 0,
                       "provider_error" if failed else "other", usage or {},
-                      ts_start=state["reservations"][rid]["ts_start"], run_id=rid, charged_tokens=tokens)
+                      ts_start=state["reservations"][rid]["ts_start"], run_id=rid, charged_tokens=tokens,
+                      provider_override="openrouter")
         release_paid(state, rid)
         add_tokens(state, roadmap.get(uid, {}), tokens)
         write_json(STATE_JSON, state)
@@ -3427,7 +3451,7 @@ def reconcile_deliveries(roadmap: dict, state: dict) -> list[str]:
     rc, out = sh(["gh", "pr", "list", "--repo", GH_REPO, "--state", "merged", "--limit", "1000",
                   "--json", "number,headRefName,mergeCommit,mergedAt"], cwd=REPO, timeout=120)
     if rc:
-        raise control.IntegrityError("Git delivery reconciliation unavailable; dispatch withheld")
+        raise DeliveryUnavailable("Git delivery reconciliation unavailable; dispatch deferred")
     try:
         prs = json.loads(out)
         if not isinstance(prs, list) or len(prs) >= 1000:
@@ -3482,7 +3506,7 @@ def cycle(*, no_dispatch: bool = False) -> None:
             apply_merge_cap_guard(state)
             rc, out = git("fetch", "origin", "--prune")
             if rc:
-                raise control.IntegrityError("git fetch failed; reconciliation cannot be verified")
+                raise DeliveryUnavailable("git fetch failed; reconciliation deferred")
             reconcile_deliveries(roadmap, state)
             configure_jev_accounting(state, roadmap)
             if not no_dispatch:
@@ -3513,6 +3537,11 @@ def cycle(*, no_dispatch: bool = False) -> None:
             event(state, "cycle end")
             write_json(STATE_JSON, state)
             write_state_md(roadmap, state)
+        except DeliveryUnavailable as exc:
+            event(state, str(exc))
+            write_json(STATE_JSON, state)
+            write_state_md(roadmap, state)
+            return
         except (control.IntegrityError, OSError) as exc:
             STOP_FILE.touch()
             control.atomic_json(STATE_DIR / "integrity-failure.json", {"ts": now(), "reason": str(exc)})

@@ -182,9 +182,16 @@ def provider_error(rc: int, output: str) -> bool:
     """Infrastructure status, not an ordinary compilation/tool error."""
     if rc in (402, 403, 429) or 500 <= rc <= 599:
         return True
-    text = output.lower()
-    return bool(re.search(r"(?:http(?:error)?|status(?:[_ ]code)?|error(?:[_ ]code)?|response|provider|api)[^\n]{0,55}\b(?:402|403|429|5\d\d)\b", text)
-                or re.search(r"\b(?:402|403|429|5\d\d)\b[^\n]{0,40}(?:payment required|forbidden|rate.limit|gateway|server error|overload)", text)
+    text = "\n".join(line for line in output.lower().splitlines()
+                     if not re.search(r"\S+\.(?:go|py|ts|tsx|js|jsx):\d+(?::\d+)?", line))
+    # Require a status label or a provider-specific phrase around the code.
+    # Bare source locations such as internal/api/handler.go:503:12 are build
+    # diagnostics, not transport failures.
+    status = r"\b(?:http(?:error|\s+error)?|status(?:[_ ]code)?|error[_ ]?code|response(?:[_ ]status)?)[\"']?\s*(?:code\s*)?[:=]?\s*[\"']?(?:402|403|429|5\d\d)\b"
+    provider = r"\b(?:provider|gateway|upstream|a6api|api\s+server)[ \t:]\s*[^\n]{0,55}\b(?:402|403|429|5\d\d)\b"
+    reverse = r"\b(?:402|403|429|5\d\d)\b[^\n]{0,55}\b(?:payment required|forbidden|rate[ ._-]?limit|gateway|server error|overload|provider)\b"
+    return bool(re.search(status, text) or re.search(provider, text)
+                or re.search(reverse, text)
                 or any(s in text for s in ("gateway timeout", "bad gateway", "payment required", "insufficient balance", "rate limit exceeded", "provider unavailable")))
 
 

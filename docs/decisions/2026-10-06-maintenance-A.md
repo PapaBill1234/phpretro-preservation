@@ -7,7 +7,8 @@ running Hermes jobs are interrupted. The desktop remains enabled.
 
 - Retain every local check, quality check, protected path, cap and serialized
   merge lock. Preserve the deployed 30/day cap with its nightly 12/day revert.
-  Add staff paths to the existing sensitive-path second review.
+  Add staff paths to the existing sensitive-path second review, which also
+  uses a family different from its author and primary reviewer.
 - Review is mandatory. A strictly parsed successful review needs an immutable
   receipt matching the exact head and reviewer family. A block parks immediately;
   a fix gets at most one repair build, and remaining blockers park. Gate and
@@ -15,7 +16,9 @@ running Hermes jobs are interrupted. The desktop remains enabled.
 - Review outages get one retry in another family. Use Claude Sonnet 5.5 on A6API
   only for this bounded fallback: its ID is in the installed provider model
   inventory. Using the author's family as fallback would weaken independence.
-  Provider faults defer the PR; timeout/malformed reviews park only that unit.
+  Provider faults and admission denials defer the PR; timeout/malformed
+  reviews park only that unit. Git/GitHub inventory outages defer a cycle
+  without creating permanent STOP; accounting failures still create STOP.
 - Jev a/b are budgeted advisory observations, never routing authority. Retain
   deterministic timeout, split, ladder and cap rules. Jev c has no review waiver
   or provider call. Remove Token Terminator's automatic cycle guard and uninstall
