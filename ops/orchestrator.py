@@ -1318,7 +1318,7 @@ def push_and_open_pr(unit: dict, wt: Path, check_out: str, state: dict) -> int:
 
 def review_fallback(primary: str, author: str) -> str:
     # Third family prevents an outage retry from becoming self-review.
-    for candidate in (MODEL["deepseek"], MODEL["luna"], "claude-sonnet-5.5"):
+    for candidate in (MODEL["deepseek"], MODEL["luna"], "claude-sonnet-5-5"):
         if control.model_family(candidate) not in (control.model_family(primary), control.model_family(author)):
             return candidate
     return ""
@@ -1326,7 +1326,7 @@ def review_fallback(primary: str, author: str) -> str:
 
 def second_reviewer_model(author: str, primary: str) -> str:
     """Choose a sensitive-path reviewer from a family unlike both prior roles."""
-    for candidate in (MODEL["sol"], MODEL["luna"], MODEL["deepseek"], "claude-sonnet-5.5"):
+    for candidate in (MODEL["sol"], MODEL["luna"], MODEL["deepseek"], "claude-sonnet-5-5"):
         family = control.model_family(candidate)
         if family not in (control.model_family(author), control.model_family(primary)):
             return candidate

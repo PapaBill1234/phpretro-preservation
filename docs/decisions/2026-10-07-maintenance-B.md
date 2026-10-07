@@ -70,6 +70,10 @@ only valid below-floor coverage retains the existing documented-exemption rule.
 If the shared quality module is unavailable, set STOP before another admission.
 A successful process exit accompanied by a provider-outage signal cannot approve
 review. Regression tests cover these cases and zero-spend worker-launch recovery.
+The dotted Sonnet route returned HTTP 400 with unsupported request fields;
+`claude-sonnet-5-5` returned a complete review through the same A6API provider.
+Use that working route for the existing once-only alternate-family fallback.
+This changes no builder ladder or review independence requirement.
 No overlapping product tests are removed: the evidence does not justify losing
 assertions, and missing F35/F38 contracts prevent replacement adapter tests.
 

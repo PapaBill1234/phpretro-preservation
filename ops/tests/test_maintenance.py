@@ -170,6 +170,18 @@ class ReviewBoundary(Isolated):
                 self.assertFalse(o.ensure_reviewed(u, self.repo, st))
                 self.assertNotEqual(u.get("review_verdict"), "pass")
 
+    def test_malformed_review_retries_working_alternate_family_route(self):
+        u, st = unit(model=o.MODEL["sol"]), state()
+        models = []
+        def reviewer(profile, model, *args, **kwargs):
+            models.append(model)
+            return (0, "malformed" if len(models) == 1 else '{"verdict":"pass","findings":[]}', {"total_tokens": 2})
+        with patch.object(o, "git_out", side_effect=self.git_value), patch.object(o, "hermes_run", side_effect=reviewer):
+            verdict, _, _ = o.validated_review(u, self.repo, st, o.MODEL["deepseek"], "review")
+        self.assertEqual(verdict, "pass")
+        self.assertEqual(models, [o.MODEL["deepseek"], "claude-sonnet-5-5"])
+        self.assertTrue(o.approval_valid(u, "review", "reviewed-head"))
+
     def test_merge_refusal_parks_without_protection_mutation(self):
         u = unit(attempts=1, pr=1, review_head="before-rebase", review_verdict="pass")
         with patch.object(o, "git", return_value=(0, "")), patch.object(o, "git_out", side_effect=self.git_value), \
