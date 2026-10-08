@@ -13,12 +13,30 @@ imported.
 
 from __future__ import annotations
 
+import contextlib
+import json
+import os
 import unittest
 from unittest import mock
 
-from harness import tmpdir
+from harness import commit, git_repo, head, run, tmpdir
 
 import orchestrator as o
+
+
+@contextlib.contextmanager
+def in_dir(path):
+    """Run the block with the process cwd at ``path``.
+
+    ``o.git``/``o.git_out`` default to the process cwd for the calls that do not
+    pass one, so a real-Git test has to move the process, not a mock.
+    """
+    previous = os.getcwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(previous)
 
 
 def _state() -> dict:
@@ -370,11 +388,11 @@ class DispatchGuardTest(unittest.TestCase):
         """GitHub deletes the head branch on merge; absence is not evidence."""
         unit = {"id": "F40", "status": "todo", "attempts": 0, "pr": 0}
         state = _state()
+        payload = json.dumps([{"number": 67, "headRefName": "unit/F40",
+                               "mergeCommit": {"oid": "d" * 40}}])
 
         def sh(cmd, **kw):
-            if cmd[:2] == ["gh", "pr"]:
-                return (0, "67 deadbeefcafe")
-            return (1, "")
+            return (0, payload) if cmd[:2] == ["gh", "pr"] else (1, "")
 
         with mock.patch.object(o, "sh", sh), \
              mock.patch.object(o, "git", lambda *a, **k: (0, "")), \
@@ -385,10 +403,20 @@ class DispatchGuardTest(unittest.TestCase):
         self.assertEqual(unit["status"], "merged")
         self.assertEqual(unit["pr"], 67)
 
+    def test_adopt_never_accepts_a_pr_from_another_branch(self):
+        unit = {"id": "F38", "status": "todo", "attempts": 0, "pr": 0}
+        payload = json.dumps([{"number": 9, "headRefName": "unit/OTHER",
+                               "mergeCommit": {"oid": "e" * 40}}])
+        with mock.patch.object(o, "sh", lambda *a, **k: (0, payload)), \
+             mock.patch.object(o, "git", lambda *a, **k: (0, "")), \
+             mock.patch.object(o, "git_out", lambda *a, **k: "f" * 40):
+            self.assertFalse(o.adopt_branch_unit(unit, _state()))
+
     def test_adopt_returns_false_without_a_merged_pr(self):
         unit = {"id": "F38", "status": "todo", "attempts": 0, "pr": 0}
-        with mock.patch.object(o, "sh", lambda *a, **k: (0, "")), \
-             mock.patch.object(o, "git", lambda *a, **k: (1, "")):
+        with mock.patch.object(o, "sh", lambda *a, **k: (0, "[]")), \
+             mock.patch.object(o, "git", lambda *a, **k: (1, "")), \
+             mock.patch.object(o, "git_out", lambda *a, **k: "f" * 40):
             self.assertFalse(o.adopt_branch_unit(unit, _state()))
 
 
@@ -421,6 +449,104 @@ class StopAndCapTest(unittest.TestCase):
         state = _state()
         state["tokens_today"] = o.DAILY_TOKEN_CAP
         self.assertEqual(o.select_ready(roadmap, state), [])
+
+
+class RealGitHistoryTest(unittest.TestCase):
+    """Diverged histories against REAL Git: both tips must survive the merge."""
+
+    def _seed(self):
+        """A repo whose local branch and origin/<branch> have both moved on."""
+        repo = git_repo(tmpdir("real-"))
+        (repo / "base.txt").write_text("base")
+        commit(repo, "base")
+        run(["git", "branch", "origin/main"], cwd=repo)
+        run(["git", "checkout", "-qb", "unit/F38"], cwd=repo)
+        (repo / "remote.txt").write_text("remote")
+        commit(repo, "remote work")
+        remote_tip = head(repo)
+        run(["git", "update-ref", "refs/remotes/origin/unit/F38", remote_tip], cwd=repo)
+        run(["git", "reset", "--hard", "origin/main"], cwd=repo)
+        (repo / "local.txt").write_text("local")
+        commit(repo, "local work")
+        return repo, head(repo), remote_tip
+
+    def test_diverged_histories_are_joined_and_both_tips_survive(self):
+        repo, local_tip, remote_tip = self._seed()
+        unit = {"id": "F38", "branch": "unit/F38"}
+        relation = o.validate_recovery_worktree(
+            unit, repo, "refs/remotes/origin/unit/F38")
+        self.assertEqual(relation, "merged")
+        merged = head(repo)
+        self.assertNotIn(merged, (local_tip, remote_tip))
+        for tip in (local_tip, remote_tip):
+            self.assertEqual(
+                run(["git", "merge-base", "--is-ancestor", tip, merged],
+                    cwd=repo).returncode, 0,
+                f"{tip[:8]} is not an ancestor of the reconciled merge")
+        # Neither side's content was dropped.
+        self.assertTrue((repo / "local.txt").is_file())
+        self.assertTrue((repo / "remote.txt").is_file())
+
+    def test_dirty_worktree_is_refused_by_real_git(self):
+        repo, _, _ = self._seed()
+        (repo / "local.txt").write_text("edited but uncommitted")
+        unit = {"id": "F38", "branch": "unit/F38"}
+        with self.assertRaises(o.RecoveryConflict):
+            o.validate_recovery_worktree(unit, repo,
+                                         "refs/remotes/origin/unit/F38")
+
+    def test_worktree_on_another_branch_is_refused(self):
+        repo, _, _ = self._seed()
+        run(["git", "checkout", "-q", "origin/main"], cwd=repo)
+        unit = {"id": "F38", "branch": "unit/F38"}
+        with self.assertRaises(o.RecoveryConflict):
+            o.validate_recovery_worktree(unit, repo,
+                                         "refs/remotes/origin/unit/F38")
+
+
+class RealGitPushTest(unittest.TestCase):
+    """The reconciled head is what actually lands on the published branch."""
+
+    def setUp(self):
+        self.origin = tmpdir("origin-")
+        run(["git", "init", "--bare", "-q", str(self.origin)])
+        self.repo = git_repo(tmpdir("push-"))
+        run(["git", "remote", "add", "origin", str(self.origin)], cwd=self.repo)
+        (self.repo / "base.txt").write_text("base")
+        commit(self.repo, "base")
+        run(["git", "push", "-q", "origin", "HEAD:refs/heads/main"], cwd=self.repo)
+        run(["git", "fetch", "-q", "origin"], cwd=self.repo)
+        run(["git", "checkout", "-qb", "unit/F38"], cwd=self.repo)
+        (self.repo / "remote.txt").write_text("remote")
+        commit(self.repo, "remote work")
+        self.remote_tip = head(self.repo)
+        run(["git", "push", "-q", "origin", "HEAD:refs/heads/unit/F38"], cwd=self.repo)
+        run(["git", "reset", "--hard", "origin/main"], cwd=self.repo)
+        (self.repo / "local.txt").write_text("local")
+        commit(self.repo, "local work")
+        self.local_tip = head(self.repo)
+        run(["git", "fetch", "-q", "origin", "--prune"], cwd=self.repo)
+
+    def test_recovery_publishes_the_reconciled_head_under_the_pr(self):
+        unit = {"id": "F38", "status": "todo", "attempts": 2, "tokens": 1,
+                "pr": 0}
+        with in_dir(self.repo), \
+             mock.patch.object(o, "attach_worktree", lambda u: self.repo), \
+             mock.patch.object(o, "adopt_branch_unit", lambda u, s: False), \
+             mock.patch.object(o, "run_check", lambda wt: (0, "ok")), \
+             mock.patch.object(o, "find_existing_pr", lambda b: 66):
+            self.assertTrue(o.recover_branch(unit, {}, _state()))
+        merged = run(["git", "rev-parse", "HEAD"], cwd=self.repo).stdout.strip()
+        published = run(["git", "rev-parse", "refs/heads/unit/F38"],
+                        cwd=self.origin).stdout.strip()
+        # The PR's branch now holds exactly the reconciled head.
+        self.assertEqual(published, merged)
+        for tip in (self.local_tip, self.remote_tip):
+            self.assertEqual(
+                run(["git", "merge-base", "--is-ancestor", tip, published],
+                    cwd=self.origin).returncode, 0)
+        self.assertEqual(unit["pr"], 66)
+        self.assertEqual(unit["status"], "queued")
 
 
 if __name__ == "__main__":

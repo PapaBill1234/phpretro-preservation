@@ -1865,24 +1865,35 @@ def adopt_branch_unit(unit: dict, state: dict) -> bool:
     branch = unit_branch(unit)
     # GitHub is the source of truth: a merged PR is still reported under its
     # head branch name even after GitHub deletes that branch, so branch absence
-    # must never be read as "no merged delivery". This covers the ordinary
-    # ``unit/<id>`` names as well as the custom branch names the pre-pipeline
-    # board used.
+    # must never be read as "no merged delivery". The lookup is scoped to this
+    # repository and this exact head branch, and the head branch is re-checked
+    # in the result, so a foreign or mismatched PR cannot be adopted.
     pr_rc, pr_out = sh(["gh", "pr", "list", "--repo", GH_REPO, "--head", branch,
-                        "--state", "merged", "--json", "number,mergeCommit",
-                        "--jq", ".[0] | .number, .mergeCommit.oid"],
+                        "--state", "merged", "--limit", "100",
+                        "--json", "number,mergeCommit,headRefName"],
                        cwd=REPO, timeout=120)
     pr, merge_oid = 0, ""
     if pr_rc == 0 and pr_out.strip():
-        parts = pr_out.strip().split()
-        if parts and parts[0].isdigit():
-            pr = int(parts[0])
-        if len(parts) > 1:
-            merge_oid = parts[1].strip()
+        try:
+            rows = json.loads(pr_out)
+        except ValueError:
+            rows = []
+        for row in rows:
+            if row.get("headRefName") != branch:
+                continue          # explicit identity: never adopt another branch
+            try:
+                pr = int(row.get("number") or 0)
+            except (TypeError, ValueError):
+                pr = 0
+            merge_oid = (row.get("mergeCommit") or {}).get("oid") or ""
+            break
+    if not pr:
+        return False
     if merge_oid:
         if git("merge-base", "--is-ancestor", merge_oid, "origin/main")[0] != 0:
             return False
-    elif git("merge-base", "--is-ancestor", f"origin/{branch}", "origin/main")[0] != 0:
+    elif git("merge-base", "--is-ancestor", f"origin/{branch}",
+             "origin/main")[0] != 0:
         return False
     head = git_out("rev-parse", "origin/main")
     rc, out = _check_main_cached(head)
@@ -1979,10 +1990,10 @@ def validate_recovery_worktree(unit: dict, wt: Path, remote_ref: str) -> str:
     if git_out("status", "--porcelain", cwd=wt):
         raise RecoveryConflict(
             f"recovery checkout for {want} has unfinished local edits; preserved")
-    if git("rev-parse", "--verify", "--quiet", remote_ref)[0] != 0:
+    if git("rev-parse", "--verify", "--quiet", remote_ref, cwd=wt)[0] != 0:
         raise RecoveryConflict(f"remote branch {want} is missing")
     local = git_out("rev-parse", "HEAD", cwd=wt)
-    remote = git_out("rev-parse", remote_ref)
+    remote = git_out("rev-parse", remote_ref, cwd=wt)
     if not local or not remote:
         raise RecoveryConflict(f"cannot resolve the heads of {want}")
     if local == remote:
@@ -2683,16 +2694,21 @@ def dispatch(roadmap: dict, state: dict) -> None:
     jobs = []
     for u in batch:
         try:
-            pr = find_existing_pr(unit_branch(u))
+            branch = unit_branch(u)
+            # find_existing_pr() is scoped to this repository and this exact
+            # head branch (open PRs only), so a foreign or closed PR can never
+            # match. The unit is only ROUTED into the merge queue here, which
+            # re-runs the rebase, scripts/check.sh, the quality gate and
+            # independent review on the exact head before anything merges.
+            pr = find_existing_pr(branch)
             if pr:
                 # Never start a duplicate delivery: an open PR already exists
-                # for this branch, so adopt it into the merge queue instead of
-                # building a second one.
+                # for this branch, so queue it instead of building a second one.
                 u["pr"] = pr
                 u["status"] = "queued"
-                u["reason"] = f"reused existing open PR #{pr}; not rebuilt"
-                event(state, f"{u['id']}: open PR #{pr} already exists; queued, "
-                             f"not rebuilt")
+                u["reason"] = f"reused existing open PR #{pr} for {branch}; not rebuilt"
+                event(state, f"{u['id']}: open PR #{pr} for {branch} already "
+                             f"exists; queued for the gate, not rebuilt")
                 continue
             jobs.append(start_build(u, state, roadmap))
         except (control.IntegrityError, DeliveryUnavailable):
