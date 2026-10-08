@@ -32,10 +32,16 @@ class ScriptedGit:
     ``relations`` maps a branch name to how its worktree relates to the remote:
     ``ahead`` (remote head is an ancestor of HEAD), ``behind`` (HEAD is an
     ancestor of the remote), ``diverged`` (neither) or ``current`` (identical).
+    ``merge_rc`` is what a diverged-history reconciliation merge returns;
+    ``dirty`` is what ``status --porcelain`` reports for the worktree.
     """
 
-    def __init__(self, relations: dict):
+    def __init__(self, relations: dict, merge_rc: int = 0, dirty: str = "",
+                 push_rc: int = 0):
         self.relations = relations
+        self.merge_rc = merge_rc
+        self.dirty = dirty
+        self.push_rc = push_rc
         self.git_calls: list = []
         self.git_out_calls: list = []
         self.head = "a" * 40
@@ -49,6 +55,12 @@ class ScriptedGit:
 
     def git(self, *args, cwd=None, timeout=None):
         self.git_calls.append(args)
+        if args[:1] == ("push",):
+            return (self.push_rc, "rejected" if self.push_rc else "")
+        if "merge" in args:
+            if "--abort" in args or "--ff-only" in args:
+                return (0, "")
+            return (self.merge_rc, "CONFLICT" if self.merge_rc else "")
         branch = self._branch(args)
         relation = self.relations.get(branch)
         if args[:2] == ("merge-base", "--is-ancestor") and relation:
@@ -65,6 +77,8 @@ class ScriptedGit:
 
     def git_out(self, *args, cwd=None, timeout=None):
         self.git_out_calls.append(args)
+        if args[:2] == ("status", "--porcelain"):
+            return self.dirty
         if args[:2] == ("rev-list", "--count"):
             return "1" if self._branch(args) else ""
         if args[:2] == ("rev-parse", "--abbrev-ref"):
@@ -77,26 +91,52 @@ class ScriptedGit:
 
 
 class DivergedHistoryTest(unittest.TestCase):
-    """Local 4 commits / remote 1: publishing would need a force-push."""
+    """Local 4 commits / remote 1: both histories must survive."""
 
-    def test_diverged_worktree_raises_a_unit_conflict(self):
-        unit = {"id": "F38", "status": "todo", "attempts": 2, "tokens": 554087,
-                "pr": 0}
-        git = ScriptedGit({"unit/F38": "diverged"})
-        pushed = mock.Mock(side_effect=AssertionError("must not push"))
+    def _recover(self, git, unit, pushed):
         with mock.patch.object(o, "git", git.git), \
              mock.patch.object(o, "git_out", git.git_out), \
              mock.patch.object(o, "attach_worktree", lambda u: tmpdir("f38-")), \
              mock.patch.object(o, "adopt_branch_unit", lambda u, s: False), \
+             mock.patch.object(o, "run_check", lambda wt: (0, "ok")), \
+             mock.patch.object(o, "find_existing_pr", lambda b: 66), \
              mock.patch.object(o, "push_and_open_pr", pushed):
-            with self.assertRaises(o.RecoveryConflict) as ctx:
-                o.recover_branch(unit, {}, _state())
-        self.assertIn("diverged", str(ctx.exception))
+            return o.recover_branch(unit, {}, _state())
+
+    def test_conflicting_merge_is_a_unit_conflict(self):
+        unit = {"id": "F38", "status": "todo", "attempts": 2, "tokens": 554087,
+                "pr": 0}
+        git = ScriptedGit({"unit/F38": "diverged"}, merge_rc=1)
+        pushed = mock.Mock(side_effect=AssertionError("must not push"))
+        with self.assertRaises(o.RecoveryConflict) as ctx:
+            self._recover(git, unit, pushed)
+        self.assertIn("both histories preserved", str(ctx.exception))
         pushed.assert_not_called()
-        # Nothing was recorded as recovered and no counter moved.
         self.assertEqual(unit["attempts"], 2)
         self.assertEqual(unit["tokens"], 554087)
         self.assertNotEqual(unit.get("status"), "queued")
+
+    def test_clean_merge_reconciles_both_histories(self):
+        unit = {"id": "F38", "status": "todo", "attempts": 2, "tokens": 554087,
+                "pr": 0}
+        git = ScriptedGit({"unit/F38": "diverged"}, merge_rc=0)
+        pushed = mock.Mock(side_effect=AssertionError("must not push"))
+        self.assertTrue(self._recover(git, unit, pushed))
+        self.assertEqual(unit["status"], "queued")
+        self.assertEqual(unit["pr"], 66)
+        self.assertIn("merged", unit["reason"])
+        # The reconciliation was an ordinary merge commit, never a force-push.
+        self.assertTrue(any("merge" in call for call in git.git_calls))
+
+    def test_dirty_recovery_checkout_is_preserved_not_pushed(self):
+        unit = {"id": "F38", "status": "todo", "attempts": 2, "tokens": 1,
+                "pr": 0}
+        git = ScriptedGit({"unit/F38": "ahead"}, dirty=" M internal/staff/x.go")
+        pushed = mock.Mock(side_effect=AssertionError("must not push"))
+        with self.assertRaises(o.RecoveryConflict) as ctx:
+            self._recover(git, unit, pushed)
+        self.assertIn("unfinished local edits", str(ctx.exception))
+        pushed.assert_not_called()
 
 
 class ExistingPrTest(unittest.TestCase):
@@ -190,6 +230,25 @@ class GitHubLookupTest(unittest.TestCase):
         with mock.patch.object(o, "sh", lambda *a, **k: (0, "66\n")):
             self.assertEqual(o.find_existing_pr("unit/F38"), 66)
 
+    def test_rejected_push_is_a_unit_conflict(self):
+        unit = {"id": "F38", "status": "todo", "attempts": 1, "tokens": 1}
+        git = ScriptedGit({}, push_rc=1)
+        with mock.patch.object(o, "git", git.git), \
+             mock.patch.object(o, "find_existing_pr", lambda b: 0):
+            with self.assertRaises(o.RecoveryConflict):
+                o.push_and_open_pr(unit, tmpdir("f38-"), "ok", _state())
+
+    def test_pr_creation_failure_defers_and_is_not_a_unit_failure(self):
+        """gh pr create failing is a provider problem, not a unit conflict."""
+        unit = {"id": "F38", "status": "todo", "attempts": 1, "tokens": 1}
+        git = ScriptedGit({})
+        with mock.patch.object(o, "git", git.git), \
+             mock.patch.object(o, "sh",
+                               mock.Mock(return_value=(1, "HTTP 500 from the API"))), \
+             mock.patch.object(o, "find_existing_pr", lambda b: 0):
+            with self.assertRaises(o.DeliveryUnavailable):
+                o.push_and_open_pr(unit, tmpdir("f38-"), "ok", _state())
+
 
 class RecoverUnitsTest(unittest.TestCase):
     """One unit's conflict must not stop an unrelated unit."""
@@ -203,7 +262,7 @@ class RecoverUnitsTest(unittest.TestCase):
         }
         state = _state()
         history: dict = {}
-        git = ScriptedGit({"unit/F38": "diverged"})
+        git = ScriptedGit({"unit/F38": "diverged"}, merge_rc=1)
         real_recover = o.recover_branch
 
         def recover(unit, hist, st):
@@ -217,6 +276,8 @@ class RecoverUnitsTest(unittest.TestCase):
              mock.patch.object(o, "recover_branch", recover), \
              mock.patch.object(o, "attach_worktree", lambda u: tmpdir("f38-")), \
              mock.patch.object(o, "adopt_branch_unit", lambda u, s: False), \
+             mock.patch.object(o, "run_check", lambda wt: (0, "ok")), \
+             mock.patch.object(o, "find_existing_pr", lambda b: 0), \
              mock.patch.object(o, "record_history",
                                lambda u, outcome: history.__setitem__(
                                    u["id"], {"outcome": outcome})), \

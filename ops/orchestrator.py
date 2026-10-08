@@ -1357,12 +1357,15 @@ def push_and_open_pr(unit: dict, wt: Path, check_out: str, state: dict) -> int:
                  cwd=wt, timeout=180)
     m = re.search(r"/pull/(\d+)", out)
     if rc != 0 or not m:
-        # A concurrent creation may have won the race: reuse that PR rather
-        # than raising a duplicate.
+        # A concurrent creation may have won the race: reuse that PR rather than
+        # raising a duplicate. Otherwise this is a GitHub/provider problem, not a
+        # confirmed Git/history conflict, so it defers the cycle
+        # (DeliveryUnavailable) instead of being recorded as a unit failure.
         existing = find_existing_pr(branch)
         if existing:
             return existing
-        raise RecoveryConflict(f"cannot open PR for {branch}: {tail(out, 4)}")
+        raise DeliveryUnavailable(
+            f"gh pr create failed for {branch}: {tail(out, 4)}")
     return int(m.group(1))
 
 
@@ -1955,16 +1958,24 @@ def validate_recovery_worktree(unit: dict, wt: Path, remote_ref: str) -> str:
     """Check a reused worktree against its remote before recovery uses it.
 
     Returns how the worktree HEAD relates to the published branch:
-    ``current`` (identical), ``ahead`` (a normal fast-forward push is safe) or
-    ``behind`` (the worktree was fast-forwarded onto the remote; nothing was
-    lost). Raises ``RecoveryConflict`` when the worktree is on another branch
-    or has diverged from the remote - publishing that would need a force-push
-    or would drop one of the two histories.
+    ``current`` (identical), ``ahead`` (a normal fast-forward push is safe),
+    ``behind`` (the worktree was fast-forwarded onto the remote) or ``merged``
+    (both histories were joined with an ordinary merge commit). Raises
+    ``RecoveryConflict`` when the worktree is on another branch, holds
+    unfinished local edits, or cannot be joined with the remote without a
+    force-push or dropping one side's history.
+
+    This is deliberately the same protection the unmerged maintenance-C
+    candidate carried (never push an unexamined checkout over remote work,
+    retain both histories), incorporated here rather than deployed from there.
     """
     want = unit_branch(unit)
     have = git_out("rev-parse", "--abbrev-ref", "HEAD", cwd=wt)
     if have != want:
         raise RecoveryConflict(f"worktree is on {have!r}, not {want!r}")
+    if git_out("status", "--porcelain", cwd=wt):
+        raise RecoveryConflict(
+            f"recovery checkout for {want} has unfinished local edits; preserved")
     if git("rev-parse", "--verify", "--quiet", remote_ref)[0] != 0:
         raise RecoveryConflict(f"remote branch {want} is missing")
     local = git_out("rev-parse", "HEAD", cwd=wt)
@@ -1981,9 +1992,18 @@ def validate_recovery_worktree(unit: dict, wt: Path, remote_ref: str) -> str:
         if rc != 0:
             raise RecoveryConflict(f"cannot fast-forward {want}: {tail(out, 4)}")
         return "behind"
-    raise RecoveryConflict(
-        f"{want} has diverged from origin/{want} (local {local[:12]}, "
-        f"remote {remote[:12]}); a force-push would drop one history")
+    # Diverged: join BOTH histories with an ordinary merge commit, after which
+    # the push is a normal fast-forward. Never a force-push, never a dropped
+    # history; a conflicting merge parks the unit with both sides preserved.
+    rc, out = git("-c", "user.name=phpretro-ops",
+                  "-c", "user.email=ops@users.noreply.github.com",
+                  "merge", "--no-edit", remote_ref, cwd=wt)
+    if rc != 0:
+        git("merge", "--abort", cwd=wt)
+        raise RecoveryConflict(
+            f"remote branch recovery conflict for {want}; "
+            f"both histories preserved")
+    return "merged"
 
 
 def recover_units(roadmap: dict, history: dict, state: dict) -> None:
