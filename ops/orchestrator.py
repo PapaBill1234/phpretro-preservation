@@ -1328,10 +1328,16 @@ def find_existing_pr(branch: str) -> int:
         raise DeliveryUnavailable(f"PR lookup failed for {branch}; dispatch deferred")
     try:
         rows = json.loads(out or "[]")
-    except ValueError:
-        rows = []
+    except ValueError as exc:
+        # Malformed output is a provider/protocol failure, never "no PR exists":
+        # treating it as empty would let a duplicate PR be created.
+        raise DeliveryUnavailable(
+            f"PR lookup returned unreadable output for {branch}; dispatch deferred") from exc
+    if not isinstance(rows, list):
+        raise DeliveryUnavailable(
+            f"PR lookup returned unexpected output for {branch}; dispatch deferred")
     for row in rows:
-        if row.get("headRefName") != branch:
+        if not isinstance(row, dict) or row.get("headRefName") != branch:
             continue              # explicit identity: never reuse another branch
         try:
             return int(row.get("number"))
@@ -1885,13 +1891,23 @@ def adopt_branch_unit(unit: dict, state: dict) -> bool:
                         "--json", "number,mergeCommit,headRefName"],
                        cwd=REPO, timeout=120)
     pr, merge_oid = 0, ""
+    # A failed gh call here is a provider outage; `reconcile_deliveries()` runs
+    # earlier in the cycle, is authoritative for merged deliveries and defers the
+    # whole cycle when GitHub is unavailable, so adoption simply declines rather
+    # than raising out of select_ready()/dispatch(). Malformed output, however,
+    # must never be read as "no merged delivery": that is a protocol failure and
+    # raises.
     if pr_rc == 0 and pr_out.strip():
         try:
             rows = json.loads(pr_out)
-        except ValueError:
-            rows = []
+        except ValueError as exc:
+            raise DeliveryUnavailable(
+                f"merged-PR lookup returned unreadable output for {branch}") from exc
+        if not isinstance(rows, list):
+            raise DeliveryUnavailable(
+                f"merged-PR lookup returned unexpected output for {branch}")
         for row in rows:
-            if row.get("headRefName") != branch:
+            if not isinstance(row, dict) or row.get("headRefName") != branch:
                 continue          # explicit identity: never adopt another branch
             try:
                 pr = int(row.get("number") or 0)

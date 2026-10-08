@@ -307,6 +307,14 @@ class GitHubLookupTest(unittest.TestCase):
         with mock.patch.object(o, "sh", lambda *a, **k: (0, payload)):
             self.assertEqual(o.find_existing_pr("unit/F38"), 0)
 
+    def test_malformed_lookup_output_defers(self):
+        """Unreadable gh output is a provider failure, never "no PR exists"."""
+        for payload in ("not json", "{\"unexpected\": true}", "null"):
+            with self.subTest(payload=payload):
+                with mock.patch.object(o, "sh", lambda *a, **k: (0, payload)):
+                    with self.assertRaises(o.DeliveryUnavailable):
+                        o.find_existing_pr("unit/F38")
+
     def test_rejected_push_is_a_unit_conflict(self):
         unit = {"id": "F38", "status": "todo", "attempts": 1, "tokens": 1}
         git = ScriptedGit({}, push_rc=1)
@@ -473,6 +481,22 @@ class DispatchGuardTest(unittest.TestCase):
     def test_adopt_returns_false_without_a_merged_pr(self):
         unit = {"id": "F38", "status": "todo", "attempts": 0, "pr": 0}
         with mock.patch.object(o, "sh", lambda *a, **k: (0, "[]")), \
+             mock.patch.object(o, "git", lambda *a, **k: (1, "")), \
+             mock.patch.object(o, "git_out", lambda *a, **k: "f" * 40):
+            self.assertFalse(o.adopt_branch_unit(unit, _state()))
+
+    def test_adopt_defers_on_malformed_output_but_declines_on_outage(self):
+        """Malformed output is a protocol failure; a plain outage declines.
+
+        An outright gh outage is already turned into a deferred cycle by
+        reconcile_deliveries(), so adoption only has to refuse to read
+        unreadable output as "no merged delivery".
+        """
+        unit = {"id": "F38", "status": "todo", "attempts": 0, "pr": 0}
+        with mock.patch.object(o, "sh", lambda *a, **k: (0, "not json")):
+            with self.assertRaises(o.DeliveryUnavailable):
+                o.adopt_branch_unit(unit, _state())
+        with mock.patch.object(o, "sh", lambda *a, **k: (1, "HTTP 500")), \
              mock.patch.object(o, "git", lambda *a, **k: (1, "")), \
              mock.patch.object(o, "git_out", lambda *a, **k: "f" * 40):
             self.assertFalse(o.adopt_branch_unit(unit, _state()))
