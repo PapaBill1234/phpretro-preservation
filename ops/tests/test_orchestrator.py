@@ -99,20 +99,23 @@ class DiffGuardTest(unittest.TestCase):
 class PlannerOutputTest(unittest.TestCase):
     def test_replacement_paths_gain_the_mandatory_doc(self):
         plan = ('units:\n  - id: F9a\n    title: "p1"\n    size: S\n'
-                '    paths: [internal/big/a.go]\n')
+                '    paths: [internal/big/a.go]\n    acceptance: ["works"]\n'
+                '    tests: ["go test ./..."]\n')
         road = {}
         self.assertTrue(o.apply_planner_output(road, {}, {}, plan, old_id="F9", mode="split"))
         self.assertIn("docs/units/F9a.md", road["F9a"]["paths"])
 
     def test_size_l_replacement_rejected(self):
         plan = ('units:\n  - id: F9c\n    title: "too big"\n    size: L\n'
-                '    paths: [internal/big/c.go]\n')
+                '    paths: [internal/big/c.go]\n    acceptance: ["works"]\n'
+                '    tests: ["go test ./..."]\n')
         self.assertFalse(o.apply_planner_output({}, {}, {}, plan, old_id="F9", mode="split"))
 
     def test_oversized_split_rejected(self):
         many = "units:\n" + "".join(
             f'  - id: F9{i}\n    title: "p{i}"\n    size: S\n'
-            f'    paths: [internal/big/{i}.go]\n' for i in range(o.SPLIT_MAX_UNITS + 1))
+            f'    paths: [internal/big/{i}.go]\n    acceptance: ["works"]\n'
+            f'    tests: ["go test ./..."]\n' for i in range(o.SPLIT_MAX_UNITS + 1))
         self.assertFalse(o.apply_planner_output({}, {}, {}, many, old_id="F9", mode="split"))
 
 
@@ -144,11 +147,18 @@ class AdvisoryUnitsTest(unittest.TestCase):
         self.assertEqual([u["id"] for u in o.select_ready(road, _free_state())], ["F99"])
 
     def test_promotion_outranks_advisory_qa(self):
+        contract = tmpdir("approved-promotion-") / "contract.md"
+        contract.write_text("Approved bounded synthetic contract.\n")
         road = {"QA9": {"id": "QA9", "status": "todo", "kind": "audit-fix",
                         "paths": ["p/q"], "tokens": 0},
-                "F32": {"id": "F32", "status": "design", "planner_retries": 0}}
-        self.assertTrue(o.planner_pending(road))
-        self.assertEqual(o.select_ready(road, _free_state()), [])
+                "F32": {"id": "F32", "status": "design", "planner_retries": 0,
+                        "planning_ready": True, "planning_context": "contract.md",
+                        "planning_paths": ["p/f"], "planning_acceptance": ["done"],
+                        "planning_tests": ["test done"]}}
+        from unittest.mock import patch
+        with patch.object(o, "REPO", contract.parent):
+            self.assertTrue(o.planner_pending(road))
+            self.assertEqual(o.select_ready(road, _free_state()), [])
 
     def test_advisory_runs_once_nothing_can_be_promoted(self):
         road = {"QA9": {"id": "QA9", "status": "todo", "kind": "audit-fix",
@@ -179,11 +189,12 @@ class PlannerStarvationTest(unittest.TestCase):
         state = {"events": [], "tokens_today": 0}
         road = {"QA3": {"id": "QA3", "status": "todo", "kind": "audit-fix",
                         "depends_on": ["QA1"], "tokens": 0},
-                "QA1": {"id": "QA1", "kind": "audit-fix", "status": "parked"},
+                "QA1": {"id": "QA1", "kind": "audit-fix", "status": "parked",
+                        "blocked_reason": "no approved contract"},
                 "F32": {"id": "F32", "status": "design", "depends_on": [],
                         "design_doc": "", "planner_retries": 0}}
-        self.assertTrue(o.maybe_plan(road, state))
-        self.assertTrue(any(e["msg"].startswith("F32: planner") for e in state["events"]))
+        self.assertFalse(o.maybe_plan(road, state))
+        self.assertEqual(o.select_ready(road, _free_state()), [])
 
     def test_ready_advisory_todo_does_not_starve_promotion(self):
         # The live regression: QA3 became deps-merged and blocked promotion.
@@ -192,8 +203,8 @@ class PlannerStarvationTest(unittest.TestCase):
                         "depends_on": [], "tokens": 0},
                 "F32": {"id": "F32", "status": "design", "depends_on": [],
                         "design_doc": "", "planner_retries": 0}}
-        self.assertTrue(o.maybe_plan(road, state))
-        self.assertTrue(any(e["msg"].startswith("F32: planner") for e in state["events"]))
+        self.assertFalse(o.maybe_plan(road, state))
+        self.assertEqual([u["id"] for u in o.select_ready(road, _free_state())], ["QA3"])
 
 
 class SplitDeadlockTest(unittest.TestCase):

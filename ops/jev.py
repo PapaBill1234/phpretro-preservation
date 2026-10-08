@@ -694,14 +694,14 @@ def summary() -> dict:
         "skipped_reviews": int(st.get("skipped_reviews", 0)),
         "misses": int(st.get("misses", 0)),
         "miss_units": st.get("miss_units", []),
-        "key_present": bool(api_key()),
+        "key_present": None,  # Status must never open credential files.
     }
 
 
 def report_lines() -> list:
     """STATE.md lines for the Jev section (item 3 + item 4)."""
     s = summary()
-    if not s["key_present"] and all(s["enabled"].values()) and not s["calls"]:
+    if s["key_present"] is False and all(s["enabled"].values()) and not s["calls"]:
         return ["- not active: no OPENROUTER_API_KEY configured (see below)",
                 "- calls: 0; estimated spend: $0.00; decisions changed: 0",
                 "- (a) size check, (b) triage, (c) review skip all use the "
@@ -720,9 +720,11 @@ def report_lines() -> list:
         f"- skipped reviews: {s['skipped_reviews']}; misses: {s['misses']}"
         + (f" ({', '.join(s['miss_units'][-5:])})" if s['miss_units'] else ""),
     ]
-    if not s["key_present"]:
+    if s["key_present"] is False:
         lines.append("- no OPENROUTER_API_KEY: Jev is skipping and the rules are "
                      "in use (setup steps below)")
+    if s["key_present"] is None:
+        lines.append("- credential availability: not probed by status reporting")
     return lines
 
 

@@ -1,8 +1,7 @@
 # ops/ - the autonomous unit pipeline
 
 Decisions are made by `ops/orchestrator.py` (a script, zero tokens). Agents
-only write, review or plan code. Tests are the gate; a merge queue replaces
-SHA-bound approvals.
+only write, review or plan code. Tests, scope and quality checks plus independent exact-head reviews gate a serial merge queue. A merged scaffold is not proof of capture parity.
 
 ## What runs
 
@@ -68,7 +67,7 @@ write a throwaway harness.** The one-off scripts that verified the diff guard,
 the planner pass, the advisory rule and the timeout accounting live in this
 directory now.
 
-## Token Terminator on the builder profile (context engine)
+## Token Terminator status (optional context engine)
 
 `ops/tt_guard.py` guards the optional Token Terminator context engine, which is
 selected for the **builder profile only** (`context.engine` in the builder's
@@ -80,19 +79,10 @@ selected for the **builder profile only** (`context.engine` in the builder's
   profile (`profiles/<p>/token-terminator/artifacts.sqlite3`, opened read-only)
   and is true only when the engine staged context for **that run's session**.
   Savings are never credited on an inactive path.
-* **Guard.** Cost is billed cost per **merged** unit over **all** its attempts
-  (failed, timed-out, retried) plus its reviews. A unit with any unknown attempt
-  cost is `null`, never `0`, and is excluded from the median. The next 6 merged
-  units are compared with the previous 6; if the median cost per merged unit is
-  not >= 15% lower, or first-attempt success fell, the engine is deselected and
-  uninstalled. Two units showing missing-context symptoms (the same file read to
-  exhaustion in one attempt) also force a revert. `ops/orchestrator.py` runs this
-  before dispatch each cycle and records the verdict in `state/tt.json` and the
-  STATE.md section "Token Terminator (builder context engine)".
-
-`python3 ops/tt_guard.py --check` prints the verdict; `--selftest` runs the
-deterministic checks. The engine is judgement-day-optional: reverting it restores
-`compressor` and the pipeline keeps running.
+The former automatic removal guard is intentionally not run by the controller.
+Historical comparison helpers remain in `ops/tt_guard.py`; they cannot prove
+savings without matched accepted-unit costs and complete usage. The current
+cycle keeps telemetry and does not modify the Hermes context-engine selection.
 
 ## Weekly audit and the consistency unit
 
@@ -108,7 +98,7 @@ deterministic checks. The engine is judgement-day-optional: reverting it restore
   findings and aligns package structure. It is a normal roadmap entry and goes
   through `check.sh` and the quality safeguards like any other.
 
-The orchestrator makes **at most one agent call per cycle**: a nightly fix, an
+The orchestrator makes **at most one planning/audit call per cycle**: a nightly fix, an
 audit, or the ordinary planner pass - in that priority order.
 
 ## The Quality section in STATE.md
@@ -125,16 +115,14 @@ holds an API key or a prompt; a scrubber drops credential-looking fields.
 
 | File | One line per | Notes |
 | --- | --- | --- |
-| `runs.jsonl` | model call / agent run | ts_start, ts_end, unit, attempt, role (builder/reviewer/planner/audit/jev/other), model, provider, input/output/cached tokens, api_calls, cost_estimate, rc, outcome, flags. The raw usage-file object is kept in `usage`. An unknown value is `null`, never 0, with `tokens_pessimistic` alongside. |
+| `runs.jsonl` | model call / agent run | ts_start, ts_end, unit, attempt, role (builder/reviewer/planner/audit/jev/other), model, provider, input/output/cached tokens, api_calls, cost_estimate, rc, outcome, flags. Only whitelisted typed usage counters and billing metadata are kept in `usage`. An unknown value is `null`, never 0, with `tokens_pessimistic` alongside. |
 | `events.jsonl` | state change | dispatched, built, gate_pass, gate_fail, pr_opened, review_verdict, merged, parked, split, escalated, timeout, provider_error, guard_disabled. Each has `ts`, `unit`, a short `reason`. |
 | `nightly.json` | - | `{integration: {ts,pass,details}, selfcheck: {ts,pass,details}}`. |
 | `nightly-history.jsonl` | nightly run | appended every run. |
 | `prices.yaml` | - | per-model input/output prices, with a `note` saying the unit is uncalibrated. |
 
 Every log **rotates monthly** (`runs-2026-09.jsonl`): the old month is moved
-aside whole, never edited. `cost_estimate` comes from the usage file when it
-carries a real cost, else from `prices.yaml`; when a price is null the estimate
-is `null`, never 0.
+aside whole, never edited. `cost_estimate` uses complete recorded estimates or `prices.yaml`; missing prices or partial usage produce `null`, never zero. Provider USD estimates and uncalibrated price-table units are labelled separately. Input excludes cache buckets; output includes reasoning. Cache read/write are priced separately without double counting.
 
 `STATE.md` reads its numbers from these logs: today's tokens and the per-unit
 totals come from `runs.jsonl` (the state counter is only a fallback), the
@@ -161,8 +149,7 @@ integration check or self-check failed twice in a row; disk over 85%.
 Alerts go out on **ntfy**, the lightest Hermes platform: no account, no token,
 no daemon on the public server. Inject a test failure with
 `PHPRETRO_ALERT_TOPIC=<topic>`, or set `NTFY_TOPIC` in `~/.hermes/.env`; the
-orchestrator prints the subscribe steps and the topic in `STATE.md` under
-"## Alerts". `python3 ops/nightly.py --alerts --force-alert` re-sends an
+status report shows configuration status without reading credential files or displaying private topics. `python3 ops/nightly.py --alerts --force-alert` re-sends an
 existing condition; the same unchanged condition is otherwise re-nagged at most
 every `PHPRETRO_ALERT_RENAG` seconds (default 6h).
 
@@ -170,7 +157,7 @@ every `PHPRETRO_ALERT_RENAG` seconds (default 6h).
 
 1. `git fetch`; load `units.yaml` plus the live state.
 2. Ready units: `depends_on` all `merged`, paths disjoint from every unit
-   already running. Up to `MAX_PARALLEL=4` builders start in their own
+   already running. By default `MAX_PARALLEL=1` builder starts in its own
    worktree `~/work/<id>` on branch `unit/<id>`.
 3. Builder runs headless (`hermes -z`, approvals bypassed, 25-minute cap).
    Tests first, then implementation, then `scripts/check.sh`.
@@ -178,16 +165,13 @@ every `PHPRETRO_ALERT_RENAG` seconds (default 6h).
    becomes the next attempt's feedback.
 5. On pass: push, open PR, run the reviewer once for a JSON verdict. Only
    `severity: blocker` findings go back to the builder, one round maximum.
-6. Merge queue under a lock: rebase on `main`, re-run `check.sh`, merge with
-   `gh`. A conflict goes back to the same builder once.
+6. Merge queue under a lock: merge current `main` into the published branch, re-run gates and exact-head reviews, ordinary push, then merge with `gh`. Published history is never force-pushed or rewritten. Reviewer fixes return to a builder on the existing PR.
 7. Ladder on repeated failure: luna x2, deepseek-v4.1-flash x1, gpt-6.1-sol
    x1, then `parked` with the reason recorded. A parked unit gets at most 2
    planner retries, then `parked-final`.
-8. When nothing is ready and design/parked units exist, the planner promotes a
-   design unit into a full entry (splitting any `size: L`) or rewrites a parked
-   unit.
-9. Limits: per-run timeout, max attempts, `MAX_PARALLEL`, 12 merged units/day,
-   60M tokens/day, 6M tokens per unit, and `~/phpretro-ops/STOP` halts all
+8. Design promotion requires an explicitly approved bounded planning contract, paths, tests, acceptance and full readable context. Reserved unfilled designs remain ineligible; parked repairs preserve history.
+9. Limits: per-run timeout, max attempts, `MAX_PARALLEL`, 30 merged units/day (reverted to 12 after nightly failures),
+   60M tokens/day, 3M tokens per unit across all roles, and `~/phpretro-ops/STOP` halts all
    dispatch.
 
 ## Models and approvals
@@ -195,7 +179,7 @@ every `PHPRETRO_ALERT_RENAG` seconds (default 6h).
 - builder: `gpt-6-luna`. reviewer: `deepseek-v4.1-flash`. planner:
   `deepseek-v4.1-flash`. `gpt-6.1-sol` only in the ladder's last step, for a
   planner run on a unit with unclear semantics, and as a second reviewer for
-  diffs touching auth, sessions or schema.
+  diffs touching auth, sessions or schema only when its family is independent of the author and first reviewer. Approved routes currently provide two families; a required third-family sensitive review stays blocked. Never add an unauthorized fallback or waive review.
 - The reviewer is never the author's family: if deepseek wrote the code, luna
   reviews it and vice versa (`ops/orchestrator.py:reviewer_model_for`).
 - Headless approvals are configured so no prompt can wait: `single_query_mode:
@@ -229,6 +213,7 @@ bash ops/setup/configure-profiles.sh
 mkdir -p ~/phpretro-ops/{state,logs}
 sudo cp ops/systemd/phpretro-orchestrator.* ops/systemd/phpretro-nightly.* ops/systemd/phpretro-alerts.* /etc/systemd/system/
 sudo systemctl daemon-reload
+sudo loginctl enable-linger ubuntu
 sudo systemctl enable --now phpretro-orchestrator.timer
 sudo systemctl enable --now phpretro-nightly.timer
 sudo systemctl enable --now phpretro-alerts.timer
@@ -237,3 +222,29 @@ sudo systemctl enable --now phpretro-alerts.timer
 To receive alerts, set `NTFY_TOPIC` (and `NTFY_PUBLISH_TOPIC`) in
 `~/.hermes/.env` to a topic you subscribe to in the ntfy phone app. Nothing
 else is required - no account, no token, no daemon.
+
+## Frozen repair and restart (2026-10-08)
+
+Keep STOP and all three timers disabled during repair. Paid runs now use a
+private stdlib supervisor and a UUID-named user systemd service with
+KillMode=control-group, so detached terminal sessions are stopped too. Linger
+and an available ubuntu user manager are required without a desktop login.
+Cancellation persists a launch-denial marker, drains the requester, then stops
+the service before reading final usage. Recovery never relaunches a receipt;
+it settles unique run IDs once. Unknown/partial usage stays labelled with a
+conservative token floor and unknown cost. Provider failures back off and admit
+one half-open builder after the deadline rather than pausing forever.
+
+After verifying the maintenance PR and merge SHA, back up live state, apply
+`ops/repair_state.py --pr NUMBER --commit FULL_SHA` with STOP present, then run
+`python3 ops/orchestrator.py --once --no-dispatch`, the ops suite,
+`bash scripts/check.sh` and `python3 ops/nightly.py --integration --selfcheck`.
+No alerts or paid roles are needed. Nightly integration is a synthetic route
+smoke check, not capture verification. Jev a/b are off for the baseline;
+review skipping c and jev_gate remain disabled. See
+`docs/roadmap/restart-contracts.md` for the approved next units. Never reset
+counters or recover blocked, split or reviewer-fix PRs unchanged.
+Only after clean checks, remove STOP and enable the three timers. A failed
+first paid provider cycle must pause for receipt review. Hermes implements
+approved units; Codex owns controller repairs. See REPAIR-20261008.md for the
+repair evidence and remaining limitations.

@@ -15,6 +15,7 @@ import telemetry as tel
 def unit(uid="X", **kw):
     return {"id": uid, "title": "fixture", "size": "S", "status": "todo",
             "paths": ["internal/x"], "depends_on": [], "tokens": 0,
+            "acceptance": ["synthetic behavior"], "tests": ["go test ./internal/x/..."],
             "attempts": 0, "model": o.MODEL["luna"], **kw}
 
 
@@ -87,14 +88,14 @@ class ReviewBoundary(Isolated):
             return "1"
         return ""
 
-    def test_outage_retries_once_on_other_family(self):
+    def test_outage_retry_keeps_author_independence_without_unapproved_route(self):
         u, st = unit(attempts=1), state()
         response = [(124, "", {"total_tokens": 10}), (0, '{"verdict":"pass","findings":[]}', {"total_tokens": 20})]
         with patch.object(o, "git_out", side_effect=self.git_value), patch.object(o, "hermes_run", side_effect=response) as run:
             self.assertEqual(o.run_review(u, self.repo, st, u["model"])[0], "pass")
         self.assertEqual(run.call_count, 2)
         models = [r.args[1] for r in run.call_args_list]
-        self.assertNotEqual(c.model_family(models[0]), c.model_family(models[1]))
+        self.assertEqual(models, [o.MODEL["deepseek"], o.MODEL["deepseek"]])
         self.assertNotEqual(c.model_family(u["model"]), c.model_family(models[1]))
         self.assertEqual(u["review_head"], "reviewed-head")
         self.assertEqual(st["tokens_today"], 30)
@@ -127,9 +128,8 @@ class ReviewBoundary(Isolated):
     def test_sensitive_second_review_never_uses_author_family(self):
         u = unit(attempts=4, model=o.MODEL["sol"], review_model=o.MODEL["deepseek"])
         with patch.object(o, "git_out", side_effect=self.git_value), patch.object(o, "hermes_run", return_value=(0, '{"verdict":"pass","findings":[]}', {"total_tokens": 1})) as run:
-            self.assertEqual(o.run_second_review(u, self.repo, state())[0], "pass")
-        self.assertNotEqual(c.model_family(run.call_args.args[1]), c.model_family(u["model"]))
-        self.assertNotEqual(c.model_family(run.call_args.args[1]), c.model_family(u["review_model"]))
+            self.assertEqual(o.run_second_review(u, self.repo, state())[0], "unavailable")
+        run.assert_not_called()  # Two configured families cannot supply a third.
 
     def test_changed_head_discards_approval(self):
         u = unit(attempts=1)
@@ -170,7 +170,7 @@ class ReviewBoundary(Isolated):
                 self.assertFalse(o.ensure_reviewed(u, self.repo, st))
                 self.assertNotEqual(u.get("review_verdict"), "pass")
 
-    def test_malformed_review_retries_working_alternate_family_route(self):
+    def test_malformed_review_retries_only_author_independent_approved_routes(self):
         u, st = unit(model=o.MODEL["sol"]), state()
         models = []
         def reviewer(profile, model, *args, **kwargs):
@@ -179,7 +179,7 @@ class ReviewBoundary(Isolated):
         with patch.object(o, "git_out", side_effect=self.git_value), patch.object(o, "hermes_run", side_effect=reviewer):
             verdict, _, _ = o.validated_review(u, self.repo, st, o.MODEL["deepseek"], "review")
         self.assertEqual(verdict, "pass")
-        self.assertEqual(models, [o.MODEL["deepseek"], "claude-sonnet-5-5"])
+        self.assertEqual(models, [o.MODEL["deepseek"], o.MODEL["deepseek"]])
         self.assertTrue(o.approval_valid(u, "review", "reviewed-head"))
 
     def test_merge_refusal_parks_without_protection_mutation(self):
@@ -353,8 +353,10 @@ class Admission(Isolated):
             for n in range(3):
                 o.note_provider(st, True)
                 self.assertGreater(st["provider_retry_at"], 1000)
-        with patch.object(o.time, "time", return_value=99999):
+        with patch.object(o.time, "time", return_value=1001):
             self.assertFalse(o.paid_allowed(st, unit(), "builder"))
+        with patch.object(o.time, "time", return_value=99999):
+            self.assertTrue(o.paid_allowed(st, unit(), "builder"))
         self.assertEqual(st["provider_errors"], 3)
 
     def test_actual_overspend_stops_instead_of_hiding_charge(self):
@@ -394,8 +396,14 @@ class Providers(Isolated):
         usage.write_text('{"total_tokens":7}')
         output.write_text("API HTTP error 429")
         proc = Mock(returncode=1)
+        rid = o.admit_paid(st, u, "builder")
+        receipt = o.prepare_worker(rid, st, "builder", u["model"], ["fixture"], self.repo, usage, 10, 1)
+        rec = o.read_json(receipt, {})
+        rec.update(status="complete", rc=1, completed_at=o.time.time(), usage={"total_tokens":7})
+        o.write_json(receipt, rec)
         job = {"unit": u, "proc": proc, "started": o.time.time(), "logfile": Mock(),
-               "usage": usage, "log_path": output, "wt": self.repo, "ts_start": o.now()}
+               "usage": usage, "log_path": output, "wt": self.repo, "ts_start": o.now(),
+               "run_id": rid, "receipt": receipt}
         with patch.object(o, "_publish_attempt") as publish:
             o.finish_build(job, {"X": u}, st)
         publish.assert_not_called()
@@ -405,7 +413,11 @@ class Providers(Isolated):
         self.assertEqual(st["tokens_today"], 7)
 
     def test_provider_planner_failure_preserves_retry_budget(self):
-        u = unit("P", status="design", model="", planner_retries=1)
+        (self.repo / "docs").mkdir()
+        (self.repo / "docs/contract.md").write_text("approved bounded synthetic contract")
+        u = unit("P", status="design", model="", planner_retries=1, planning_ready=True,
+                 planning_context="docs/contract.md", planning_paths=["internal/x"],
+                 planning_acceptance=["synthetic behavior"], planning_tests=["go test ./internal/x/..."])
         st = state()
         with patch.object(o, "hermes_run", return_value=(1, "API HTTP error 502", {"total_tokens": 7})):
             self.assertTrue(o.maybe_plan({"P": u}, st))
@@ -415,11 +427,41 @@ class Providers(Isolated):
 
     def test_success_without_usage_is_never_free(self):
         u, st = unit(), state()
-        with patch.object(o, "sh", return_value=(0, "done")):
+        def complete_worker(command, **kwargs):
+            path = Path(command[-1])
+            rec = o.read_json(path, {})
+            rec.update(status="complete", rc=0, completed_at=o.time.time(), usage={})
+            o.write_json(path, rec)
+            return 0, "done"
+        with patch.object(o, "sh", side_effect=complete_worker):
             _, _, usage = o.hermes_run("planner", o.MODEL["deepseek"], "fixture", "file", self.repo,
                                        "planner", 1, state=st, budget_unit=u)
         self.assertEqual(usage["accounted_tokens"], o.TIMEOUT_FALLBACK_TOKENS)
         self.assertFalse(st["reservations"])
+
+    def test_incomplete_worker_never_settles_or_releases_reservation(self):
+        u, st = unit(), state()
+        with patch.object(o, "sh", return_value=(1, "service stop failed")):
+            with self.assertRaises(c.IntegrityError):
+                o.hermes_run("planner", o.MODEL["deepseek"], "fixture", "file", self.repo,
+                             "planner", 1, state=st, budget_unit=u)
+        rows = c.ledger_records(o.STATE_DIR)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["record_type"], "reservation")
+        self.assertEqual(len(st["reservations"]), 1)
+
+    def test_builder_incomplete_cleanup_never_publishes_or_releases(self):
+        u, st = unit(attempts=1), state()
+        rid = o.admit_paid(st, u, "builder")
+        usage = o.LOG_DIR / "usage.json"
+        receipt = o.prepare_worker(rid, st, "builder", u["model"], ["fixture"], self.repo, usage, 10, 1)
+        job = {"unit": u, "proc": Mock(returncode=1), "started": o.time.time(),
+               "logfile": Mock(), "usage": usage, "wt": self.repo, "run_id": rid, "receipt": receipt}
+        with patch.object(o, "_publish_attempt") as publish, self.assertRaises(c.IntegrityError):
+            o.finish_build(job, {"X": u}, st)
+        publish.assert_not_called()
+        self.assertIn(rid, st["reservations"])
+        self.assertEqual(len(c.ledger_records(o.STATE_DIR)), 1)
 
     def test_builder_launch_failure_is_not_an_attempt(self):
         u, st = unit(), state()

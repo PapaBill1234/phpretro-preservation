@@ -94,7 +94,7 @@ DISK_PCT = float(os.environ.get("PHPRETRO_DISK_PCT", "85"))
 MAX_MERGE_PER_DAY = int(os.environ.get("PHPRETRO_MAX_MERGE_PER_DAY", "30"))
 MERGE_CAP_REVERTED = int(os.environ.get("PHPRETRO_MERGE_CAP_REVERTED", "12"))
 DAILY_TOKEN_CAP = int(os.environ.get("PHPRETRO_DAILY_TOKEN_CAP", "60000000"))
-PER_UNIT_TOKEN_CAP = int(os.environ.get("PHPRETRO_UNIT_TOKEN_CAP", "6000000"))
+PER_UNIT_TOKEN_CAP = int(os.environ.get("PHPRETRO_UNIT_TOKEN_CAP", "3000000"))
 
 # Every route the server serves today, with the status and the key string that
 # proves the right handler answered. Update when a unit adds a route.
@@ -276,7 +276,8 @@ def integration_check() -> dict:
                     "error": f"server did not answer /healthz on port {port}", "routes": []}
         routes = probe_routes(port)
         failing = [r for r in routes if not r["ok"]]
-        return {"name": "integration", "ok": not failing, "started": started,
+        return {"name": "integration", "kind": "synthetic-smoke", "capture_verified": False,
+                "ok": not failing, "started": started,
                 "finished": now(), "port": port,
                 "error": "" if not failing else "route checks failed",
                 "routes": routes,
@@ -712,15 +713,16 @@ def main() -> int:
         print(json.dumps(active_conditions(), indent=1))
         return 0
     ran = False
+    passed = True
     if args.all or args.integration:
-        run_job("integration"); ran = True
+        passed = bool(run_job("integration").get("ok")) and passed; ran = True
     if args.all or args.selfcheck:
-        run_job("selfcheck"); ran = True
+        passed = bool(run_job("selfcheck").get("ok")) and passed; ran = True
     if args.all or args.alerts:
-        alerts(force=args.force_alert); ran = True
+        passed = bool(alerts(force=args.force_alert).get("ok")) and passed; ran = True
     if not ran:
         ap.error("choose --integration, --selfcheck, --alerts or --all")
-    return 0
+    return 0 if passed else 1
 
 
 if __name__ == "__main__":
