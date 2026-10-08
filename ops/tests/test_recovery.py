@@ -134,6 +134,62 @@ class ExistingPrTest(unittest.TestCase):
             self.assertEqual(o.push_and_open_pr(unit, tmpdir("f38-"), "ok", _state()), 66)
         self.assertEqual(git.git_calls, [])
 
+    def test_stale_recorded_pr_is_a_unit_conflict(self):
+        """A closed or foreign recorded PR must never be queued as recovered."""
+        for recorded, open_pr in ((99, 66), (99, 0)):
+            with self.subTest(recorded=recorded, open_pr=open_pr):
+                unit = {"id": "F38", "status": "todo", "attempts": 2,
+                        "tokens": 1, "pr": recorded}
+                git = ScriptedGit({"unit/F38": "ahead"})
+                pushed = mock.Mock(side_effect=AssertionError("must not push"))
+                with mock.patch.object(o, "git", git.git), \
+                     mock.patch.object(o, "git_out", git.git_out), \
+                     mock.patch.object(o, "attach_worktree",
+                                       lambda u: tmpdir("f38-")), \
+                     mock.patch.object(o, "adopt_branch_unit", lambda u, s: False), \
+                     mock.patch.object(o, "run_check", lambda wt: (0, "ok")), \
+                     mock.patch.object(o, "find_existing_pr", lambda b: open_pr), \
+                     mock.patch.object(o, "push_and_open_pr", pushed):
+                    with self.assertRaises(o.RecoveryConflict):
+                        o.recover_branch(unit, {}, _state())
+                pushed.assert_not_called()
+                self.assertNotEqual(unit.get("status"), "queued")
+
+    def test_pr_lookup_failure_defers_and_is_not_a_unit_failure(self):
+        unit = {"id": "F38", "status": "todo", "attempts": 2, "tokens": 1,
+                "pr": 0}
+        git = ScriptedGit({"unit/F38": "ahead"})
+
+        def unavailable(branch):
+            raise o.DeliveryUnavailable("github unavailable")
+
+        with mock.patch.object(o, "git", git.git), \
+             mock.patch.object(o, "git_out", git.git_out), \
+             mock.patch.object(o, "attach_worktree", lambda u: tmpdir("f38-")), \
+             mock.patch.object(o, "adopt_branch_unit", lambda u, s: False), \
+             mock.patch.object(o, "run_check", lambda wt: (0, "ok")), \
+             mock.patch.object(o, "find_existing_pr", unavailable):
+            with self.assertRaises(o.DeliveryUnavailable):
+                o.recover_branch(unit, {}, _state())
+        self.assertNotEqual(unit.get("status"), "parked")
+
+
+class GitHubLookupTest(unittest.TestCase):
+    """A provider outage must not look like "no PR exists"."""
+
+    def test_lookup_failure_raises_delivery_unavailable(self):
+        with mock.patch.object(o, "sh", lambda *a, **k: (1, "HTTP 500")):
+            with self.assertRaises(o.DeliveryUnavailable):
+                o.find_existing_pr("unit/F38")
+
+    def test_no_pr_returns_zero(self):
+        with mock.patch.object(o, "sh", lambda *a, **k: (0, "")):
+            self.assertEqual(o.find_existing_pr("unit/F38"), 0)
+
+    def test_open_pr_returns_its_number(self):
+        with mock.patch.object(o, "sh", lambda *a, **k: (0, "66\n")):
+            self.assertEqual(o.find_existing_pr("unit/F38"), 66)
+
 
 class RecoverUnitsTest(unittest.TestCase):
     """One unit's conflict must not stop an unrelated unit."""
@@ -188,6 +244,18 @@ class RecoverUnitsTest(unittest.TestCase):
                                mock.Mock(side_effect=ValueError("programming error"))):
             with self.assertRaises(ValueError):
                 o.recover_units(roadmap, {}, _state())
+
+    def test_provider_unavailability_is_not_a_unit_failure(self):
+        roadmap = {"F38": {"id": "F38", "status": "todo", "attempts": 2,
+                           "tokens": 1, "pr": 0}}
+        with mock.patch.object(o, "recover_branch",
+                               mock.Mock(side_effect=o.DeliveryUnavailable("gh down"))):
+            with self.assertRaises(o.DeliveryUnavailable):
+                o.recover_units(roadmap, {}, _state())
+        # The unit keeps its state and counters: the outage is not its fault.
+        self.assertEqual(roadmap["F38"]["status"], "todo")
+        self.assertEqual(roadmap["F38"]["attempts"], 2)
+        self.assertEqual(roadmap["F38"]["tokens"], 1)
 
     def test_no_change_units_are_never_recovered(self):
         roadmap = {"F38": {"id": "F38", "status": "todo", "attempts": 2,

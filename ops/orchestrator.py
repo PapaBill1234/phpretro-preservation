@@ -1311,6 +1311,11 @@ def find_existing_pr(branch: str) -> int:
     Recovery must reuse a PR that already exists: opening a second one for the
     same branch is a duplicate delivery. GitHub is the source of truth, so the
     runtime ``pr`` counter is never trusted to prove a PR does not exist.
+
+    A GitHub lookup failure raises ``DeliveryUnavailable`` - the pipeline's
+    existing "reconciliation deferred" signal - so a provider outage keeps its
+    backoff/accounting policy and is never reclassified as a unit failure nor
+    mistaken for "no PR exists" (which would allow a duplicate).
     """
     if not branch:
         return 0
@@ -1318,7 +1323,7 @@ def find_existing_pr(branch: str) -> int:
                   "--state", "open", "--json", "number",
                   "--jq", ".[0].number"], timeout=120)
     if rc != 0:
-        return 0
+        raise DeliveryUnavailable(f"PR lookup failed for {branch}; dispatch deferred")
     m = re.search(r"(\d+)", out or "")
     return int(m.group(1)) if m else 0
 
@@ -2048,9 +2053,16 @@ def recover_branch(unit: dict, history: dict, state: dict) -> bool:
         record_history(unit, "recovered-fail")
         event(state, f"{unit['id']}: recovered branch fails check.sh; rebuilding")
         return False
-    pr = int(unit.get("pr") or 0) or find_existing_pr(branch)
-    if not pr:
-        pr = push_and_open_pr(unit, wt, out, state)
+    # GitHub is the source of truth for the PR: a recorded number is reused only
+    # when it is the open PR for THIS branch. A stale, closed or foreign PR
+    # number must never be queued as a successful recovery.
+    open_pr = find_existing_pr(branch)
+    recorded = int(unit.get("pr") or 0)
+    if recorded and recorded != open_pr:
+        raise RecoveryConflict(
+            f"recorded PR #{recorded} is not the open PR "
+            f"#{open_pr or 'none'} for {branch}")
+    pr = open_pr or push_and_open_pr(unit, wt, out, state)
     # Only now is the recovery real: the branch is consistent with its remote
     # and the PR is known. Nothing above this line is recorded as recovered.
     unit["pr"] = pr
