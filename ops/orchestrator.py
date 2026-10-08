@@ -2025,10 +2025,17 @@ def validate_recovery_worktree(unit: dict, wt: Path, remote_ref: str) -> str:
                   "-c", "user.email=ops@users.noreply.github.com",
                   "merge", "--no-edit", remote_ref, cwd=wt)
     if rc != 0:
+        # Only an actual content conflict is the expected, unit-scoped failure.
+        # Anything else (a missing Git identity, a corrupt index, a local Git
+        # error) is NOT this unit's fault and must surface instead of being
+        # parked as a recovery conflict.
+        conflicted = git_out("diff", "--name-only", "--diff-filter=U", cwd=wt)
         git("merge", "--abort", cwd=wt)
-        raise RecoveryConflict(
-            f"remote branch recovery conflict for {want}; "
-            f"both histories preserved")
+        if conflicted:
+            raise RecoveryConflict(
+                f"remote branch recovery conflict for {want}; "
+                f"both histories preserved")
+        raise RuntimeError(f"recovery merge failed for {want}: {tail(out, 4)}")
     return "merged"
 
 
@@ -2122,10 +2129,16 @@ def recover_branch(unit: dict, history: dict, state: dict) -> bool:
         pr = push_and_open_pr(unit, wt, out, state)
     # Only now is the recovery real: the branch is consistent with its remote
     # and the PR is known. Nothing above this line is recorded as recovered.
+    prior_reason = str(unit.get("reason", ""))
     unit["pr"] = pr
     unit["status"] = "queued"
     unit["reason"] = (f"recovered existing branch {branch} ({ahead} commits "
                       f"ahead, worktree {relation}) with PR #{pr}")
+    if prior_reason.startswith("quality:"):
+        # A recovery must not erase a quality finding: hand it to the next
+        # attempt as feedback instead of dropping it with the reason.
+        unit["feedback"] = ("retained quality finding: " + prior_reason + "\n\n"
+                            + str(unit.get("feedback", ""))).strip()
     record_history(unit, "recovered")
     event(state, f"{unit['id']}: recovered {branch} ({relation}) into the merge "
                  f"queue as PR #{pr}")
@@ -2707,11 +2720,25 @@ def dispatch(roadmap: dict, state: dict) -> None:
     for u in batch:
         try:
             branch = unit_branch(u)
+            # Never dispatch a unit already merged in Git: if the branch is
+            # already an ancestor of origin/main the delivery exists, so adopt
+            # it (or park it) rather than rebuild it.
+            if git("merge-base", "--is-ancestor", f"origin/{branch}",
+                   "origin/main")[0] == 0:
+                if adopt_branch_unit(u, state):
+                    continue
+                u["status"] = "parked"
+                u["reason"] = (f"{branch} is already merged into origin/main; "
+                               f"not rebuilt")
+                event(state, f"{u['id']}: {branch} already merged in Git; "
+                             f"not dispatched")
+                continue
             # find_existing_pr() is scoped to this repository and this exact
-            # head branch (open PRs only), so a foreign or closed PR can never
-            # match. The unit is only ROUTED into the merge queue here, which
-            # re-runs the rebase, scripts/check.sh, the quality gate and
-            # independent review on the exact head before anything merges.
+            # head branch (open PRs only) and re-checks the returned headRefName,
+            # so a foreign or closed PR can never match. The unit is only ROUTED
+            # into the merge queue here, which re-runs the rebase,
+            # scripts/check.sh, the quality gate and independent review on the
+            # exact head before anything merges.
             pr = find_existing_pr(branch)
             if pr:
                 # Never start a duplicate delivery: an open PR already exists

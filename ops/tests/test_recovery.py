@@ -55,11 +55,12 @@ class ScriptedGit:
     """
 
     def __init__(self, relations: dict, merge_rc: int = 0, dirty: str = "",
-                 push_rc: int = 0):
+                 push_rc: int = 0, merge_conflicts: bool = True):
         self.relations = relations
         self.merge_rc = merge_rc
         self.dirty = dirty
         self.push_rc = push_rc
+        self.merge_conflicts = merge_conflicts
         self.git_calls: list = []
         self.git_out_calls: list = []
         self.head = "a" * 40
@@ -97,6 +98,9 @@ class ScriptedGit:
         self.git_out_calls.append(args)
         if args[:2] == ("status", "--porcelain"):
             return self.dirty
+        if args[:2] == ("diff", "--name-only"):
+            return "internal/staff/replay.go" if (self.merge_rc and
+                                                  self.merge_conflicts) else ""
         if args[:2] == ("rev-list", "--count"):
             return "1" if self._branch(args) else ""
         if args[:2] == ("rev-parse", "--abbrev-ref"):
@@ -145,6 +149,18 @@ class DivergedHistoryTest(unittest.TestCase):
         self.assertIn("merged", unit["reason"])
         # The reconciliation was an ordinary merge commit, never a force-push.
         self.assertTrue(any("merge" in call for call in git.git_calls))
+
+    def test_a_non_conflict_merge_failure_surfaces(self):
+        """A local Git failure is not the unit's fault: it must not be parked."""
+        unit = {"id": "F38", "status": "todo", "attempts": 2, "tokens": 1,
+                "pr": 0}
+        git = ScriptedGit({"unit/F38": "diverged"}, merge_rc=1,
+                          merge_conflicts=False)
+        pushed = mock.Mock(side_effect=AssertionError("must not push"))
+        with self.assertRaises(RuntimeError) as ctx:
+            self._recover(git, unit, pushed)
+        self.assertNotIsInstance(ctx.exception, o.RecoveryConflict)
+        self.assertNotEqual(unit.get("status"), "queued")
 
     def test_dirty_recovery_checkout_is_preserved_not_pushed(self):
         unit = {"id": "F38", "status": "todo", "attempts": 2, "tokens": 1,
@@ -200,6 +216,22 @@ class ExistingPrTest(unittest.TestCase):
         # The ahead worktree was pushed, so the PR's branch holds this head.
         self.assertTrue(any(call[:1] == ("push",) for call in git.git_calls))
         self.assertEqual(unit["pr"], 66)
+
+    def test_recovery_preserves_a_prior_quality_finding(self):
+        unit = {"id": "F38", "status": "todo", "attempts": 2, "tokens": 1,
+                "pr": 0, "reason": "quality: tests do not exercise the change",
+                "feedback": "repair the tests"}
+        git = ScriptedGit({"unit/F38": "ahead"})
+        with mock.patch.object(o, "git", git.git), \
+             mock.patch.object(o, "git_out", git.git_out), \
+             mock.patch.object(o, "attach_worktree", lambda u: tmpdir("f38-")), \
+             mock.patch.object(o, "adopt_branch_unit", lambda u, s: False), \
+             mock.patch.object(o, "run_check", lambda wt: (0, "ok")), \
+             mock.patch.object(o, "find_existing_pr", lambda b: 66), \
+             mock.patch.object(o, "record_history", lambda u, outcome: None):
+            self.assertTrue(o.recover_branch(unit, {}, _state()))
+        self.assertIn("tests do not exercise the change", unit["feedback"])
+        self.assertIn("repair the tests", unit["feedback"])
 
     def test_push_and_open_pr_publishes_then_reuses(self):
         unit = {"id": "F38", "status": "todo", "attempts": 1, "tokens": 1}
@@ -383,6 +415,7 @@ class DispatchGuardTest(unittest.TestCase):
         build = mock.Mock(side_effect=AssertionError("must not rebuild"))
         with mock.patch.object(o, "paid_allowed", lambda *a, **k: True), \
              mock.patch.object(o, "select_ready", lambda r, s: [unit]), \
+             mock.patch.object(o, "git", lambda *a, **k: (1, "")), \
              mock.patch.object(o, "find_existing_pr", lambda b: 66), \
              mock.patch.object(o, "start_build", build), \
              mock.patch.object(o, "event", lambda s, m: s["events"].append(m)):
@@ -390,6 +423,24 @@ class DispatchGuardTest(unittest.TestCase):
         build.assert_not_called()
         self.assertEqual(unit["status"], "queued")
         self.assertEqual(unit["pr"], 66)
+
+    def test_dispatch_never_rebuilds_a_unit_already_merged_in_git(self):
+        """A branch that is already an ancestor of origin/main is a delivery."""
+        unit = {"id": "F40", "status": "todo", "attempts": 0, "pr": 0,
+                "paths": ["internal/home"]}
+        roadmap = {"F40": unit}
+        state = _state()
+        build = mock.Mock(side_effect=AssertionError("must not rebuild"))
+        with mock.patch.object(o, "paid_allowed", lambda *a, **k: True), \
+             mock.patch.object(o, "select_ready", lambda r, s: [unit]), \
+             mock.patch.object(o, "git", lambda *a, **k: (0, "")), \
+             mock.patch.object(o, "adopt_branch_unit", lambda u, s: False), \
+             mock.patch.object(o, "start_build", build), \
+             mock.patch.object(o, "event", lambda s, m: s["events"].append(m)):
+            o.dispatch(roadmap, state)
+        build.assert_not_called()
+        self.assertEqual(unit["status"], "parked")
+        self.assertIn("already merged", unit["reason"])
 
     def test_adopt_uses_github_even_when_the_branch_is_gone(self):
         """GitHub deletes the head branch on merge; absence is not evidence."""
