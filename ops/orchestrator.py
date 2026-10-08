@@ -325,7 +325,8 @@ STATE_KEYS = ("status", "pr", "attempts", "tokens", "wall_s", "model", "reason",
               "kind", "fidelity", "severity", "updated", "timeouts", "shrinks",
               "size_check_at", "size_action", "size_source", "run_id", "revision_id",
               "review_head", "review_model", "review_verdict", "review_id", "review2_id", "review2_head",
-              "review2_model", "review2_verdict", "delivery_commit", "provider_retry_at", "review_admission_denied")
+              "review2_model", "review2_verdict", "delivery_commit", "provider_retry_at", "review_admission_denied",
+              "recovery_conflict")
 DEF_KEYS = ("title", "depends_on", "paths", "tests", "acceptance", "fixtures",
             "fidelity_notes", "size", "design_doc", "unclear_semantics")
 
@@ -794,6 +795,20 @@ class BudgetDenied(RuntimeError):
 
 
 class DeliveryUnavailable(RuntimeError):
+    pass
+
+
+class RecoveryConflict(RuntimeError):
+    """An expected, unit-scoped Git recovery failure.
+
+    Raised when a unit's branch cannot be reconciled with its remote - a
+    non-fast-forward push, a worktree parked on another branch, or a diverged
+    history that could only be published with a force-push - or when its
+    existing PR cannot be reused. It is deliberately NOT a catch-all: state or
+    accounting corruption (``control.IntegrityError``) and unexpected
+    programming errors must still surface and stop the cycle, and provider
+    failures keep their own backoff/accounting policy.
+    """
     pass
 
 
@@ -1290,11 +1305,40 @@ def discard_changes(wt: Path, unit: dict) -> None:
     log(f"{unit['id']}: discarded the rejected attempt's changes")
 
 
+def find_existing_pr(branch: str) -> int:
+    """The open PR already filed for ``branch``, or 0 when there is none.
+
+    Recovery must reuse a PR that already exists: opening a second one for the
+    same branch is a duplicate delivery. GitHub is the source of truth, so the
+    runtime ``pr`` counter is never trusted to prove a PR does not exist.
+    """
+    if not branch:
+        return 0
+    rc, out = sh(["gh", "pr", "list", "--repo", GH_REPO, "--head", branch,
+                  "--state", "open", "--json", "number",
+                  "--jq", ".[0].number"], timeout=120)
+    if rc != 0:
+        return 0
+    m = re.search(r"(\d+)", out or "")
+    return int(m.group(1)) if m else 0
+
+
 def push_and_open_pr(unit: dict, wt: Path, check_out: str, state: dict) -> int:
+    """Publish the unit branch and return its PR number.
+
+    An existing open PR for the branch is reused instead of creating a second
+    one. A rejected push (the branch diverged from its remote) is reported as a
+    unit-scoped ``RecoveryConflict``: the caller records the reason and stops
+    only this unit. A force-push is never attempted here.
+    """
     branch = unit_branch(unit)
+    existing = find_existing_pr(branch)
+    if existing:
+        event(state, f"{unit['id']}: reusing existing PR #{existing} for {branch}")
+        return existing
     rc, out = git("push", "-u", "origin", f"HEAD:refs/heads/{branch}", cwd=wt, timeout=300)
     if rc != 0:
-        raise RuntimeError(f"push failed: {out[-800:]}")
+        raise RecoveryConflict(f"push rejected for {branch}: {tail(out, 4)}")
     title = f"unit({unit['id']}): {unit.get('title','')}"
     body = (f"Automated unit delivery from the ops pipeline.\n\n"
             f"- unit: `{unit['id']}` - {unit.get('title','')}\n"
@@ -1308,11 +1352,12 @@ def push_and_open_pr(unit: dict, wt: Path, check_out: str, state: dict) -> int:
                  cwd=wt, timeout=180)
     m = re.search(r"/pull/(\d+)", out)
     if rc != 0 or not m:
-        rc, out = sh(["gh", "pr", "list", "--repo", GH_REPO, "--head", branch,
-                      "--json", "number", "--jq", ".[0].number"], cwd=wt, timeout=120)
-        m = re.search(r"(\d+)", out)
-    if not m:
-        raise RuntimeError(f"cannot open PR: {out[-800:]}")
+        # A concurrent creation may have won the race: reuse that PR rather
+        # than raising a duplicate.
+        existing = find_existing_pr(branch)
+        if existing:
+            return existing
+        raise RecoveryConflict(f"cannot open PR for {branch}: {tail(out, 4)}")
     return int(m.group(1))
 
 
@@ -1805,8 +1850,12 @@ def adopt_branch_unit(unit: dict, state: dict) -> bool:
     scripts/check.sh on main as the gate, and records the PR. Used for the
     units the pre-pipeline kanban board delivered before this roadmap existed.
     """
-    branch = unit.get("branch")
-    if not branch:
+    branch = unit_branch(unit)
+    # A branch that does not exist on origin cannot be a merged delivery. This
+    # local check keeps the GitHub lookup off the hot path for the ordinary
+    # backlog, and it also covers the usual ``unit/<id>`` branches, not only
+    # the custom branch names the pre-pipeline board used.
+    if git("rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}")[0] != 0:
         return False
     pr_rc, pr_out = sh(["gh", "pr", "list", "--repo", GH_REPO, "--head", branch,
                         "--state", "merged", "--json", "number,mergeCommit",
@@ -1897,6 +1946,70 @@ def rec_quality(unit: dict) -> None:
     write_json(QUALITY_JSON, q)
 
 
+def validate_recovery_worktree(unit: dict, wt: Path, remote_ref: str) -> str:
+    """Check a reused worktree against its remote before recovery uses it.
+
+    Returns how the worktree HEAD relates to the published branch:
+    ``current`` (identical), ``ahead`` (a normal fast-forward push is safe) or
+    ``behind`` (the worktree was fast-forwarded onto the remote; nothing was
+    lost). Raises ``RecoveryConflict`` when the worktree is on another branch
+    or has diverged from the remote - publishing that would need a force-push
+    or would drop one of the two histories.
+    """
+    want = unit_branch(unit)
+    have = git_out("rev-parse", "--abbrev-ref", "HEAD", cwd=wt)
+    if have != want:
+        raise RecoveryConflict(f"worktree is on {have!r}, not {want!r}")
+    if git("rev-parse", "--verify", "--quiet", remote_ref)[0] != 0:
+        raise RecoveryConflict(f"remote branch {want} is missing")
+    local = git_out("rev-parse", "HEAD", cwd=wt)
+    remote = git_out("rev-parse", remote_ref)
+    if not local or not remote:
+        raise RecoveryConflict(f"cannot resolve the heads of {want}")
+    if local == remote:
+        return "current"
+    if git("merge-base", "--is-ancestor", remote_ref, "HEAD", cwd=wt)[0] == 0:
+        return "ahead"
+    if git("merge-base", "--is-ancestor", "HEAD", remote_ref, cwd=wt)[0] == 0:
+        # Strictly behind: fast-forward onto the published branch (no history lost).
+        rc, out = git("merge", "--ff-only", remote_ref, cwd=wt)
+        if rc != 0:
+            raise RecoveryConflict(f"cannot fast-forward {want}: {tail(out, 4)}")
+        return "behind"
+    raise RecoveryConflict(
+        f"{want} has diverged from origin/{want} (local {local[:12]}, "
+        f"remote {remote[:12]}); a force-push would drop one history")
+
+
+def recover_units(roadmap: dict, history: dict, state: dict) -> None:
+    """Re-gate branches a previous cycle left behind, one unit at a time.
+
+    An expected, unit-scoped ``RecoveryConflict`` records the reason, parks
+    ONLY that unit so it is not recovered again every tick, and lets unrelated
+    eligible units continue. Anything that is not a ``RecoveryConflict``
+    (``control.IntegrityError``, an unexpected programming error) propagates:
+    recovery must never hide state or accounting corruption behind a blanket
+    handler. Attempt and token counters are never touched here.
+    """
+    for uid in sorted(roadmap):
+        u = roadmap[uid]
+        if u.get("status") != "todo" or int(u.get("attempts", 0)) == 0:
+            continue
+        entry = history.get(u["id"])
+        if entry and entry.get("outcome") == "no-change":
+            continue
+        try:
+            recover_branch(u, history, state)
+        except RecoveryConflict as exc:
+            u["recovery_conflict"] = str(exc)
+            u["status"] = "parked"
+            u["reason"] = f"recovery conflict: {exc}"
+            record_history(u, "recovery-conflict")
+            event(state, f"{u['id']}: recovery conflict - {exc}; unit parked, "
+                         f"other units continue")
+            telemetry_event("recovery_conflict", u["id"], str(exc)[:200])
+
+
 def recover_branch(unit: dict, history: dict, state: dict) -> bool:
     """Reuse a branch a previous cycle left behind instead of rebuilding it.
 
@@ -1904,13 +2017,22 @@ def recover_branch(unit: dict, history: dict, state: dict) -> bool:
     last recorded attempt was not 'no-change', the work is re-gated and requeued
     for the merge queue. Nothing is rebuilt, so a cycle that died between commit
     and merge costs no tokens on the retry.
+
+    A unit whose delivery is already merged in Git is adopted, never rebuilt;
+    an existing PR is reused, never duplicated; and a worktree that cannot be
+    reconciled with its remote raises ``RecoveryConflict`` so the caller stops
+    that one unit instead of aborting the cycle.
     """
     branch = unit_branch(unit)
-    git("fetch", "origin")
-    ahead = git_out("rev-list", "--count", f"{BASE_REF}..refs/remotes/origin/{branch}")
+    git("fetch", "origin", "--prune")
+    if adopt_branch_unit(unit, state):
+        return True
+    remote_ref = f"refs/remotes/origin/{branch}"
+    ahead = git_out("rev-list", "--count", f"{BASE_REF}..{remote_ref}")
     if not ahead or ahead == "0":
         return False
     wt = attach_worktree(unit)
+    relation = validate_recovery_worktree(unit, wt, remote_ref)
     rc, out = run_check(wt)
     (LOG_DIR / f"{unit['id']}-recover.check.log").write_text(out)
     if rc != 0:
@@ -1926,16 +2048,18 @@ def recover_branch(unit: dict, history: dict, state: dict) -> bool:
         record_history(unit, "recovered-fail")
         event(state, f"{unit['id']}: recovered branch fails check.sh; rebuilding")
         return False
-    unit["reason"] = f"recovered existing branch {branch} ({ahead} commits ahead)"
-    record_history(unit, "recovered")
-    if unit.get("pr"):
-        unit["status"] = "queued"
-        event(state, f"{unit['id']}: recovered PR #{unit['pr']} into the merge queue")
-    else:
+    pr = int(unit.get("pr") or 0) or find_existing_pr(branch)
+    if not pr:
         pr = push_and_open_pr(unit, wt, out, state)
-        unit["pr"] = pr
-        unit["status"] = "pr_open"
-        event(state, f"{unit['id']}: recovered branch, opened PR #{pr}")
+    # Only now is the recovery real: the branch is consistent with its remote
+    # and the PR is known. Nothing above this line is recorded as recovered.
+    unit["pr"] = pr
+    unit["status"] = "queued"
+    unit["reason"] = (f"recovered existing branch {branch} ({ahead} commits "
+                      f"ahead, worktree {relation}) with PR #{pr}")
+    record_history(unit, "recovered")
+    event(state, f"{unit['id']}: recovered {branch} ({relation}) into the merge "
+                 f"queue as PR #{pr}")
     return True
 
 
@@ -2513,6 +2637,17 @@ def dispatch(roadmap: dict, state: dict) -> None:
     jobs = []
     for u in batch:
         try:
+            pr = find_existing_pr(unit_branch(u))
+            if pr:
+                # Never start a duplicate delivery: an open PR already exists
+                # for this branch, so adopt it into the merge queue instead of
+                # building a second one.
+                u["pr"] = pr
+                u["status"] = "queued"
+                u["reason"] = f"reused existing open PR #{pr}; not rebuilt"
+                event(state, f"{u['id']}: open PR #{pr} already exists; queued, "
+                             f"not rebuilt")
+                continue
             jobs.append(start_build(u, state, roadmap))
         except control.IntegrityError:
             raise
@@ -3550,13 +3685,7 @@ def cycle(*, no_dispatch: bool = False) -> None:
                         u["status"] = "todo"
                 history = load_history()
                 if paid_allowed(state, None, "builder"):
-                    for u in roadmap.values():
-                        if u.get("status") != "todo" or int(u.get("attempts", 0)) == 0:
-                            continue
-                        entry = history.get(u["id"])
-                        if entry and entry.get("outcome") == "no-change":
-                            continue
-                        recover_branch(u, history, state)
+                    recover_units(roadmap, history, state)
                     resume_open_prs(roadmap, state)
                 dispatch(roadmap, state)
                 queue_nightly_fixes(roadmap, state)
