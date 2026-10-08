@@ -1,0 +1,35 @@
+version: 1
+units:
+  - id: F61
+    title: Public profile HTTP selection and injected store
+    status: todo
+    size: M
+    depends_on: [F18]
+    paths: [internal/server/profile_handler.go, internal/server/profile_handler_test.go, internal/server/server.go, internal/server/server_test.go, docs/evidence/F61-profile-http.md, docs/units/F61.md]
+    tests: ["go test ./internal/server/... ./internal/profile/...", "bash scripts/check.sh"]
+    acceptance: ["Implement exactly the F61 contract in docs/roadmap/restart-contracts.md", "Validate request selection before the injected store; success exposes only profile.v1 public fields", "Independent tests exercise multiple selections and errors; keep explicit demo smoke behavior"]
+    fixtures: [docs/roadmap/restart-contracts.md, docs/evidence/F3-profile-schema.md]
+    fidelity_notes: source-backed fields; new HTTP contract; capture unverified
+    implementation_ready: true
+  - id: F62
+    title: React public profile loading and error states
+    status: todo
+    size: M
+    depends_on: [F61]
+    paths: [frontend/src/main.tsx, frontend/src/profile/ProfileLoader.tsx, frontend/src/profile/loadProfile.ts, frontend/tests/profile-loader.test.ts, docs/evidence/F62-profile-loading.md, docs/units/F62.md]
+    tests: ["cd frontend && npm test && npm run typecheck && npm run build", "bash scripts/check.sh"]
+    acceptance: ["Implement exactly the F62 contract in docs/roadmap/restart-contracts.md", "Fetch relative same-origin profile.v1 and validate it before rendering; no DemoUser fallback", "Tests prove success, status/DTO errors, stale responses and abort behavior"]
+    fixtures: [docs/roadmap/restart-contracts.md, docs/evidence/F3-profile-schema.md]
+    fidelity_notes: "fidelity: guessed; no capture parity claim"
+    implementation_ready: true
+  - id: F63
+    title: Serve the built Vite frontend and bounded assets
+    status: todo
+    size: M
+    depends_on: [F62]
+    paths: [internal/server/assets.go, internal/server/assets_test.go, internal/server/server.go, internal/server/server_test.go, cmd/phpretro/main.go, docs/evidence/F63-built-assets.md, docs/units/F63.md]
+    tests: ["go test ./internal/server/...", "cd frontend && npm test && npm run typecheck && npm run build", "bash scripts/check.sh"]
+    acceptance: ["Implement exactly the F63 contract in docs/roadmap/restart-contracts.md", "Runtime serves built HTML and JavaScript bytes with correct MIME; missing build is 503", "Reject traversal, dotfiles and escaping symlinks; preserve API routes and unknown-route 404"]
+    fixtures: [docs/roadmap/restart-contracts.md]
+    fidelity_notes: "fidelity: guessed; development hosting contract"
+    implementation_ready: true

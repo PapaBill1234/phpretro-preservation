@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import shutil
 import unittest
+from unittest.mock import patch
 
 import harness
 from harness import OPS_DIR, REPO, run, tmpdir
@@ -141,6 +142,18 @@ class SourceWiringTest(unittest.TestCase):
 
     def test_run_all_defaults_to_this_directory(self):
         self.assertIn('dirname "${BASH_SOURCE[0]}"', RUN_ALL.read_text())
+
+    def test_nightly_cli_failure_returns_nonzero_and_runs_both_checks(self):
+        with patch('sys.argv', ['nightly.py', '--integration', '--selfcheck']), \
+             patch.object(n, 'run_job', side_effect=[{'ok': False}, {'ok': True}]) as jobs:
+            self.assertEqual(n.main(), 1)
+        self.assertEqual([c.args[0] for c in jobs.call_args_list], ['integration', 'selfcheck'])
+
+    def test_nightly_cli_all_pass_returns_zero_without_alerts(self):
+        with patch('sys.argv', ['nightly.py', '--integration', '--selfcheck']), \
+             patch.object(n, 'run_job', return_value={'ok': True}), patch.object(n, 'alerts') as alerts:
+            self.assertEqual(n.main(), 0)
+        alerts.assert_not_called()
 
 
 class HarnessIsolationTest(unittest.TestCase):

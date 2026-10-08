@@ -1079,12 +1079,12 @@
         {
           "path": "internal/audit/audit.go",
           "line": 172,
-          "fingerprint": "0136f819a00893fe"
+          "fingerprint": "8224772a46335482"
         },
         {
           "path": "internal/audit/audit_test.go",
           "line": 1,
-          "fingerprint": "5726f858dccd03ab"
+          "fingerprint": "e8102ed77f666dac"
         },
         {
           "path": "docs/evidence/F35-audit-transaction.md",
@@ -1181,7 +1181,7 @@
         {
           "path": "internal/staff/totp.go",
           "line": 1,
-          "fingerprint": "dadfedf0302a38e5"
+          "fingerprint": "7eacbfd1e0aca5e4"
         },
         {
           "path": "internal/session/session.go",
@@ -2451,12 +2451,12 @@
         {
           "path": "internal/staff/totp.go",
           "line": 1,
-          "fingerprint": "dadfedf0302a38e5"
+          "fingerprint": "7eacbfd1e0aca5e4"
         },
         {
           "path": "tests/staff/totp_test.go",
           "line": 1,
-          "fingerprint": "dac100911b83d9b5"
+          "fingerprint": "12e7c807886b2c33"
         },
         {
           "path": "docs/units/QA1.md",
@@ -2498,12 +2498,12 @@
         {
           "path": "internal/staff/totp.go",
           "line": 1,
-          "fingerprint": "dadfedf0302a38e5"
+          "fingerprint": "7eacbfd1e0aca5e4"
         },
         {
           "path": "tests/staff/totp_test.go",
           "line": 1,
-          "fingerprint": "dac100911b83d9b5"
+          "fingerprint": "12e7c807886b2c33"
         },
         {
           "path": "docs/units/QA2.md",
@@ -2560,7 +2560,7 @@
         {
           "path": "docs/units/QA3.md",
           "line": 1,
-          "fingerprint": "caf0492a943b3c43"
+          "fingerprint": "2c30973113fcb684"
         }
       ],
       "assessed_prs": [],
@@ -2655,7 +2655,7 @@
         {
           "path": "tests/staff/totp_test.go",
           "line": 1,
-          "fingerprint": "dac100911b83d9b5"
+          "fingerprint": "12e7c807886b2c33"
         },
         {
           "path": "docs/units/RF2a.md",
@@ -2695,7 +2695,7 @@
         {
           "path": "docs/units/QA3.md",
           "line": 1,
-          "fingerprint": "caf0492a943b3c43"
+          "fingerprint": "2c30973113fcb684"
         },
         {
           "path": "docs/units/RF2b.md",
@@ -3221,5 +3221,16 @@
   "legacy_capture": {
     "status": "skipped",
     "reason": "Optional original Docker captures skipped: permission denied connecting to unix:///var/run/docker.sock. No real site or external capture was contacted."
+  },
+  "repair_assessment": {
+    "date": "2026-10-08",
+    "changed_sources": [
+      "docs/units/QA3.md",
+      "internal/audit/audit.go",
+      "internal/audit/audit_test.go",
+      "internal/staff/totp.go",
+      "tests/staff/totp_test.go"
+    ],
+    "note": "Reviewed controller/audit/TOTP repairs retain existing conservative product classifications; no capture verification added."
   }
 }

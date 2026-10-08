@@ -48,7 +48,7 @@ PESSIMISTIC_TOKENS = int(os.environ.get("PHPRETRO_TIMEOUT_FALLBACK_TOKENS", "100
 
 ROLES = ("builder", "reviewer", "planner", "audit", "jev", "other")
 OUTCOMES = ("merged", "gate_failed", "timeout", "no_change", "review_fix",
-            "provider_error", "other")
+            "provider_error", "interrupted", "other")
 EVENT_KINDS = ("dispatched", "built", "gate_pass", "gate_fail", "pr_opened",
                "review_verdict", "merged", "parked", "split", "escalated",
                "timeout", "provider_error", "guard_disabled")
@@ -169,9 +169,28 @@ def log_event(kind: str, unit: str, reason: str = "", **extra) -> None:
 # --------------------------------------------------------------------------
 
 def _int_or_none(v):
+    if isinstance(v, bool):
+        return None
     try:
-        return int(v)
-    except (TypeError, ValueError):
+        n = int(v)
+        if isinstance(v, float) and v != n:
+            return None
+        if n < 0:
+            return None
+        return n
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _finite_nonnegative(v):
+    if isinstance(v, bool):
+        return None
+    try:
+        n = float(v)
+        if n < 0 or not __import__("math").isfinite(n):
+            return None
+        return n
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -184,21 +203,19 @@ def parse_usage(usage: dict) -> dict:
     """
     u = usage or {}
     aux = u.get("total_including_auxiliary") or {}
+    aux = aux if isinstance(aux, dict) else {}
     cost = aux.get("estimated_cost_usd")
     if cost is None:
         cost = u.get("estimated_cost_usd")
-    try:
-        cost = float(cost) if cost is not None else None
-    except (TypeError, ValueError):
-        cost = None
+    cost = _finite_nonnegative(cost) if cost is not None else None
     # The provider reports 0.0 with cost_status "unknown"; that is not a real
     # zero, so keep it null and let the caller fall back to the price table.
     status = str(u.get("cost_status") or "").lower()
     if cost == 0.0 and status in ("unknown", "none", ""):
         cost = None
     return {
-        "input_tokens": _int_or_none(u.get("input_tokens")),
-        "output_tokens": _int_or_none(u.get("output_tokens")),
+        "input_tokens": _int_or_none(u.get("input_tokens", u.get("prompt_tokens"))),
+        "output_tokens": _int_or_none(u.get("output_tokens", u.get("completion_tokens"))),
         "cached_tokens": _int_or_none(u.get("cache_read_tokens")),
         "cache_write_tokens": _int_or_none(u.get("cache_write_tokens")),
         "reasoning_tokens": _int_or_none(u.get("reasoning_tokens")),
@@ -210,6 +227,9 @@ def parse_usage(usage: dict) -> dict:
         "model": u.get("model"),
         "provider": u.get("provider"),
         "session_id": u.get("session_id"),
+        "accounting_source": u.get("accounting_source"),
+        "accounting_metadata": u.get("accounting_metadata"),
+        "usage_complete": u.get("usage_complete"),
         "failed": bool(u.get("failed")) if u else None,
     }
 
@@ -250,7 +270,10 @@ def load_prices() -> dict:
             out[cur_model] = {}
             continue
         if indent > model_indent and cur_model and val != "":
-            out[cur_model][key] = _float_or_none(val)
+            if key == "input_includes_cache":
+                out[cur_model][key] = (val.lower() == "true" if val.lower() in ("true", "false") else None)
+            else:
+                out[cur_model][key] = _float_or_none(val)
         elif indent > model_indent and cur_model and val == "":
             out[cur_model][key] = None
     return out
@@ -259,10 +282,15 @@ def load_prices() -> dict:
 def _float_or_none(v):
     if v in ("null", "~", ""):
         return None
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
+    return _finite_nonnegative(v)
+
+
+def _yaml_value(v):
+    if v is None:
+        return "null"
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    return str(v)
 
 
 def write_prices(overrides: dict | None = None) -> Path:
@@ -282,8 +310,11 @@ def write_prices(overrides: dict | None = None) -> Path:
     for model in sorted(prices):
         p = prices[model]
         lines.append(f"  {model}:")
-        lines.append(f"    input: {_yaml_num(p.get('input'))}")
-        lines.append(f"    output: {_yaml_num(p.get('output'))}")
+        fields = dict(p)
+        fields.setdefault("input", None)
+        fields.setdefault("output", None)
+        for key in sorted(fields):
+            lines.append(f"    {key}: {_yaml_value(fields[key])}")
     STATE.mkdir(parents=True, exist_ok=True)
     PRICES.write_text("\n".join(lines) + "\n")
     return PRICES
@@ -298,18 +329,60 @@ def estimate_cost(usage: dict, prices: dict | None = None) -> float | None:
 
     Returns None rather than 0 whenever the numbers are not known, so an
     uncalibrated price can never look like a free run.
+
+    ``input_includes_cache`` must be an explicit boolean when cache-read
+    tokens are present.  When true, cached tokens are replaced inside the
+    input total; when false, they are billed in addition to input tokens.
     """
     prices = prices if prices is not None else load_prices()
     model = (usage or {}).get("model")
     p = (prices or {}).get(model)
     if not isinstance(p, dict):
         return None
-    inp, outp = p.get("input"), p.get("output")
+    inp, outp = _finite_nonnegative(p.get("input")), _finite_nonnegative(p.get("output"))
     if inp is None or outp is None:
         return None
-    in_tok = _int_or_none((usage or {}).get("input_tokens")) or 0
-    out_tok = _int_or_none((usage or {}).get("output_tokens")) or 0
-    return round(in_tok / 1_000_000 * float(inp) + out_tok / 1_000_000 * float(outp), 8)
+    raw = usage or {}
+    if raw.get("usage_complete") is False:
+        return None
+    in_tok = _int_or_none(raw.get("input_tokens", raw.get("prompt_tokens")))
+    out_tok = _int_or_none(raw.get("output_tokens", raw.get("completion_tokens")))
+    if in_tok is None or out_tok is None:
+        return None
+    read_tok = _int_or_none(raw.get("cache_read_tokens"))
+    write_tok = _int_or_none(raw.get("cache_write_tokens"))
+    if ("cache_read_tokens" in raw and read_tok is None) or ("cache_write_tokens" in raw and write_tok is None):
+        return None
+    if read_tok is None:
+        read_tok = 0
+    if write_tok is None:
+        write_tok = 0
+    includes = raw.get("input_includes_cache", p.get("input_includes_cache"))
+    if read_tok or write_tok:
+        if not isinstance(includes, bool):
+            return None
+        if includes and read_tok + write_tok > in_tok:
+            return None
+    if read_tok:
+        read_rate = _finite_nonnegative(p.get("cache_read"))
+        if read_rate is None or not isinstance(includes, bool):
+            return None
+        if includes:
+            if read_tok > in_tok:
+                return None
+            input_cost = (in_tok - read_tok) * inp + read_tok * read_rate
+        else:
+            input_cost = in_tok * inp + read_tok * read_rate
+    else:
+        input_cost = in_tok * inp
+    if write_tok:
+        write_rate = _finite_nonnegative(p.get("cache_write"))
+        if write_rate is None:
+            return None
+        if includes:
+            input_cost -= write_tok * inp
+        input_cost += write_tok * write_rate
+    return round(input_cost / 1_000_000 + out_tok / 1_000_000 * outp, 8)
 
 
 def default_flags(profile: str = "", toolsets: str = "",
@@ -408,10 +481,13 @@ def build_run(*, ts_start: str, ts_end: str, role: str, model: str,
     usage = usage or {}
     norm = parse_usage(usage)
     prices = load_prices()
-    est = norm.get("provider_cost_estimate")
+    est = norm.get("provider_cost_estimate") if norm.get("usage_complete") is not False else None
     cost_source = "usage-file" if est is not None else "none"
     if est is None:
-        est = estimate_cost(usage, prices)
+        estimate_usage = dict(usage)
+        if model and not estimate_usage.get("model"):
+            estimate_usage["model"] = model
+        est = estimate_cost(estimate_usage, prices)
         if est is not None:
             cost_source = "prices.yaml"
     rec = {
@@ -425,9 +501,15 @@ def build_run(*, ts_start: str, ts_end: str, role: str, model: str,
         "input_tokens": norm["input_tokens"],
         "output_tokens": norm["output_tokens"],
         "cached_tokens": norm["cached_tokens"],
+        "cache_write_tokens": norm["cache_write_tokens"],
+        "reasoning_tokens": norm["reasoning_tokens"],
+        "accounting_source": norm["accounting_source"],
+        "accounting_metadata": norm["accounting_metadata"],
+        "usage_complete": norm["usage_complete"],
         "api_calls": norm["api_calls"],
         "cost_estimate": est,
         "cost_source": cost_source,
+        "cost_unit": "USD (provider estimate)" if cost_source == "usage-file" else "A6API price-table units (uncalibrated)" if cost_source == "prices.yaml" else "unknown",
         "rc": _int_or_none(rc),
         "outcome": outcome if outcome in OUTCOMES else "other",
         "flags": flags or {},

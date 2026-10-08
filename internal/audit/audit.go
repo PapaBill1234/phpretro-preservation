@@ -151,6 +151,10 @@ func (p Plan) Dispatch(ctx context.Context, store Store, actor Actor, mutation M
 		Target:    mutation.Target,
 		TargetID:  mutation.TargetID,
 	}
+	record, err := RedactRecord(record)
+	if err != nil {
+		return err
+	}
 	return store.ApplyAtomically(ctx, mutation, record)
 }
 
@@ -181,6 +185,14 @@ func NewMemoryStore() *MemoryStore { return &MemoryStore{} }
 
 func (s *MemoryStore) ApplyAtomically(ctx context.Context, mutation Mutation, record AuditRecord) error {
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := validateMutation(mutation); err != nil {
+		return err
+	}
+	var err error
+	record, err = RedactRecord(record)
+	if err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -229,6 +241,11 @@ func (s *SQLStore) ApplyAtomically(ctx context.Context, mutation Mutation, recor
 	if err := validateMutation(mutation); err != nil {
 		return err
 	}
+	var redactionErr error
+	record, redactionErr = RedactRecord(record)
+	if redactionErr != nil {
+		return redactionErr
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrStore, err)
@@ -245,8 +262,13 @@ func (s *SQLStore) ApplyAtomically(ctx context.Context, mutation Mutation, recor
 		return fmt.Errorf("%w: %v", ErrWriteFailure, err)
 	}
 	defer update.Close()
-	if _, err := update.ExecContext(ctx, mutation.Value, mutation.TargetID); err != nil {
+	result, err := update.ExecContext(ctx, mutation.Value, mutation.TargetID)
+	if err != nil {
 		return fmt.Errorf("%w: %v", ErrWriteFailure, err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected != 1 {
+		return ErrWriteFailure
 	}
 
 	insert, err := tx.PrepareContext(ctx, auditSQL)

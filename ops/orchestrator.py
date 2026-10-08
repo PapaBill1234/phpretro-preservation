@@ -30,6 +30,7 @@ import sys
 import time
 import integrity as control
 import progress as roadmap_progress
+import worker as run_worker
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -47,7 +48,7 @@ GH_REPO = os.environ.get("PHPRETRO_GH_REPO", "PapaBill1234/phpretro-preservation
 # at that branch so units can run the not-yet-merged scripts/check.sh.
 BASE_REF = os.environ.get("PHPRETRO_BASE_REF", "origin/main")
 
-MAX_PARALLEL = int(os.environ.get("PHPRETRO_MAX_PARALLEL", "4"))
+MAX_PARALLEL = int(os.environ.get("PHPRETRO_MAX_PARALLEL", "1"))
 RUN_TIMEOUT = int(os.environ.get("PHPRETRO_RUN_TIMEOUT", "1500"))       # 25 min
 CHECK_TIMEOUT = int(os.environ.get("PHPRETRO_CHECK_TIMEOUT", "1800"))
 # GitHub Actions is ADVISORY. scripts/check.sh, run on the exact rebased head
@@ -62,7 +63,7 @@ MERGE_GATE_IS_LOCAL = True
 MERGE_GATE_DESCRIPTION = ("scripts/check.sh on the exact rebased head, "
                           "under the merge lock (authoritative); "
                           "GitHub Actions = advisory only")
-PER_UNIT_TOKEN_CAP = int(os.environ.get("PHPRETRO_UNIT_TOKEN_CAP", "6000000"))
+PER_UNIT_TOKEN_CAP = int(os.environ.get("PHPRETRO_UNIT_TOKEN_CAP", "3000000"))
 DAILY_TOKEN_CAP = int(os.environ.get("PHPRETRO_DAILY_TOKEN_CAP", "60000000"))
 # Throughput (item 1). The base daily merge cap is 30; token caps are unchanged.
 # The cap is auto-reverted to 12 when the nightly integration check OR the
@@ -101,8 +102,8 @@ PROTECTED_FILES = (
     "AGENTS.md",
     "scripts/check.sh",
 )
-# The diff guard can be turned off for debugging, but never silently: every
-# dispatch while it is off appends a guard_disabled event (telemetry item 2).
+# A disabled diff guard denies paid work and merge admission. Debugging may
+# inspect state, but cannot publish unguarded agent output.
 GUARD_DISABLED = bool(os.environ.get("PHPRETRO_GUARD_DISABLED"))
 
 PROVIDER = "custom:a6api"
@@ -135,6 +136,7 @@ NIGHTLY_JSON = STATE_DIR / "nightly.json"
 MERGE_CAP_FILE = STATE_DIR / "merge-cap.json"
 
 RUNNABLE = ("todo", "building", "pr_open", "queued")
+_SHUTDOWN_REQUESTED = False
 
 
 # --------------------------------------------------------------------------
@@ -170,9 +172,15 @@ def sh(cmd, cwd=None, timeout=600, env=None, check=False):
         out, _ = p.communicate(timeout=timeout)
         rc = p.returncode
     except subprocess.TimeoutExpired:
-        with_suppress(lambda: os.killpg(os.getpgid(p.pid), signal.SIGKILL))
-        with_suppress(lambda: p.communicate(timeout=30))
-        out, rc = (out or "") + f"\n[orchestrator] killed after {timeout}s timeout\n", 124
+        kill_process_group(p, grace=TERM_GRACE + 5)
+        out, _ = p.communicate(timeout=30)
+        out, rc = (out or "") + f"\n[orchestrator] stopped after {timeout}s timeout\n", 124
+    except KeyboardInterrupt:
+        global _SHUTDOWN_REQUESTED
+        _SHUTDOWN_REQUESTED = True
+        kill_process_group(p, grace=TERM_GRACE + 5)
+        out, _ = p.communicate(timeout=30)
+        rc = 130
     if check and rc != 0:
         raise RuntimeError(f"{cmd[0]} failed rc={rc}: {out[-2000:]}")
     return rc, (out or "")
@@ -210,11 +218,15 @@ def write_json(path, data) -> None:
 # --------------------------------------------------------------------------
 
 def _split_flow(s: str):
-    parts, buf, quote = [], [], None
+    parts, buf, quote, escaped = [], [], None, False
     for ch in s:
         if quote:
             buf.append(ch)
-            if ch == quote:
+            if escaped:
+                escaped = False
+            elif ch == "\\" and quote == '"':
+                escaped = True
+            elif ch == quote:
                 quote = None
         elif ch in "\"'":
             quote = ch
@@ -236,14 +248,25 @@ def _scalar(s: str):
     if s.startswith("[") and s.endswith("]"):
         inner = s[1:-1].strip()
         return [] if not inner else [_scalar(x) for x in _split_flow(inner)]
-    if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
-        return s[1:-1].replace('\\"', '"')
+    if len(s) >= 2 and s[0] == s[-1] == '"':
+        try:
+            return json.loads(s)
+        except ValueError:
+            # Legacy hand-written YAML can contain escapes outside JSON's
+            # subset. New snapshots always use JSON-compatible strings.
+            return s[1:-1].replace('\\"', '"')
+    if len(s) >= 2 and s[0] == s[-1] == "'":
+        return s[1:-1].replace("''", "'")
     if s in ("true", "True"):
         return True
     if s in ("false", "False"):
         return False
+    if s in ("null", "~", "None"):
+        return None
     if re.fullmatch(r"-?\d+", s):
         return int(s)
+    if re.fullmatch(r"-?(?:\d+\.\d*|\d*\.\d+|\d+[eE][+-]?\d+)(?:[eE][+-]?\d+)?", s):
+        return float(s)
     return s
 
 
@@ -326,9 +349,11 @@ STATE_KEYS = ("status", "pr", "attempts", "tokens", "wall_s", "model", "reason",
               "size_check_at", "size_action", "size_source", "run_id", "revision_id",
               "review_head", "review_model", "review_verdict", "review_id", "review2_id", "review2_head",
               "review2_model", "review2_verdict", "delivery_commit", "provider_retry_at", "review_admission_denied",
-              "recovery_conflict")
+              "recovery_conflict", "repair_required", "repair_head", "blocked_reason", "model_override")
 DEF_KEYS = ("title", "depends_on", "paths", "tests", "acceptance", "fixtures",
-            "fidelity_notes", "size", "design_doc", "unclear_semantics")
+             "fidelity_notes", "size", "design_doc", "unclear_semantics",
+             "planning_ready", "planning_paths", "planning_acceptance", "planning_tests",
+             "planning_context", "implementation_ready")
 
 
 def dump_unit_yaml(unit: dict) -> str:
@@ -351,11 +376,12 @@ def dump_unit_yaml(unit: dict) -> str:
 
 
 def _quote(s: str) -> str:
-    escaped = s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
-    return f'"{escaped}"'
+    return json.dumps(s, ensure_ascii=False)
 
 
 def _flow_item(v) -> str:
+    if v is None:
+        return "null"
     if isinstance(v, str):
         return _quote(v)
     if isinstance(v, bool):
@@ -410,9 +436,7 @@ def load_roadmap(state: dict) -> dict:
             live[uid].setdefault("updated", now())
         else:
             # keep runtime state, refresh the definition fields
-            for key in ("title", "depends_on", "paths", "tests", "acceptance",
-                        "fixtures", "fidelity_notes", "size", "design_doc",
-                        "unclear_semantics"):
+            for key in DEF_KEYS:
                 if key in u:
                     live[uid][key] = u[key]
     for uid, value in state.get("ledger_unit_tokens", {}).items():
@@ -435,6 +459,10 @@ def save_roadmap(roadmap: dict) -> None:
         for u in rows:
             for key in ("tokens", "attempts", "pr"):
                 control.nonnegative(u.get(key, 0), key)
+            original = roadmap[u["id"]]
+            for key in DEF_KEYS + STATE_KEYS:
+                if key in original and u.get(key) != original[key]:
+                    raise control.IntegrityError("roadmap serialization changed " + u["id"] + "." + key)
     control.atomic_text(LIVE_UNITS, text, validate)
 
 
@@ -814,9 +842,9 @@ class RecoveryConflict(RuntimeError):
 
 def paid_allowed(state: dict, unit: dict | None, role: str) -> bool:
     rollover(state)
-    if STOP_FILE.exists() or state.get("dispatch_disabled"):
+    if _SHUTDOWN_REQUESTED or STOP_FILE.exists() or state.get("dispatch_disabled") or GUARD_DISABLED:
         return False
-    if int(state.get("provider_errors", 0)) >= 3 or float(state.get("provider_retry_at", 0)) > time.time():
+    if float(state.get("provider_retry_at", 0)) > time.time():
         return False
     if int(state.get("tokens_today", 0)) >= DAILY_TOKEN_CAP:
         return False
@@ -853,6 +881,161 @@ def release_paid(state: dict, rid: str) -> None:
     state.setdefault("reservations", {}).pop(rid, None)
 
 
+def completed_receipt(path, rid, state):
+    """Settlement requires durable proof that requester and cgroup drained."""
+    rec = read_json(path, {})
+    reservation = state.get("reservations", {}).get(rid, {})
+    if (not isinstance(rec, dict) or rec.get("status") != "complete"
+            or rec.get("run_id") != rid or not reservation
+            or any(rec.get(k) != reservation.get(k) for k in
+                   ("role", "unit", "reserved_tokens", "ts_start"))):
+        raise control.IntegrityError("worker has no validated complete receipt; reservation retained")
+    if rec.get("unit_name"):
+        run_worker.checked_unit(rec["unit_name"], rid)
+    if isinstance(rec.get("rc"), bool) or not isinstance(rec.get("rc"), int):
+        raise control.IntegrityError("worker completion status is invalid")
+    finished = rec.get("completed_at")
+    if (isinstance(finished, bool) or not isinstance(finished, (int, float))
+            or not __import__("math").isfinite(finished)
+            or finished < 0 or finished > time.time() + 60):
+        raise control.IntegrityError("worker completion time is invalid")
+    accounted_usage(rec.get("usage"))
+    return rec
+
+
+def prepare_worker(rid, state, profile, model, command, cwd, usage, timeout, attempt=None):
+    rec = dict(state["reservations"][rid])
+    rec.update(status="prepared", model=model, attempt=attempt, command=command,
+               cwd=str(cwd), profile=profile, profile_home=str(PROFILE_HOME[profile]),
+               usage_path=str(usage), timeout=timeout, grace=TERM_GRACE,
+               controller_pid=os.getpid(), controller_identity=run_worker.process_identity(os.getpid()),
+               prepared_at=time.time())
+    if command and command[0] == HERMES:
+        rec["unit_name"] = "phpretro-run-" + rid + ".service"
+    path = STATE_DIR / "receipts" / (rid + ".json")
+    control.atomic_json(path, rec)
+    return path
+
+
+def accounted_usage(data):
+    if data is not None and not isinstance(data, dict):
+        raise control.IntegrityError("usage checkpoint is not an object")
+    data = dict(data or {})
+    for key in run_worker.COUNTERS:
+        if key in data:
+            control.nonnegative(data[key], "receipt " + key)
+    aux = data.get("total_including_auxiliary")
+    if aux is not None:
+        control.nonnegative(aux.get("total_tokens") if isinstance(aux, dict) else aux, "receipt auxiliary total")
+    if "usage_complete" in data and not isinstance(data["usage_complete"], bool):
+        raise control.IntegrityError("receipt completeness flag is invalid")
+    tokens = usage_tokens(data)
+    explicit_zero = data.get("api_calls") == 0 and data.get("total_tokens") == 0
+    if data.get("usage_complete") is False or (tokens <= 0 and not explicit_zero):
+        tokens = max(tokens, TIMEOUT_FALLBACK_TOKENS)
+        data["accounting_source"] = "pessimistic-estimate" if not data.get("total_tokens") else "partial-with-conservative-floor"
+        data["usage_complete"] = False
+    else:
+        data.setdefault("usage_complete", True)
+        data.setdefault("accounting_source", "usage-file")
+    data["input_includes_cache"] = False  # Verified Hermes canonical counters.
+    data["accounted_tokens"] = tokens
+    return data
+
+
+def settle_worker_receipts():
+    """Recover interrupted accounting before loading state; never relaunch it."""
+    rows = control.ledger_records(STATE_DIR)
+    pending = control.accounting(rows, now()[:10], TIMEOUT_FALLBACK_TOKENS)["unsettled"]
+    for rid, reservation in pending.items():
+        path = STATE_DIR / "receipts" / (rid + ".json")
+        rec = read_json(path, {})
+        if not isinstance(rec, dict):
+            raise control.IntegrityError("invalid durable receipt: " + rid)
+        if (rec.get("run_id") != rid or rec.get("role") != reservation["role"]
+                or rec.get("unit") != reservation.get("unit")):
+            raise control.IntegrityError("unsettled run has no valid durable receipt: " + rid)
+        if any(not isinstance(rec.get(k), str) or not rec[k] for k in ("model", "profile", "profile_home", "usage_path")) or rec.get("status") not in ("prepared", "running", "complete"):
+            raise control.IntegrityError("receipt launch metadata is invalid")
+        if run_worker.alive(rec.get("worker_pid"), rec.get("worker_identity")):
+            raise WorkerBusy("previous worker still active; no duplicate dispatch")
+        lease = run_worker.claim(path)
+        if lease is None:
+            raise WorkerBusy("previous worker owns receipt; no duplicate dispatch")
+        try:
+            if rec.get("reserved_tokens") != reservation["reserved_tokens"] or rec.get("ts_start") != reservation["ts_start"]:
+                raise control.IntegrityError("receipt reservation metadata changed")
+            prepared = rec.get("prepared_at", 0)
+            if isinstance(prepared, bool) or not isinstance(prepared, (int, float)) or not __import__("math").isfinite(prepared):
+                raise control.IntegrityError("invalid receipt preparation timestamp")
+            if rec.get("status") == "prepared" and time.time() - prepared < 45:
+                raise WorkerBusy("worker launch receipt is still settling")
+            run_worker.cancel_launch(path, rec)
+            child = read_json(run_worker.child_path(path), {})
+            if not isinstance(child, dict):
+                raise control.IntegrityError("child receipt is not an object")
+            if child and child.get("run_id") != rid:
+                raise control.IntegrityError("child receipt identity changed")
+            pid = child.get("child_pid", rec.get("child_pid"))
+            identity = child.get("child_identity", rec.get("child_identity"))
+            if run_worker.tracked_group_alive(pid, identity):
+                # Stop only a verified PID, before settling its final counters.
+                try:
+                    os.killpg(pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                deadline = time.monotonic() + TERM_GRACE
+                while run_worker.tracked_group_alive(pid, identity) and time.monotonic() < deadline:
+                    time.sleep(0.1)
+                if run_worker.tracked_group_alive(pid, identity):
+                    try:
+                        os.killpg(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    deadline = time.monotonic() + 10
+                    while run_worker.tracked_group_alive(pid, identity) and time.monotonic() < deadline:
+                        time.sleep(0.1)
+                    if run_worker.tracked_group_alive(pid, identity):
+                        raise WorkerBusy("orphan terminated; waiting for usage settlement")
+            if rec.get("unit_name"):
+                # Drain the requester first, then stop the cgroup. The durable
+                # cancellation guard also denies registrations arriving later.
+                run_worker.stop_unit(run_worker.checked_unit(rec["unit_name"], rid))
+            fresh = run_worker.usage_snapshot(Path(rec["usage_path"]),
+                Path(rec["profile_home"]) / "state.db", "RUN ID " + rid)
+            checkpoint = rec.get("usage") or {}
+            accounted_usage(checkpoint)  # Reject malformed receipts before comparing counters.
+            if fresh.get("usage_complete"):
+                selected = fresh
+            elif checkpoint.get("usage_complete"):
+                selected = checkpoint
+            else:
+                selected = max((fresh, checkpoint), key=usage_tokens)
+            usage = accounted_usage(selected)
+            rc = rec.get("rc", 130)
+            finished = rec.get("completed_at")
+            ts_end = now()
+            if finished is not None:
+                if isinstance(finished, bool) or not isinstance(finished, (int, float)) or not __import__("math").isfinite(finished) or finished < 0 or finished > time.time() + 60:
+                    raise control.IntegrityError("invalid receipt completion timestamp")
+                try:
+                    ts_end = datetime.fromtimestamp(finished, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                except (ValueError, OverflowError, OSError) as exc:
+                    raise control.IntegrityError("invalid receipt completion timestamp") from exc
+            log_model_run(rec["role"], rec["model"], rec.get("unit", ""), rec.get("attempt"), rc,
+                          "timeout" if rc == 124 else "interrupted", usage,
+                          rec["profile"], ts_start=reservation["ts_start"], ts_end=ts_end,
+                          run_id=rid, charged_tokens=usage["accounted_tokens"])
+            if usage["accounted_tokens"] > reservation["reserved_tokens"]:
+                raise control.IntegrityError("recovered run exceeded reserved allowance")
+        finally:
+            lease.close()
+
+
+class WorkerBusy(RuntimeError):
+    pass
+
+
 def note_provider(state: dict, failed: bool, uid: str = "") -> None:
     if failed:
         count = int(state.get("provider_errors", 0)) + 1
@@ -863,6 +1046,7 @@ def note_provider(state: dict, failed: bool, uid: str = "") -> None:
     else:
         state["provider_errors"] = 0
         state["provider_retry_at"] = 0
+        state.pop("provider_pause_reason", None)
     write_json(STATE_JSON, state)
 
 
@@ -894,17 +1078,17 @@ def hermes_run(profile: str, model: str, prompt: str, toolsets: str,
         return 75, str(exc), {"total_tokens": 0, "api_calls": 0, "admission_denied": True}
     usage = LOG_DIR / f"{tag}-{rid}.usage.json"
     env = {"HERMES_HOME": str(PROFILE_HOME[profile])}
-    cmd = [HERMES, "-z", prompt, "--usage-file", str(usage), "-m", model,
+    cmd = [HERMES, "-z", prompt + "\nRUN ID " + rid, "--usage-file", str(usage), "-m", model,
            "--provider", PROVIDER, "--reasoning", "low", "-t", toolsets,
            "-s", SKILL_NAME[profile], "--in", str(cwd), "--accept-hooks"]
     ts_start = now()
-    rc, out = sh(cmd, cwd=cwd, timeout=timeout, env=env)
-    data = read_json(usage, {}) or {}
-    explicit_zero = data.get("api_calls") == 0 and data.get("total_tokens") == 0
-    charge = usage_tokens(data) if data else TIMEOUT_FALLBACK_TOKENS
-    if charge <= 0 and not explicit_zero:
-        charge = TIMEOUT_FALLBACK_TOKENS
-    data["accounted_tokens"] = charge
+    receipt = prepare_worker(rid, state, profile, model, cmd, cwd, usage, timeout, attempt)
+    rc, out = sh([sys.executable, str(Path(__file__).with_name("worker.py")), str(receipt)],
+                 cwd=cwd, timeout=timeout + TERM_GRACE + 15, env=env)
+    rec = completed_receipt(receipt, rid, state)
+    rc = rec["rc"] if rc not in (124, 130) else rc
+    data = accounted_usage(rec.get("usage") or read_json(usage, {}))
+    charge = data["accounted_tokens"]
     outage = control.provider_error(rc, out)
     data["provider_error"] = outage
     log_model_run(role, model, unit, attempt, rc,
@@ -929,6 +1113,8 @@ def _outcome_for_rc(rc) -> str:
         return "other"
     if rc == 124:
         return "timeout"
+    if rc == 130:
+        return "interrupted"
     if rc != 0:
         return "provider_error"
     return "other"
@@ -1010,7 +1196,7 @@ def tokens_from_state_db(profile: str, marker: str = "") -> int:
         return 0
     con = None
     try:
-        con = sqlite3.connect(f"file:{db}?mode=ro&immutable=1", uri=True, timeout=20)
+        con = sqlite3.connect(db.as_uri() + "?mode=ro", uri=True, timeout=0.2)
         row = con.execute(
             "SELECT session_id FROM messages WHERE content LIKE ? "
             "ORDER BY rowid DESC LIMIT 1", (f"%{marker}%",)).fetchone()
@@ -1019,7 +1205,7 @@ def tokens_from_state_db(profile: str, marker: str = "") -> int:
         sid = row[0]
         cols = {r[1] for r in con.execute("PRAGMA table_info(sessions)")}
         fields = [c for c in ("input_tokens", "output_tokens", "cache_read_tokens",
-                              "reasoning_tokens") if c in cols]
+                              "cache_write_tokens") if c in cols]
         if not fields:
             return 0
         expr = " + ".join(f"COALESCE({c},0)" for c in fields)
@@ -1057,6 +1243,20 @@ def ensure_worktree(unit: dict) -> Path:
     path = worktree_path(unit)
     branch = unit_branch(unit)
     git("fetch", "origin")
+    if repair_requested(unit) and unit.get("pr"):
+        remote = f"refs/remotes/origin/{branch}"
+        # A repair continues the PR's history; never recreate it from main.
+        if not (path / ".git").exists():
+            if path.exists():
+                raise RecoveryConflict("repair directory exists without a worktree; preserved")
+            if git("show-ref", "--verify", "--quiet", f"refs/heads/{branch}")[0] == 0:
+                rc, out = git("worktree", "add", str(path), branch)
+            else:
+                rc, out = git("worktree", "add", "-b", branch, str(path), remote)
+            if rc:
+                raise RecoveryConflict("cannot attach repair branch: " + tail(out, 3))
+        validate_recovery_worktree(unit, path, remote)
+        return path
     if path.exists() and (path / ".git").exists():
         # Reused worktree. A retry continues from the previous attempt's commits
         # when there are any; with none, re-point the branch at the current base
@@ -1120,7 +1320,8 @@ attempt {attempt} of {MAX_ATTEMPTS} (model {model})
 {feedback or '(first attempt - nothing to repair)'}
 
 ## Rules
-Read only this brief and the listed paths; never explore the wider repository.
+Read this brief, the listed paths and listed fixtures/evidence; never explore
+unrelated repository files.
 Write the tests first, from the fixtures above, and cite in each test the
 evidence file the assertion comes from. Implement until they pass. Then run
 `bash scripts/check.sh` in this worktree and fix every failure it reports -
@@ -1393,7 +1594,7 @@ def push_and_open_pr(unit: dict, wt: Path, check_out: str, state: dict) -> int:
 
 def review_fallback(primary: str, author: str) -> str:
     # Third family prevents an outage retry from becoming self-review.
-    for candidate in (MODEL["deepseek"], MODEL["luna"], "claude-sonnet-5-5"):
+    for candidate in (MODEL["deepseek"], MODEL["luna"], MODEL["sol"]):
         if control.model_family(candidate) not in (control.model_family(primary), control.model_family(author)):
             return candidate
     return ""
@@ -1401,7 +1602,7 @@ def review_fallback(primary: str, author: str) -> str:
 
 def second_reviewer_model(author: str, primary: str) -> str:
     """Choose a sensitive-path reviewer from a family unlike both prior roles."""
-    for candidate in (MODEL["sol"], MODEL["luna"], MODEL["deepseek"], "claude-sonnet-5-5"):
+    for candidate in (MODEL["sol"], MODEL["luna"], MODEL["deepseek"]):
         family = control.model_family(candidate)
         if family not in (control.model_family(author), control.model_family(primary)):
             return candidate
@@ -1419,7 +1620,7 @@ def validated_review(unit: dict, wt: Path, state: dict, model: str, slot: str) -
     unit["review_admission_denied"] = False
     total, finding = 0, "review unavailable"
     for index in range(2):
-        chosen = model if index == 0 else review_fallback(model, author)
+        chosen = model if index == 0 else review_fallback(model, author) or model
         if not chosen:
             break
         prompt = reviewer_brief(unit, diff, chosen) + f"\nExact reviewed head: {head}\nRead-only: never write files.\n"
@@ -1491,6 +1692,8 @@ def ensure_reviewed(unit: dict, wt: Path, state: dict) -> bool:
         if verdict == "fix" and int(unit.get("review_rounds", 0)) < 1 and int(unit.get("attempts", 0)) < MAX_ATTEMPTS:
             unit["review_rounds"] = int(unit.get("review_rounds", 0)) + 1
             unit["status"] = "todo"
+            unit["repair_required"] = True
+            unit["repair_head"] = head
         else:
             unit["status"] = "parked"
             telemetry_event("parked", unit["id"], unit["reason"])
@@ -1677,7 +1880,7 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
     """Local gate, quality and independent review on the exact rebased head."""
     with (LOCK_DIR / "merge.lock").open("w") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
-        if STOP_FILE.exists() or int(state.get("merged_today", 0)) >= effective_merge_cap(state):
+        if _SHUTDOWN_REQUESTED or GUARD_DISABLED or STOP_FILE.exists() or int(state.get("merged_today", 0)) >= effective_merge_cap(state):
             return False
         pr = int(unit.get("pr") or 0)
         if not pr:
@@ -1687,14 +1890,18 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
         if rc:
             event(state, f"{unit['id']}: fetch failed; merge deferred")
             return False
-        rc, out = git("rebase", "origin/main", cwd=wt)
+        # An ordinary merge retains the published PR history, allowing a
+        # fast-forward push through the hook that forbids all force pushes.
+        rc, out = git("merge", "--no-edit", "origin/main", cwd=wt)
         if rc:
-            git("rebase", "--abort", cwd=wt)
+            git("merge", "--abort", cwd=wt)
             unit["conflict_rounds"] = int(unit.get("conflict_rounds", 0)) + 1
             unit["reason"] = "rebase conflict: " + tail(out, 6)
             unit["status"] = "parked" if unit["conflict_rounds"] > 1 else "todo"
+            unit["repair_required"] = True
+            unit["feedback"] = unit["reason"]
             return False
-        violations = [] if GUARD_DISABLED else guard_violations(changed_files(wt), unit.get("paths"), unit["id"])
+        violations = guard_violations(changed_files(wt), unit.get("paths"), unit["id"])
         if violations:
             unit["status"], unit["reason"] = "parked", "protected/scope paths changed in merge queue"
             return False
@@ -1704,6 +1911,7 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
             unit["feedback"] = "scripts/check.sh failed after rebase:\n" + tail(out, 60)
             unit["reason"] = "check.sh failed after rebase"
             unit["status"] = "todo" if int(unit.get("attempts", 0)) < MAX_ATTEMPTS else "parked"
+            unit["repair_required"] = True
             record_history(unit, "rebase-check-fail")
             return False
         qreport = quality_gate(wt, unit, state, BASE_REF)
@@ -1719,7 +1927,10 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
         branch = unit_branch(unit)
         if branch == "main" or not branch.startswith("unit/"):
             raise control.IntegrityError("unit merge attempted a non-unit branch")
-        rc, out = git("push", "--force-with-lease", "origin", f"HEAD:refs/heads/{branch}", cwd=wt)
+        if _SHUTDOWN_REQUESTED or GUARD_DISABLED or STOP_FILE.exists():
+            unit["status"] = "pr_open"
+            return False
+        rc, out = git("push", "origin", f"HEAD:refs/heads/{branch}", cwd=wt)
         if rc:
             unit["status"], unit["reason"] = "parked", "unit push refused: " + tail(out, 3)
             return False
@@ -1727,6 +1938,9 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
         append_actions_note(pr, "pre-merge advisory: " + ("green" if ci_clean else "not green"), state)
         if git_out("rev-parse", "HEAD", cwd=wt) != head or git_out("status", "--porcelain", cwd=wt):
             unit["status"], unit["reason"] = "parked", "head changed after review/gate"
+            return False
+        if _SHUTDOWN_REQUESTED or GUARD_DISABLED or STOP_FILE.exists():
+            unit["status"] = "pr_open"
             return False
         rc, out = sh(["gh", "pr", "merge", str(pr), "--repo", GH_REPO,
                       "--merge", "--match-head-commit", head, "--delete-branch"], timeout=300)
@@ -1794,6 +2008,7 @@ def _apply_failure_triage(unit: dict, state: dict, output: str,
     unit's life. The default (Jev off or unusable) is the existing behaviour.
     """
     uid = unit["id"]
+    unit["repair_required"] = True
     attempt = int(unit.get("attempts", 1))
     at_last = rung_index(unit.get("model", "")) >= len(LADDER) - 1
     allowed = allowed_triage_names(attempt, at_last)
@@ -2069,6 +2284,8 @@ def recover_units(roadmap: dict, history: dict, state: dict) -> None:
         u = roadmap[uid]
         if u.get("status") != "todo" or int(u.get("attempts", 0)) == 0:
             continue
+        if repair_requested(u) or u.get("split_requested") or u.get("blocked_reason"):
+            continue
         entry = history.get(u["id"])
         if entry and entry.get("outcome") == "no-change":
             continue
@@ -2097,6 +2314,8 @@ def recover_branch(unit: dict, history: dict, state: dict) -> bool:
     reconciled with its remote raises ``RecoveryConflict`` so the caller stops
     that one unit instead of aborting the cycle.
     """
+    if repair_requested(unit):
+        return False
     branch = unit_branch(unit)
     git("fetch", "origin", "--prune")
     if adopt_branch_unit(unit, state):
@@ -2116,8 +2335,9 @@ def recover_branch(unit: dict, history: dict, state: dict) -> bool:
         # from the real base, not from a tree stranded on the old head.
         behind = git_out("rev-list", "--count",
                          f"HEAD..{BASE_REF}", cwd=wt)
-        if behind and behind != "0":
-            drop_worktree(unit)
+        # Preserve commits and the existing PR for a repair, even when main
+        # advanced. Resetting to main here would discard the unit's work.
+        unit["repair_required"] = True
         unit["feedback"] = "scripts/check.sh failed on the recovered branch:\n" + tail(out, 60)
         record_history(unit, "recovered-fail")
         event(state, f"{unit['id']}: recovered branch fails check.sh; rebuilding")
@@ -2213,6 +2433,35 @@ def deps_merged(unit: dict, roadmap: dict) -> bool:
     return True
 
 
+def repair_requested(unit: dict) -> bool:
+    """Persist intent, including pre-migration review-fix state."""
+    return bool(unit.get("repair_required") or
+                (unit.get("status") == "todo" and unit.get("review_verdict") == "fix"))
+
+
+def planning_context(unit: dict) -> str:
+    """Use the approved unit contract, never an arbitrary document prefix."""
+    name = str(unit.get("planning_context") or unit.get("design_doc") or "")
+    if not name or not control.safe_path(name, PROTECTED_PREFIXES + PROTECTED_FILES):
+        return ""
+    path = REPO / name
+    if not path.resolve().is_relative_to(REPO.resolve()) or not path.is_file():
+        return ""
+    if path.stat().st_size > 65536:
+        return ""  # Contract too broad; no paid call with missing context.
+    return path.read_text()
+
+
+def planning_eligible(unit: dict) -> bool:
+    """Only a coordinator-written, bounded contract can fund a promotion."""
+    return (unit.get("planning_ready") is True and not unit.get("blocked_reason")
+            and isinstance(unit.get("planning_paths"), list) and bool(unit["planning_paths"])
+            and all(control.safe_path(p, PROTECTED_PREFIXES + PROTECTED_FILES)
+                    for p in unit["planning_paths"])
+            and bool(unit.get("planning_acceptance")) and bool(unit.get("planning_tests"))
+            and bool(planning_context(unit)))
+
+
 # QA units are advisory work: they improve confidence but must never gate
 # feature (F) delivery. Only these kinds are advisory; a refactor (RF) unit is
 # a normal roadmap entry and is not in this set.
@@ -2248,9 +2497,9 @@ def planner_pending(roadmap: dict) -> bool:
     on a planner pass. Used to give promotion priority over advisory QA.
     """
     for u in roadmap.values():
-        if u.get("status") == "design" and int(u.get("planner_retries", 0)) < PLANNER_RETRIES:
+        if u.get("status") == "design" and planning_eligible(u) and int(u.get("planner_retries", 0)) < PLANNER_RETRIES:
             return True
-        if u.get("status") == "parked" and int(u.get("planner_retries", 0)) < PLANNER_RETRIES:
+        if u.get("status") == "parked" and not u.get("blocked_reason") and int(u.get("planner_retries", 0)) < PLANNER_RETRIES:
             return True
         if u.get("split_requested") and u.get("status") == "todo" \
                 and int(u.get("planner_retries", 0)) < PLANNER_RETRIES:
@@ -2270,6 +2519,8 @@ def select_ready(roadmap: dict, state: dict) -> list:
     for uid in sorted(roadmap):
         u = roadmap[uid]
         if u.get("status") != "todo":
+            continue
+        if u.get("blocked_reason") or u.get("implementation_ready") is False:
             continue
         if u.get("split_requested"):
             # Waiting on the planner to split it into smaller units; rebuilding
@@ -2354,12 +2605,14 @@ def start_build(unit: dict, state: dict, roadmap: dict | None = None):
     usage, log_path = LOG_DIR / (stem + ".usage.json"), LOG_DIR / (stem + ".log")
     logfile = log_path.open("x")
     toolsets = "file,terminal,context_engine"
-    cmd = [HERMES, "-z", prompt, "--usage-file", str(usage), "-m", model,
+    cmd = [HERMES, "-z", prompt + "\nRUN ID " + rid, "--usage-file", str(usage), "-m", model,
            "--provider", PROVIDER, "--reasoning", "low", "-t", toolsets,
            "-s", SKILL_NAME["builder"], "--in", str(wt), "--accept-hooks"]
     ts_start = now()
+    receipt = prepare_worker(rid, state, "builder", model, cmd, wt, usage, RUN_TIMEOUT, attempt)
     try:
-        proc = subprocess.Popen(cmd, cwd=str(wt), env={**os.environ, "HERMES_HOME": str(PROFILE_HOME["builder"])},
+        proc = subprocess.Popen([sys.executable, str(Path(__file__).with_name("worker.py")), str(receipt)],
+                     cwd=str(wt), env={**os.environ, "HERMES_HOME": str(PROFILE_HOME["builder"])},
                      stdout=logfile, stderr=subprocess.STDOUT, text=True, start_new_session=True)
     except OSError:
         logfile.close()
@@ -2375,7 +2628,7 @@ def start_build(unit: dict, state: dict, roadmap: dict | None = None):
                     attempt=attempt, model=model, run_id=rid)
     log(f"{unit['id']}: dispatch attempt {attempt} on {model}")
     return {"unit": unit, "proc": proc, "started": time.time(), "ts_start": ts_start,
-            "logfile": logfile, "log_path": log_path, "usage": usage, "wt": wt, "run_id": rid}
+            "logfile": logfile, "log_path": log_path, "usage": usage, "wt": wt, "run_id": rid, "receipt": receipt}
 
 
 def finish_build(job, roadmap: dict, state: dict) -> None:
@@ -2384,26 +2637,35 @@ def finish_build(job, roadmap: dict, state: dict) -> None:
     try:
         # Absolute launch deadline, so waiting behind another merge gives no
         # builder an extra RUN_TIMEOUT window.
-        remaining = max(0.01, RUN_TIMEOUT - (time.time() - job["started"]))
+        remaining = max(0.01, RUN_TIMEOUT + TERM_GRACE + 15 - (time.time() - job["started"]))
         proc.communicate(timeout=remaining)
         rc = proc.returncode
     except subprocess.TimeoutExpired:
-        kill_process_group(proc)
+        kill_process_group(proc, grace=TERM_GRACE + 5)
         rc = 124
+    except KeyboardInterrupt:
+        global _SHUTDOWN_REQUESTED
+        _SHUTDOWN_REQUESTED = True
+        kill_process_group(proc, grace=TERM_GRACE + 5)
+        rc = 130
     with_suppress(job["logfile"].close)
     wall = int(time.time() - job["started"])
-    data = read_json(usage, {}) or {}
-    tokens, source = usage_tokens(data), "usage-file"
-    if tokens <= 0 and rc == 124:
-        tokens = tokens_from_state_db("builder", f"UNIT BRIEF {uid}")
-        source = "state.db"
-    if tokens <= 0 and not (data.get("api_calls") == 0 and data.get("total_tokens") == 0):
-        tokens, source = TIMEOUT_FALLBACK_TOKENS, "pessimistic-estimate"
+    rid = job["run_id"]
+    receipt = completed_receipt(job["receipt"], rid, state)
+    rc = receipt["rc"] if rc not in (124, 130) else rc
+    data = receipt.get("usage") or read_json(usage, {}) or {}
+    data = accounted_usage(data)
+    tokens = data["accounted_tokens"]
+    source = data["accounting_source"]
     output = job.get("log_path")
-    output = output.read_text(errors="replace")[-16000:] if output and output.exists() else ""
+    if output and output.exists():
+        with output.open("rb") as stream:
+            stream.seek(max(0, output.stat().st_size - 16000))
+            output = stream.read().decode("utf-8", "replace")
+    else:
+        output = ""
     outage = control.provider_error(rc, output)
-    rid = job.get("run_id") or control.identity()
-    outcome = "provider_error" if outage else "timeout" if rc == 124 else "other"
+    outcome = "provider_error" if outage else "timeout" if rc == 124 else "interrupted" if rc == 130 else "other"
     # Ledger lands BEFORE publication/review. A crash cannot lose builder spend.
     log_model_run("builder", unit.get("model", ""), uid, unit.get("attempts"), rc,
                   outcome, data, "builder", "file,terminal,context_engine",
@@ -2412,6 +2674,12 @@ def finish_build(job, roadmap: dict, state: dict) -> None:
     add_tokens(state, unit, tokens)
     unit["wall_s"] = int(unit.get("wall_s", 0)) + wall
     unit["updated"] = now()
+    if rc == 130:
+        unit["status"], unit["reason"] = "todo", "interrupted; durable receipt settled; repair existing branch"
+        unit["repair_required"] = True
+        save_roadmap(roadmap)
+        write_json(STATE_JSON, state)
+        return
     if outage:
         unit["attempts"] = max(0, int(unit.get("attempts", 0)) - 1)
         unit["status"] = "todo"
@@ -2460,7 +2728,11 @@ def _publish_attempt(unit: dict, wt: Path, state: dict, outcome_box: dict) -> No
     # Checked on the working tree, before commit_if_dirty, so an uncommitted
     # edit to ops/ still fails the attempt instead of being committed.
     files = changed_files(wt)
-    violations = [] if GUARD_DISABLED else guard_violations(files, unit.get("paths"), uid)
+    if GUARD_DISABLED or _SHUTDOWN_REQUESTED or STOP_FILE.exists():
+        unit["status"] = "todo"
+        unit["repair_required"] = True
+        return
+    violations = guard_violations(files, unit.get("paths"), uid)
     if GUARD_DISABLED:
         telemetry_event("guard_disabled", uid,
                         "PHPRETRO_GUARD_DISABLED is set: the diff guard did not "
@@ -2482,6 +2754,7 @@ def _publish_attempt(unit: dict, wt: Path, state: dict, outcome_box: dict) -> No
             telemetry_event("parked", uid, "repeated diff-guard rejections")
         else:
             unit["status"] = "todo"
+            unit["repair_required"] = True
             event(state, f"{uid}: diff guard -> retry")
         return
 
@@ -2541,6 +2814,7 @@ def _publish_attempt(unit: dict, wt: Path, state: dict, outcome_box: dict) -> No
                               "(item 3); a guessed label does not waive the gate.")
         unit["reason"] = "quality: " + str(qreport.get("reason", ""))[:280]
         unit["status"] = "todo" if unit["attempts"] < MAX_ATTEMPTS else "parked"
+        unit["repair_required"] = True
         event(state, f"{uid}: QUALITY rejected the attempt "
                      f"({qreport.get('reason')}) -> {unit['status']}")
         telemetry_event("gate_fail", uid, "quality: " + str(qreport.get("reason",""))[:200])
@@ -2558,6 +2832,7 @@ def _publish_attempt(unit: dict, wt: Path, state: dict, outcome_box: dict) -> No
         telemetry_event("provider_error", uid, f"PR delivery failed: {exc}"[:200])
         return
     unit["pr"] = pr
+    unit["repair_required"] = False
     unit["status"] = "pr_open"
     unit["updated"] = now()
     event(state, f"{uid}: PR #{pr} opened")
@@ -2587,8 +2862,13 @@ def apply_planner_output(roadmap: dict, state: dict, unit: dict, out: str,
         entries = doc.get("units")
         if entries == [] and mode == "audit":
             return True
+        if mode == "promote" and not planning_eligible(unit):
+            raise control.IntegrityError("design has no bounded approved planning contract")
+        parent = dict(unit)
+        if mode == "promote":
+            parent["paths"] = unit["planning_paths"]
         candidate, new_ids = control.validate_plan(
-            entries, roadmap, unit, old_id, mode,
+            entries, roadmap, parent, old_id, mode,
             PROTECTED_PREFIXES + PROTECTED_FILES, SPLIT_MAX_UNITS)
     except (ValueError, TypeError, KeyError, control.IntegrityError) as exc:
         if "events" in state:
@@ -2637,10 +2917,12 @@ def maybe_plan(roadmap: dict, state: dict) -> bool:
     else:
         parked = sorted([u for u in roadmap.values()
                          if u.get("status") == "parked"
+                          and not u.get("blocked_reason")
                          and int(u.get("planner_retries", 0)) < PLANNER_RETRIES],
                         key=lambda u: u["id"])
         design = sorted([u for u in roadmap.values()
                          if u.get("status") == "design"
+                          and planning_eligible(u)
                          and int(u.get("planner_retries", 0)) < PLANNER_RETRIES],
                         key=lambda u: u["id"])
         if design:
@@ -2661,10 +2943,8 @@ def maybe_plan(roadmap: dict, state: dict) -> bool:
     target["split_requested"] = False
     model = planner_model(target)
     design_text = ""
-    if mode == "promote" and target.get("design_doc"):
-        p = REPO / str(target["design_doc"])
-        if p.exists():
-            design_text = p.read_text()[:12000]
+    if mode == "promote":
+        design_text = planning_context(target)
     prompt = planner_brief(target, mode, design_text)
     prompt += ("\nExisting IDs are immutable and reserved: " + ", ".join(sorted(roadmap)) +
                f"\nUse fresh IDs such as {uid}a and {uid}b. Never emit the parent ID. "
@@ -2723,7 +3003,7 @@ def dispatch(roadmap: dict, state: dict) -> None:
         return
     batch, used = [], []
     for u in ready:
-        if len(batch) >= MAX_PARALLEL:
+        if len(batch) >= (1 if int(state.get("provider_errors", 0)) >= 3 else MAX_PARALLEL):
             break
         if any(paths_overlap(u.get("paths"), p) for p in used):
             continue
@@ -2756,6 +3036,12 @@ def dispatch(roadmap: dict, state: dict) -> None:
             # scripts/check.sh, the quality gate and independent review on the
             # exact head before anything merges.
             pr = find_existing_pr(branch)
+            if pr and repair_requested(u):
+                if u.get("pr") and int(u["pr"]) != pr:
+                    raise RecoveryConflict("repair PR identity changed; branch preserved")
+                u["pr"] = pr
+                jobs.append(start_build(u, state, roadmap))
+                continue
             if pr:
                 # Never start a duplicate delivery: an open PR already exists
                 # for this branch, so queue it instead of building a second one.
@@ -2770,6 +3056,9 @@ def dispatch(roadmap: dict, state: dict) -> None:
             # Accounting/state corruption and provider outages are not unit
             # errors: let the cycle handlers decide.
             raise
+        except RecoveryConflict as exc:
+            u["status"], u["reason"] = "parked", str(exc)
+            u["blocked_reason"] = "branch reconciliation required: " + str(exc)
         except Exception as exc:
             u["status"] = "todo"
             u["reason"] = f"dispatch error: {exc}"
@@ -3253,28 +3542,18 @@ def next_free_id(roadmap: dict, prefix: str) -> str:
 
 
 def read_env_var(name: str) -> str:
-    """Read a variable from ``~/.hermes/.env`` (the documented ntfy setup)."""
-    val = os.environ.get(name, "").strip()
-    if val:
-        return val
-    try:
-        for ln in (HOME / ".hermes" / ".env").read_text().splitlines():
-            ln = ln.strip()
-            if ln.startswith(f"{name}=") and not ln.startswith("#"):
-                return ln.split("=", 1)[1].strip().strip('"').strip("'")
-    except Exception:
-        pass
-    return ""
+    """Status rendering never opens the Hermes credential file."""
+    return os.environ.get(name, "").strip()
 
 
 def alerts_lines() -> list:
     """Render the alert channel, its triggers, and any setup steps for STATE.md."""
-    topic = (read_env_var("PHPRETRO_ALERT_TOPIC") or read_env_var("NTFY_TOPIC"))
+    topic = bool(read_env_var("PHPRETRO_ALERT_TOPIC") or read_env_var("NTFY_TOPIC"))
     led = read_json(STATE_DIR / "alerts.json", {})
     last = led.get("last", {})
     lines = []
     if topic:
-        lines.append(f"- channel: ntfy (public server) -> topic `{topic}`")
+        lines.append("- channel: ntfy (inherited configuration; target withheld)")
         lines.append("- trigger conditions (a one-line message is sent only for these): "
                      "no merge in 24h; a cap hit; the STOP file exists; the integration "
                      "check or self-check failed twice in a row; disk over 85%")
@@ -3284,12 +3563,12 @@ def alerts_lines() -> list:
         else:
             lines.append("- last alert: none yet")
         lines.append("- to receive: install the ntfy app (https://ntfy.sh/docs/subscribe/phone/), "
-                     f"tap +, enter topic `{topic}`. No account or token is needed on the public "
+                     "tap +, enter your configured topic. No account or token is needed on the public "
                      "server. The topic name is the only secret - keep it out of screenshots and logs.")
         lines.append("- to make the topic private (optional): reserve it on ntfy.sh, then set "
                      "`NTFY_TOKEN` in ~/.hermes/.env and restart.")
     else:
-        lines.append("- channel: NOT configured. No alert can be delivered.")
+        lines.append("- channel: n/a in this process; the alert service owns configuration and delivery.")
         lines.append("- setup (no account needed): install the ntfy app "
                      "(https://ntfy.sh/docs/subscribe/phone/) and note your topic name; then add "
                      "`NTFY_TOPIC=<your-topic>` and `NTFY_PUBLISH_TOPIC=<your-topic>` to "
@@ -3458,11 +3737,6 @@ def jev_lines() -> list:
         lines = list(mod.report_lines())
     except Exception as exc:
         return [f"- jev reporting error: {exc}"]
-    try:
-        if not mod.api_key():
-            lines.append("- setup: " + mod.SETUP_STEPS)
-    except Exception:
-        pass
     return lines
 
 
@@ -3787,6 +4061,11 @@ def cycle(*, no_dispatch: bool = False) -> None:
             log("another cycle is running; skipping")
             return
         try:
+            try:
+                settle_worker_receipts()
+            except WorkerBusy as exc:
+                log(str(exc))
+                return
             state = load_state()
             rollover(state)
             roadmap = load_roadmap(state)
@@ -3976,11 +4255,15 @@ units:
             '    title: "part one"\n'
             '    size: S\n'
             '    paths: [internal/big/a.go]\n'
+            '    acceptance: ["first behavior"]\n'
+            '    tests: ["go test ./internal/big/..."]\n'
             '    depends_on: []\n'
             '  - id: F9b\n'
             '    title: "part two"\n'
             '    size: M\n'
             '    paths: [internal/big/b.go]\n'
+            '    acceptance: ["second behavior"]\n'
+            '    tests: ["go test ./internal/big/..."]\n'
             '    depends_on: [F9]\n')
     assert apply_planner_output(roadmap, {}, roadmap["F9"], plan,
                                 old_id="F9", mode="split")
@@ -4018,6 +4301,9 @@ units:
 
 
 def main() -> int:
+    def shutdown(signum, frame):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, shutdown)
     ap = argparse.ArgumentParser(description="PHP-Retro autonomous unit pipeline")
     ap.add_argument("--once", action="store_true", help="run one cycle")
     ap.add_argument("--no-dispatch", action="store_true", help="reconcile state only; no paid roles or merges")

@@ -35,6 +35,9 @@ type MemoryStore struct {
 }
 
 func (s *MemoryStore) Lookup(id string) (Record, error) {
+	if s == nil {
+		return Record{}, ErrStore
+	}
 	if s.Err != nil {
 		return Record{}, s.Err
 	}
@@ -62,6 +65,9 @@ func ValidateCode(store Store, staffID, code string, now time.Time) error {
 		if c < '0' || c > '9' {
 			return ErrMalformedCode
 		}
+	}
+	if store == nil {
+		return ErrStore
 	}
 	r, err := store.Lookup(staffID)
 	if err != nil {

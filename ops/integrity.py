@@ -289,9 +289,11 @@ def validate_plan(entries, roadmap, parent, old_id, mode, protected, split_cap):
             values = e.get(key, [])
             if not isinstance(values, list) or any(not isinstance(v, str) or not v for v in values):
                 raise IntegrityError("invalid list: " + key)
+        if not e.get("acceptance") or not e.get("tests"):
+            raise IntegrityError("plan needs acceptance and tests")
         if len(e.get("acceptance", [])) > 5:
             raise IntegrityError("acceptance cap")
-        if mode in ("split", "rewrite") and parent.get("paths"):
+        if mode in ("split", "rewrite", "promote") and parent.get("paths"):
             allowed = [p.rstrip("*").rstrip("/") for p in parent["paths"]]
             for p in e["paths"]:
                 if p == f"docs/units/{uid}.md":

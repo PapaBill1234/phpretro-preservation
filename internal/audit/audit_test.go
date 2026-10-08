@@ -207,6 +207,7 @@ type fakeConn struct {
 	prepared     []string
 	boundArgs    [][]driver.Value
 	failAudit    bool
+	zeroUpdate   bool
 	stagedRows   map[string]string
 	stagedAudit  []AuditRecord
 	committedRow map[string]string
@@ -265,6 +266,9 @@ func (s *fakeStmt) Exec(args []driver.Value) (driver.Result, error) {
 			Target: str(args[3]), TargetID: str(args[4]),
 		})
 	case strings.Contains(s.query, "UPDATE"):
+		if s.c.zeroUpdate {
+			return driver.RowsAffected(0), nil
+		}
 		if s.c.stagedRows == nil {
 			s.c.stagedRows = map[string]string{}
 		}
