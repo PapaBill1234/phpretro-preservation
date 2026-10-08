@@ -1329,21 +1329,25 @@ def find_existing_pr(branch: str) -> int:
 
 
 def push_and_open_pr(unit: dict, wt: Path, check_out: str, state: dict) -> int:
-    """Publish the unit branch and return its PR number.
+    """Publish the unit branch, then return its PR number.
 
-    An existing open PR for the branch is reused instead of creating a second
-    one. A rejected push (the branch diverged from its remote) is reported as a
-    unit-scoped ``RecoveryConflict``: the caller records the reason and stops
-    only this unit. A force-push is never attempted here.
+    The branch is pushed FIRST so that a reconciled worktree (a fast-forward, a
+    behind worktree, or a diverged history joined by a merge commit) is actually
+    published before a PR is reused or opened - an existing PR must never be
+    reported as recovered while the worktree's commits are still local only.
+
+    A rejected push is a confirmed Git conflict and raises the unit-scoped
+    ``RecoveryConflict``; a failed GitHub call is a provider outage and raises
+    ``DeliveryUnavailable``. A force-push is never attempted.
     """
     branch = unit_branch(unit)
+    rc, out = git("push", "-u", "origin", f"HEAD:refs/heads/{branch}", cwd=wt, timeout=300)
+    if rc != 0:
+        raise RecoveryConflict(f"push rejected for {branch}: {tail(out, 4)}")
     existing = find_existing_pr(branch)
     if existing:
         event(state, f"{unit['id']}: reusing existing PR #{existing} for {branch}")
         return existing
-    rc, out = git("push", "-u", "origin", f"HEAD:refs/heads/{branch}", cwd=wt, timeout=300)
-    if rc != 0:
-        raise RecoveryConflict(f"push rejected for {branch}: {tail(out, 4)}")
     title = f"unit({unit['id']}): {unit.get('title','')}"
     body = (f"Automated unit delivery from the ops pipeline.\n\n"
             f"- unit: `{unit['id']}` - {unit.get('title','')}\n"
@@ -1859,12 +1863,11 @@ def adopt_branch_unit(unit: dict, state: dict) -> bool:
     units the pre-pipeline kanban board delivered before this roadmap existed.
     """
     branch = unit_branch(unit)
-    # A branch that does not exist on origin cannot be a merged delivery. This
-    # local check keeps the GitHub lookup off the hot path for the ordinary
-    # backlog, and it also covers the usual ``unit/<id>`` branches, not only
-    # the custom branch names the pre-pipeline board used.
-    if git("rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}")[0] != 0:
-        return False
+    # GitHub is the source of truth: a merged PR is still reported under its
+    # head branch name even after GitHub deletes that branch, so branch absence
+    # must never be read as "no merged delivery". This covers the ordinary
+    # ``unit/<id>`` names as well as the custom branch names the pre-pipeline
+    # board used.
     pr_rc, pr_out = sh(["gh", "pr", "list", "--repo", GH_REPO, "--head", branch,
                         "--state", "merged", "--json", "number,mergeCommit",
                         "--jq", ".[0] | .number, .mergeCommit.oid"],
@@ -2082,7 +2085,18 @@ def recover_branch(unit: dict, history: dict, state: dict) -> bool:
         raise RecoveryConflict(
             f"recorded PR #{recorded} is not the open PR "
             f"#{open_pr or 'none'} for {branch}")
-    pr = open_pr or push_and_open_pr(unit, wt, out, state)
+    if open_pr:
+        # Publish the validated head before reusing the PR: a fast-forward or a
+        # diverged-history merge must never be left local-only.
+        if relation in ("ahead", "merged"):
+            rc, pout = git("push", "origin", f"HEAD:refs/heads/{branch}",
+                           cwd=wt, timeout=300)
+            if rc != 0:
+                raise RecoveryConflict(
+                    f"push rejected for {branch}: {tail(pout, 4)}")
+        pr = open_pr
+    else:
+        pr = push_and_open_pr(unit, wt, out, state)
     # Only now is the recovery real: the branch is consistent with its remote
     # and the PR is known. Nothing above this line is recorded as recovered.
     unit["pr"] = pr
@@ -2681,7 +2695,9 @@ def dispatch(roadmap: dict, state: dict) -> None:
                              f"not rebuilt")
                 continue
             jobs.append(start_build(u, state, roadmap))
-        except control.IntegrityError:
+        except (control.IntegrityError, DeliveryUnavailable):
+            # Accounting/state corruption and provider outages are not unit
+            # errors: let the cycle handlers decide.
             raise
         except Exception as exc:
             u["status"] = "todo"

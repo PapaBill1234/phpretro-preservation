@@ -164,7 +164,26 @@ class ExistingPrTest(unittest.TestCase):
         self.assertEqual(history["F38"], "recovered")
         pushed.assert_not_called()
 
-    def test_push_and_open_pr_reuses_before_pushing(self):
+    def test_recovery_publishes_the_reconciled_head_before_reusing_the_pr(self):
+        unit = {"id": "F38", "status": "todo", "attempts": 2, "tokens": 1, "pr": 0}
+        history: dict = {}
+        git = ScriptedGit({"unit/F38": "ahead"})
+        with mock.patch.object(o, "git", git.git), \
+             mock.patch.object(o, "git_out", git.git_out), \
+             mock.patch.object(o, "attach_worktree", lambda u: tmpdir("f38-")), \
+             mock.patch.object(o, "adopt_branch_unit", lambda u, s: False), \
+             mock.patch.object(o, "run_check", lambda wt: (0, "ok")), \
+             mock.patch.object(o, "find_existing_pr", lambda b: 66), \
+             mock.patch.object(o, "push_and_open_pr",
+                               mock.Mock(side_effect=AssertionError("must not open"))), \
+             mock.patch.object(o, "record_history",
+                               lambda u, outcome: history.__setitem__(u["id"], outcome)):
+            self.assertTrue(o.recover_branch(unit, {}, _state()))
+        # The ahead worktree was pushed, so the PR's branch holds this head.
+        self.assertTrue(any(call[:1] == ("push",) for call in git.git_calls))
+        self.assertEqual(unit["pr"], 66)
+
+    def test_push_and_open_pr_publishes_then_reuses(self):
         unit = {"id": "F38", "status": "todo", "attempts": 1, "tokens": 1}
         git = ScriptedGit({})
         with mock.patch.object(o, "git", git.git), \
@@ -172,7 +191,8 @@ class ExistingPrTest(unittest.TestCase):
              mock.patch.object(o, "sh",
                                mock.Mock(side_effect=AssertionError("no gh call"))):
             self.assertEqual(o.push_and_open_pr(unit, tmpdir("f38-"), "ok", _state()), 66)
-        self.assertEqual(git.git_calls, [])
+        # The branch is published before the existing PR is reused.
+        self.assertTrue(any(call[:1] == ("push",) for call in git.git_calls))
 
     def test_stale_recorded_pr_is_a_unit_conflict(self):
         """A closed or foreign recorded PR must never be queued as recovered."""
@@ -346,11 +366,29 @@ class DispatchGuardTest(unittest.TestCase):
         self.assertEqual(unit["status"], "queued")
         self.assertEqual(unit["pr"], 66)
 
-    def test_adopt_is_skipped_for_a_branch_that_does_not_exist(self):
+    def test_adopt_uses_github_even_when_the_branch_is_gone(self):
+        """GitHub deletes the head branch on merge; absence is not evidence."""
+        unit = {"id": "F40", "status": "todo", "attempts": 0, "pr": 0}
+        state = _state()
+
+        def sh(cmd, **kw):
+            if cmd[:2] == ["gh", "pr"]:
+                return (0, "67 deadbeefcafe")
+            return (1, "")
+
+        with mock.patch.object(o, "sh", sh), \
+             mock.patch.object(o, "git", lambda *a, **k: (0, "")), \
+             mock.patch.object(o, "git_out", lambda *a, **k: "f" * 40), \
+             mock.patch.object(o, "_check_main_cached", lambda head: (0, "ok")), \
+             mock.patch.object(o, "event", lambda s, m: s["events"].append(m)):
+            self.assertTrue(o.adopt_branch_unit(unit, state))
+        self.assertEqual(unit["status"], "merged")
+        self.assertEqual(unit["pr"], 67)
+
+    def test_adopt_returns_false_without_a_merged_pr(self):
         unit = {"id": "F38", "status": "todo", "attempts": 0, "pr": 0}
-        with mock.patch.object(o, "git", lambda *a, **k: (1, "")), \
-             mock.patch.object(o, "sh",
-                               mock.Mock(side_effect=AssertionError("no gh call"))):
+        with mock.patch.object(o, "sh", lambda *a, **k: (0, "")), \
+             mock.patch.object(o, "git", lambda *a, **k: (1, "")):
             self.assertFalse(o.adopt_branch_unit(unit, _state()))
 
 
