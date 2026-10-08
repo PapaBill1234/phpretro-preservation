@@ -1,5 +1,7 @@
 # Fresh-start rewrite plan draft
 
+> Superseding note (2026-10-04): This planning draft preserves historical approval and production-gate wording below; those statements are not current policy. The project is development-only with no production environment, and authentication, sessions, cookies, CSRF, audit-event design, schema, migrations, and dependent units are open for development under exact briefs, independent review, and CI. The owner gives no approvals. Production enablement, real credentials, secrets or key material, real user data, live outside systems, and weakening review, CI, branch-protection, or approval gates remain closed.
+
 Status: planning draft. The repository and monitoring/tooling baseline now exist; implementation remains blocked until the readiness gates and supervised work-unit batch are approved.
 
 Jev/cost revision: Jev is a typed routing and triage aid, never an authority for schema ownership, authentication, authorization, security approval, production enablement, merge approval, or runner permissions. Keep Jev calls small and batched, include `none of these`, record confidence and source verification, and stop delegating below 0.80 confidence, on `escalate`, unavailable responses, or disagreement with source. Compare Jev-assisted and matched Sol-only units by cost per accepted unit, input/cached/output tokens, wall time, retries, and error rate after ten accepted units. The A6API collector and PowerShell summaries are operational evidence only; configuration is never evidence of savings.
@@ -75,7 +77,7 @@ Named services include `AccountService`, `SessionService`, `ProfileService`, `Co
 - IDOR and arbitrary profile targeting; identity and ownership derive from the authenticated session and explicit policy.
 - Session fixation, unsafe cookie attributes, plaintext/weak password storage, token leakage, open redirects, unsafe file/media paths, privilege confusion, and sensitive data in logs.
 
-Every sensitive mutation has validation, authorization, CSRF, prepared SQL, context-safe rendering, and an audit row in the same database transaction. No documented failure contract substitutes for atomic write plus audit. Production enablement is prohibited for registration, payments, client handoff, staff operations, or any emulator write until its decision gate, negative tests, audit behavior, and independent review requirements pass.
+- Every sensitive mutation has validation, authorization, CSRF, prepared SQL, context-safe rendering, and an audit row in the same database transaction. No documented failure contract substitutes for atomic write plus audit. Registration, payments, client handoff, staff operations, and emulator writes remain outside the current bounded work until their decision gates, negative tests, audit behavior, and independent review requirements pass.
 
 ## 4. First-release slices and automated golden contracts
 
@@ -144,7 +146,7 @@ Stop immediately for missing credentials/authority, a payment/quota/auth failure
 
 ## 10. Delivery and decision gates
 
-1. Approve the new repository name `phpretro-preservation`, owner, visibility, access, and evidence transfer list.
+- 1. Record the repository name `phpretro-preservation`, visibility, access, and evidence transfer list.
 2. Run the capped Go foundation slice and review its measured result; confirm or reject Go.
 3. Complete the first-release security and golden-contract slices.
 4. Add PHPRetro and modern themes after provenance review; defer Atom until separately approved.
@@ -164,7 +166,7 @@ The scope check and oversized-deletion guard run in CI from a policy file stored
 
 ### Batch scope approval
 
-Before autonomous work, Sol writes one plain-language list of the next 5–10 units, each with exact file scope, evidence inputs, tests, done criteria, stop conditions, and its unit token cap. Sol opens one scope-approval pull request to `main`. The user reviews and merges that PR. Agents may work only on units listed in the merged approval; a new unit or changed file scope requires another batch PR to `main`. Agents cannot push that PR to `main`, edit the policy, or approve their own scope. The policy file records the approved unit identifiers and exact path globs; CI rejects work outside the merged list.
+Before autonomous work, Sol writes one plain-language list of the next 5–10 units, each with exact file scope, evidence inputs, tests, done criteria, stop conditions, and its unit token cap. Sol opens one scope-approval pull request to `main` under the repository's existing review and CI protections. The documented independent delegated technical-policy approval, independent ACCEPTED review, and exact-head required CI remain separate gates; no owner wait or message is used. Agents may work only on units listed in the approved scope; a new unit or changed file scope requires another protected pull request. Agents cannot push that PR to `main`, edit the policy, or approve their own scope. The policy file records the approved unit identifiers and exact path globs; CI rejects work outside the merged list.
 
 ## 11. Agent roles and delegation
 

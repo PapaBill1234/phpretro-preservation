@@ -1,6 +1,6 @@
 # F18-F60 readiness synthesis
 
-Status: provisional design and reconciliation only. This document does not approve feature scope, implementation, schema, authentication/session, security, production, runner, credential, or real-data work.
+Status: provisional design and reconciliation only. This document does not itself dispatch work; each unit requires an exact brief, independent review, and CI. The development-only project has no production environment: authentication/session, security, schema, migration, and dependent work may be implemented in development under those gates. Production enablement, credentials, real data, and live outside systems remain closed.
 
 ## Integration basis and source authority
 
@@ -17,7 +17,7 @@ Accepted F1-F8 boundaries remain controlling evidence: F1/F2 cover password/sess
 
 ## Reconciled candidate matrix
 
-Readiness is deliberately conservative: `proposed/source-only` means source-backed but not code-ready; `gated` means a distinct design exists but owner/security/schema/evidence prerequisites are open; `evidence-needed` means fresh capture or provenance is required; `proposal-ready synthetic` is limited to a synthetic boundary; `unfilled` is not a candidate unit.
+Readiness is deliberately conservative: `proposed/source-only` means source-backed but not code-ready; `gated` means a distinct design exists but security/schema/evidence/development-scope prerequisites are open; `evidence-needed` means fresh capture or provenance is required; `proposal-ready synthetic` is limited to a synthetic boundary; `unfilled` is not a candidate unit.
 
 | ID | Synthesized state | Distinct boundary and prerequisite chain |
 | --- | --- | --- |
@@ -31,19 +31,19 @@ Readiness is deliberately conservative: `proposed/source-only` means source-back
 | F25 | gated | Registration validation/write; depends on schema/transaction, consent, email, abuse, privacy, and auth decisions; no retained submission capture. |
 | F26 | gated | Password recovery/account-list behavior; depends on anti-enumeration, reset-token, mail, rate-limit, privacy, and credential-lifecycle decisions; no dynamic capture. |
 | F27 | gated | Remember-token reauthentication and expiry/IP transition; depends on token storage/replay/threat-model evidence and coordinator security ownership. |
-| F28 | blocked by capture/security | Guestbook privacy/read/write/configure/delete; no captures, helper/schema semantics are incomplete, and legacy delete behavior lacks a safe widget-owner predicate. Requires owner policy and independent security review. |
+| F28 | blocked by capture/security | Guestbook privacy/read/write/configure/delete; no captures, helper/schema semantics are incomplete, and legacy delete behavior lacks a safe widget-owner predicate. Requires explicit schema/source/technical ownership evidence and independent security review. |
 | F29 | gated | Public article/category projection excluding F17 archive; depends on F17 accepted result, distinct capture, content ownership, and safe text/image contract. |
 | F30 | unfilled | The broad theme/localization/CMS idea is not one defensible observable unit. Its future parts are represented only as separately bounded F49-F60 designs after ownership/evidence gates; no F30 implementation follows. |
 | F31 | unfilled | Account lookup/hash verification is already F1/F2/F6 and cannot be counted again. |
 | F32 | unfilled | Profile/content adapters are already F3/F5/F6; no separate integration boundary is evidenced. |
 | F33 | unfilled | CSRF is an acceptance criterion inside owning mutation/auth units, not a second implementation. |
 | F34 | unfilled | Return-target validation belongs inside F22/F27; no independent contract. |
-| F35 | owner/security/schema gate | One website-owned mutation plus same-transaction durable audit and injected audit failure; depends on coordinator-selected schema, actor fields, mutation, and security review. |
-| F36 | owner/security/schema gate | Staff secret enrollment bound to an approved staff identity; depends on staff schema, secret protection/recovery, authorization, and audit decision. |
-| F37 | owner/security gate | Per-staff TOTP step-up bound to the intended session; depends on F36, approved time window/skew/rate limits, and security review. |
-| F38 | owner/security/schema gate | Durable one-time TOTP replay prevention, including concurrency; depends on F36/F37 and atomic persistence/locking decision. |
+| F35 | security/schema/development-scope gate | One website-owned mutation plus same-transaction durable audit and injected audit failure; depends on coordinator-selected schema, actor fields, mutation, and security review. |
+| F36 | security/schema/development-scope gate | Staff secret enrollment bound to an approved staff identity; depends on staff schema, secret protection/recovery, authorization, and audit decision. |
+| F37 | security/development-scope gate | Per-staff TOTP step-up bound to the intended session; depends on F36, approved time window/skew/rate limits, and security review. |
+| F38 | security/schema/development-scope gate | Durable one-time TOTP replay prevention, including concurrency; depends on F36/F37 and atomic persistence/locking decision. |
 | F39 | unfilled | Audit redaction belongs inside F35 or a later approved staff unit; no separate behavior. |
-| F40 | evidence-needed/owner/schema gate | Legacy FAQ category/query-search read projection; `help.php:18-23,26-32,51-73` and `.htaccess:72-73`; depends on retained response capture, FAQ schema/fields, prepared-query/escaping/limits policy and scope approval. Separate from F54 composition; optional later parity, not first-release accepted. |
+| F40 | evidence-needed/schema/development-scope gate | Legacy FAQ category/query-search read projection; `help.php:18-23,26-32,51-73` and `.htaccess:72-73`; depends on retained response capture, FAQ schema/fields, prepared-query/escaping/limits policy and an exact development brief. Separate from F54 composition; optional later parity, not first-release accepted. |
 | F41 | unfilled | Mutation and audit-event behavior is already the F35 boundary, not a second unit. |
 | F42 | unfilled | Staff enrollment/step-up/replay are F36-F38; no additional TOTP subdivision. |
 | F43 | unfilled | CSRF/redirect criteria remain in F18-F30 owners and F35; no separate contract. |
@@ -51,25 +51,25 @@ Readiness is deliberately conservative: `proposed/source-only` means source-back
 | F45 | unfilled | Guestbook authorization concern remains a F28 gate; it is not a duplicate unit. |
 | F46 | unfilled | Duplicates the accepted F7 typed view-model/version/capability rejection boundary without a separate implementation or integration boundary. |
 | F47 | unfilled | Package/manifest acceptance repeats F7 without a measured new package/install or original-parity boundary. F24 is community read, not themes; narrowing broad F30 alone does not prove a new contract. |
-| F48 | evidence-needed/owner gate | Optional modern theme assets with provenance-checked selection; depends on rights, hashes, allowlists, visual evidence, and owner decision. Atom/Pixel63/SWF are not approval sources. |
+| F48 | evidence-needed/development-scope gate | Optional modern theme assets with provenance-checked selection; depends on rights, hashes, allowlists, visual evidence, and an exact reviewed unit brief. Atom/Pixel63/SWF are not approval sources. |
 | F49 | proposal-ready synthetic | Versioned locale catalog package completeness/compatibility/activation boundary beyond F8 lookup; depends on catalog ownership, activation permission, and any signing/hash policy. |
-| F50 | evidence-needed/ownership gate | Locale-aware cache integration and invalidation beyond F7/F8; depends on namespace, TTL, authority, activation ordering, outage semantics, and synthetic cache tests. |
-| F51 | evidence-needed/owner/security/schema gate | Housekeeping React capability shell; depends on staff identity/session, server-enforced capability registry, API contract, CSRF/audit policy, and browser evidence. |
-| F52 | owner/security/schema gate | Website-owned pages and safe slugs; depends on schema authority, publication state, collision/redirect policy, editor permissions, and atomic audited writes. |
-| F53 | evidence-needed/owner/security/schema gate | Navigation/button model; depends on source-of-truth schema, destination allowlist, locale/role visibility, ordering, and audit. |
-| F54 | evidence-needed/owner/schema gate | Website-owned FAQ/banner/landing composition view models; excludes F17 archive, F24 community, F29 articles and F40 legacy FAQ endpoint/query semantics; depends on field/row ownership, escaping, ordering, image provenance, and capture. |
-| F55 | blocked by owner/security/schema/production gates | Atomic publication/preview/rollback; depends on version schema, approver roles, transaction/audit boundary, cache invalidation, and recovery semantics. |
-| F56 | blocked by owner/security/schema gate | Safe media metadata and asset selection; depends on storage/upload/MIME/size/provenance/retention/access policy. |
-| F57 | evidence-needed/owner/security/schema gate | Status/maintenance/cache-invalidation/audit views; depends on settings schema, cache contract, audit retention, operator permission, and outage semantics; unsafe arbitrary settings are rejected. |
-| F58 | proposal-ready synthetic/evidence-needed for production | Browser contracts for themes/housekeeping; depends on F7/F8-compatible synthetic fixtures, approved runner, viewport/accessibility baseline, and later route/CMS evidence. |
+| F50 | evidence-needed/schema/source/technical ownership evidence gate | Locale-aware cache integration and invalidation beyond F7/F8; depends on namespace, TTL, authority, activation ordering, outage semantics, and synthetic cache tests. |
+| F51 | evidence-needed/security/schema/development-scope gate | Housekeeping React capability shell; depends on staff identity/session, server-enforced capability registry, API contract, CSRF/audit policy, and browser evidence. |
+| F52 | security/schema/development-scope gate | Website-owned pages and safe slugs; depends on schema authority, publication state, collision/redirect policy, editor permissions, and atomic audited writes. |
+| F53 | evidence-needed/security/schema/development-scope gate | Navigation/button model; depends on source-of-truth schema, destination allowlist, locale/role visibility, ordering, and audit. |
+| F54 | evidence-needed/schema/source/technical ownership evidence gate | Website-owned FAQ/banner/landing composition view models; excludes F17 archive, F24 community, F29 articles and F40 legacy FAQ endpoint/query semantics; depends on field/row ownership, escaping, ordering, image provenance, and capture. |
+| F55 | blocked by security/schema/development-scope gates | Atomic publication/preview/rollback; depends on version schema, approver roles, transaction/audit boundary, cache invalidation, and recovery semantics. Development implementation is possible after those decisions and review; no deployment or live-system authority follows. |
+| F56 | blocked by security/schema/development-scope gate | Safe media metadata and asset selection; depends on storage/upload/MIME/size/provenance/retention/access policy. |
+| F57 | evidence-needed/security/schema/development-scope gate | Status/maintenance/cache-invalidation/audit views; depends on settings schema, cache contract, audit retention, operator permission, and outage semantics; unsafe arbitrary settings are rejected. |
+| F58 | proposal-ready synthetic/evidence-needed for later route/CMS evidence | Browser contracts for themes/housekeeping; depends on F7/F8-compatible synthetic fixtures, approved runner, viewport/accessibility baseline, and later route/CMS evidence. |
 | F59 | proposal-ready checklist/gated | Release verification matrix; depends on accepted prerequisite evidence, exact CI/browser/cache/audit/asset gates, and explicit UNKNOWN reporting; it is not production approval. |
-| F60 | proposal-ready governance design | First-release readiness packet and authority gate; depends on this synthesis, independent review, owner scope approval, and F17 publication reconciliation; F16 is delivered. Creates no implementation permission. |
+| F60 | proposal-ready governance design | First-release readiness packet and authority gate; depends on this synthesis, independent review, an exact development brief, and F17 publication reconciliation; F16 is delivered. Creates no implementation permission. |
 
 ## Counts, gaps, and overlap decisions
 
 - F18-F60 contains 43 numeric slots, each mapped exactly once. Thirty distinct provisional designs remain: F18-F29 (12), F35-F38 (4), F40 (1), and F48-F60 (13). Of these, 28 are behavior/integration/test proposals and two are governance/checklist packets (F59/F60), not product implementation units.
 - Thirteen slots remain intentionally unfilled: F30, F31-F34, F39, F41-F47 (1 + 4 + 1 + 7 = 13). F46/F47 repeat accepted F7 boundaries without measured new schema/package integration; no number is reassigned from F16/F17. Four support candidates were evaluated: FAQ fills only F40; tag repeats F24's cloud; group landing/discussions are distinct broader observations but mixed-write, capture/schema/security-gated parity not defensible bounded units here. Exact exclusions and source hashes are in the F31-F45 document.
-- Zero F18-F60 units are code-ready. The proposal/source-only and synthetic labels describe evidence or design readiness only. Every gated unit still needs an owner-approved scope batch, exact base/path card, evidence, tests, independent review, and applicable security/schema decisions. No implementation cards are created from this document.
+- Zero F18-F60 units are code-ready. The proposal/source-only and synthetic labels describe evidence or design readiness only. Every unit still needs an exact base/path card, evidence, tests, independent review, CI, and applicable security/schema decisions; owner approval is not a prerequisite under the current standing instruction. No implementation cards are created from this document.
 - These are design scopes, not disjoint implementation cards. F35/F36 share `internal/audit/**`; F36-F38 share `internal/staff/**`; F23/F37/F38 share `internal/session/**`; F29/F52/F55 share broad content ancestry; F50 touches accepted cache/localization paths. Future cards must narrow actual files and serialize shared-path dependencies (F35 audit decision before F36, F36 before F37 before F38; publication/cache integration after owning schemas/catalogs). No simultaneous edits of these broad globs are approved. F40 FAQ endpoint paths remain separate from F54 composition. Current synthesis has no active scope collision with the one-file F18-F30 refresh or three-file F17 lane.
 
 The conservative F46/F47 conclusion differs from visual audit `t_955f63c0`, which retained them as gated concepts after low-confidence Jev escalation. Source comparison against F7 shows repeated acceptance without a named new integration, so the coordinator leaves them unfilled. One batched Jev advisory over two reconciliation questions used OpenRouter `typesafe/jev-1.13-20260917`: 351 ms, 715 input/134 output tokens; duplicate treatment confidence 0.93 agreed with source; FAQ-only confidence 0.72 escalated. Coordinator source review, not that low-confidence verdict, selected F40 and rejected additional slots. No cost-savings claim; A6API input/cache/output and billed cost telemetry are unavailable in this run.
@@ -82,8 +82,7 @@ Broad parity is a separate and unresolved estimate: approximately 60-90+ F-sized
 
 ## Open gates and required review boundary
 
-- Missing or unpromoted captures remain for profile/home, registration, recovery, security-check/token mode, guestbook, public/support routes, housekeeping/CMS, and production browser behavior. Cookie/session provenance, runtime rows, CMS schema, website-owned audit/TOTP/guestbook schemas, asset rights, publication/rollback, cache ownership/TTL/invalidation, and staff capability semantics remain `UNKNOWN` where not proven.
+- Missing or unpromoted captures remain for profile/home, registration, recovery, security-check/token mode, guestbook, public/support routes, and housekeeping/CMS browser behavior. Cookie/session provenance, runtime rows, CMS schema, website-owned audit/TOTP/guestbook schemas, asset rights, publication/rollback, cache ownership/TTL/invalidation, and staff capability semantics remain `UNKNOWN` where not proven.
 - F1-F8 evidence is a boundary, not permission to expand fields, writes, routes, or capabilities. F16 is delivered at this snapshot; F17 publication and current accepted head must be re-read before any later approval or evidence card.
 - The independent reviewer must review the exact integrated candidate commit and document source/hash fidelity, F-number uniqueness, overlap decisions, readiness labels, proposed path non-overlap, first-release range, and the no-authorization boundary. The delivery coordinator opens a design-only PR and may merge only after accepted review and required CI under existing merge authority. The PR must state that it does not approve production, schema, authentication, security, or runner work and does not override separate F18-F30 scope approval.
-- Owner approval of the relevant feature scope batch must be explicit and merged before any F18-F60 feature implementation card is created. This synthesis itself creates no implementation cards.
-- The design delivery coordinator must preserve a successor checkpoint for later design/evidence/approval decisions, reconciling existing evidence-only planner `t_aed9f2eb` and F18-F30 approval refresh rather than duplicating them. No feature implementation follows from these docs. If fresh capture or explicit scope approval is absent, record the exact operator/evidence gate instead of inventing work.
+- The design delivery coordinator must preserve a successor checkpoint for later design/evidence decisions, reconciling existing evidence-only planner `t_aed9f2eb` and F18-F30 planning refresh rather than duplicating them. No feature implementation follows from these docs. If fresh capture or an exact development-scope brief is absent, record the precise evidence/security/schema gate instead of inventing work.
