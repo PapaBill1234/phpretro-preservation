@@ -1310,7 +1310,9 @@ def find_existing_pr(branch: str) -> int:
 
     Recovery must reuse a PR that already exists: opening a second one for the
     same branch is a duplicate delivery. GitHub is the source of truth, so the
-    runtime ``pr`` counter is never trusted to prove a PR does not exist.
+    runtime ``pr`` counter is never trusted to prove a PR does not exist, and
+    the returned PR's ``headRefName`` is re-checked against the branch so a
+    foreign or mismatched result is never reused.
 
     A GitHub lookup failure raises ``DeliveryUnavailable`` - the pipeline's
     existing "reconciliation deferred" signal - so a provider outage keeps its
@@ -1320,12 +1322,22 @@ def find_existing_pr(branch: str) -> int:
     if not branch:
         return 0
     rc, out = sh(["gh", "pr", "list", "--repo", GH_REPO, "--head", branch,
-                  "--state", "open", "--json", "number",
-                  "--jq", ".[0].number"], timeout=120)
+                  "--state", "open", "--limit", "100",
+                  "--json", "number,headRefName"], timeout=120)
     if rc != 0:
         raise DeliveryUnavailable(f"PR lookup failed for {branch}; dispatch deferred")
-    m = re.search(r"(\d+)", out or "")
-    return int(m.group(1)) if m else 0
+    try:
+        rows = json.loads(out or "[]")
+    except ValueError:
+        rows = []
+    for row in rows:
+        if row.get("headRefName") != branch:
+            continue              # explicit identity: never reuse another branch
+        try:
+            return int(row.get("number"))
+        except (TypeError, ValueError):
+            continue
+    return 0
 
 
 def push_and_open_pr(unit: dict, wt: Path, check_out: str, state: dict) -> int:

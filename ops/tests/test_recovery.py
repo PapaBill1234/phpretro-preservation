@@ -261,12 +261,19 @@ class GitHubLookupTest(unittest.TestCase):
                 o.find_existing_pr("unit/F38")
 
     def test_no_pr_returns_zero(self):
-        with mock.patch.object(o, "sh", lambda *a, **k: (0, "")):
+        with mock.patch.object(o, "sh", lambda *a, **k: (0, "[]")):
             self.assertEqual(o.find_existing_pr("unit/F38"), 0)
 
     def test_open_pr_returns_its_number(self):
-        with mock.patch.object(o, "sh", lambda *a, **k: (0, "66\n")):
+        payload = json.dumps([{"number": 66, "headRefName": "unit/F38"}])
+        with mock.patch.object(o, "sh", lambda *a, **k: (0, payload)):
             self.assertEqual(o.find_existing_pr("unit/F38"), 66)
+
+    def test_open_pr_from_another_branch_is_ignored(self):
+        """The lookup re-checks identity; a foreign result is not reused."""
+        payload = json.dumps([{"number": 9, "headRefName": "unit/OTHER"}])
+        with mock.patch.object(o, "sh", lambda *a, **k: (0, payload)):
+            self.assertEqual(o.find_existing_pr("unit/F38"), 0)
 
     def test_rejected_push_is_a_unit_conflict(self):
         unit = {"id": "F38", "status": "todo", "attempts": 1, "tokens": 1}
