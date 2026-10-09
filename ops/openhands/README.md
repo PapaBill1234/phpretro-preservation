@@ -172,7 +172,7 @@ containers, and settle receipts before replacing source/config from the recorded
 backup. Retain ledger, reservations, counters, board/delivery history and provider
 secrets. Never resume the old paid-planning policy implicitly.
 
-## Provider acceptance finding — 2026-10-09
+## Historical provider acceptance finding — superseded 2026-10-09
 
 The explicit probes returned tool calls and counters for DeepSeek. Luna passed
 one probe and failed a later call; it needs a fresh successful probe after the
@@ -180,10 +180,11 @@ endpoint failure is understood. The requested `claude-haiku-5-5` route returned
 `cb/deepseek-v4.1-flash`. It therefore fails model identity and cannot provide an
 independent Claude review. The runtime deliberately rejects this response.
 Haiku has now been retired; historical receipts and charges remain unchanged.
-Keep STOP and disabled timers until a verified third-family replacement passes
-the exact identity, tool-call and usage checks. Do not weaken family checks or
-count Sol and Luna as distinct families. Provider evidence currently records failure, so no
-passing validation stamp or coding canary has been established.
+The maintainer subsequently authorized two-family review, including sensitive
+work. Sol and Luna remain one family; DeepSeek supplies the other. Fresh route
+evidence and exact-source validation are still required by the controller.
+The migration passed validation and was installed while paused. A paid coding
+canary has not been run; unresolved spending records still prevent admission.
 
 Failed or interrupted probes retain conservative ledger charges and unknown
 costs. The daily spending guard blocks days containing unresolved unknown usage;
@@ -193,3 +194,35 @@ Quoted rates are uncalibrated and are not proof of a five-dollar account limit.
 The refreshed foundation scanner requires HTTPS-only session cookies. Its sole
 synthetic caller was updated, and normalized port values are logged numerically.
 These security changes do not establish durable storage or product completion.
+
+## Interactive OpenHands Web UI
+
+The dashboard OpenHands tab embeds Agent Canvas 1.26.0 at `/canvas/`. Its
+authenticated backend uses `/openhands/`, preserving Codex and Hermes routes.
+The gateway protects both HTTP and WebSocket access with the dashboard login.
+The full-window link is `https://phpretro.work.gd/canvas/`.
+
+Under STOP, install or adopt the pinned container:
+
+```sh
+python3 ops/openhands/webui_install.py
+python3 ops/openhands/webui_configure.py --activate-default
+```
+
+Run the second command without `--activate-default` on subsequent updates to
+preserve the selected profile. It reads the existing private provider file and
+saves six profiles without probing models or starting inference. A6API Sol is
+the initial default; choose the corresponding Portdan profile manually for a
+backup. Automatic provider failover belongs to the separate SDK controller.
+
+The image digest, loopback binding, CPU/memory/PID limits and restricted Docker
+settings are pinned in the installer. Two named volumes persist settings and
+interactive projects. The container has no host repository, provider-file or
+Docker-socket mount. An incompatible existing container is left intact for
+review. Reinstalling never removes volumes or conversations.
+
+Interactive chats have separate provider billing and are not governed by the
+controller's daily ledger or STOP flag. Their projects and conversation history
+are separate from automated unit work. The existing gateway session also grants
+access to Canvas; sign out of the dashboard when finished on a shared browser.
+Provider profiles and session keys must never be committed or logged.

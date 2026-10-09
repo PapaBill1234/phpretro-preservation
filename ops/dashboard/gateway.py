@@ -5,6 +5,42 @@ from pathlib import Path
 from http.cookies import SimpleCookie
 from urllib.parse import urlsplit
 ROOT=Path.home()/'phpretro-dashboard'; DB=ROOT/'access.sqlite3'; RATE={}; RATE_LOCK=threading.Lock()
+OPENHANDS_PORT=38082
+
+def backend_route(raw_path):
+ path=urlsplit(raw_path).path
+ if path=='/canvas' or path.startswith('/canvas/'):
+  return OPENHANDS_PORT,raw_path,True
+ if path=='/openhands' or path.startswith('/openhands/'):
+  suffix=raw_path[len('/openhands'):]
+  return OPENHANDS_PORT,('/'+suffix if not suffix.startswith('/') else suffix),True
+ if path=='/hermes' or path.startswith('/hermes/'):
+  suffix=raw_path[len('/hermes'):]
+  return 9119,('/'+suffix if not suffix.startswith('/') else suffix),False
+ if path in ('/','/api/state','/api/stop','/api/balance'):
+  return int((ROOT/'port').read_text()),raw_path,False
+ if path=='/chat' or path.startswith('/chat/'):
+  suffix=raw_path[len('/chat'):]
+  return 8766,('/'+suffix if not suffix.startswith('/') else suffix),False
+ return 8766,raw_path,False
+
+def openhands_html(data):
+ # The pinned Canvas frontend supports named backends. Seed ours without
+ # changing Codex's root API routes or overwriting a user's other backends.
+ script=b'''<script>(function(){
+ const key=window.__AGENT_CANVAS_SESSION_API_KEY__;if(!key)return;
+ let rows=[],active=null;
+ try{rows=JSON.parse(localStorage.getItem('openhands-backends')||'[]');if(!Array.isArray(rows))rows=[];}catch(e){}
+ try{active=JSON.parse(sessionStorage.getItem('openhands-active-backend')||localStorage.getItem('openhands-active-backend')||'null');}catch(e){}
+ rows=rows.filter(x=>x&&x.id!=='phpretro-local');
+ rows.push({id:'phpretro-local',name:'PHPRetro OpenHands',host:location.origin+'/openhands',apiKey:key,kind:'local'});
+ localStorage.setItem('openhands-backends',JSON.stringify(rows));
+ if(!active||active.backendId==='default-local'||active.backendId==='phpretro-local'){
+  const selection=JSON.stringify({backendId:'phpretro-local',orgId:null});
+  sessionStorage.setItem('openhands-active-backend',selection);localStorage.setItem('openhands-active-backend',selection);
+ }
+})();</script>'''
+ return data.replace(b'</head>',script+b'</head>',1)
 def db():
  c=sqlite3.connect(DB,timeout=1); c.execute('CREATE TABLE IF NOT EXISTS account(id INTEGER PRIMARY KEY CHECK(id=1),salt TEXT,hash TEXT)'); c.execute('CREATE TABLE IF NOT EXISTS sessions(hash TEXT PRIMARY KEY,expires REAL)'); c.commit(); return c
 def configured():
@@ -115,13 +151,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
  do_PATCH=do_PUT
  do_DELETE=do_PUT
  def proxy(self):
-  path=urlsplit(self.path).path
-  dashboard=path in ('/','/api/state','/api/stop','/api/balance')
-  hermes=path=='/hermes' or path.startswith('/hermes/')
-  port=9119 if hermes else int((ROOT/'port').read_text()) if dashboard else 8766
-  upstream_path=self.path
-  if hermes: upstream_path=self.path[len('/hermes'):] or '/'
-  if path.startswith('/chat'): upstream_path=self.path[len('/chat'):] or '/'
+  port,upstream_path,openhands=backend_route(self.path)
   if self.headers.get('Upgrade','').lower()=='websocket': self.websocket(port,upstream_path); return
   try:
    n=int(self.headers.get('Content-Length','0'))
@@ -145,7 +175,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
      if not chunk: break
      self.wfile.write(chunk); self.wfile.flush()
    else:
-    data=resp.read(32*1024*1024); self.send_header('Content-Length',str(len(data))); self.end_headers(); self.wfile.write(data)
+    data=resp.read(32*1024*1024)
+    if openhands and resp.getheader('Content-Type','').startswith('text/html'):
+     data=openhands_html(data)
+    self.send_header('Content-Length',str(len(data))); self.end_headers(); self.wfile.write(data)
    con.close()
   except (OSError,ValueError,http.client.HTTPException):
    self.send(502,{'error':'Backend unavailable; retry shortly'})

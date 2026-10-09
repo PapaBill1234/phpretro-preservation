@@ -689,7 +689,7 @@
           ><a href="#operations" data-page="operations">Operations</a
           ><a href="#assistant" data-page="assistant">Assistant</a
           ><a href="#settings" data-page="settings">Settings</a
-          ><a href="/hermes/" target="_blank" rel="noopener">Hermes ?</a>
+          ><a href="#openhands" data-page="openhands">OpenHands</a><a href="/hermes/" target="_blank" rel="noopener">Hermes ?</a>
         </nav>
       </div>
     </header>
@@ -839,6 +839,10 @@
           class="assistant-frame"
           title="Codex server assistant"
         ></iframe>
+      </section>
+      <section data-view="openhands" hidden>
+        <p class="section-note">Interactive chats have separate provider billing. Select a saved Portdan profile if you need a backup. <a href="/canvas/" target="_blank" rel="noopener">Open full window</a></p>
+        <iframe id="openhands-frame" class="assistant-frame" title="OpenHands Agent Canvas"></iframe>
       </section>
       <section data-view="settings" hidden>
         <div class="grid twocol settings">
@@ -1516,6 +1520,7 @@
           "Your server assistant",
           "Ask Codex to inspect, plan and work directly on this Ubuntu server.",
         ],
+        openhands: ["OpenHands", "Start and manage interactive coding conversations."],
         settings: [
           "Settings & access",
           "Your connection, account and remote workspace.",
@@ -1536,6 +1541,7 @@
         $("page-description").textContent = pages[page][1];
         if (page === "assistant" && !$("assistant-frame").getAttribute("src"))
           $("assistant-frame").src = "/chat/";
+        if (page === "openhands" && !$("openhands-frame").getAttribute("src")) $("openhands-frame").src = "/canvas/";
         if (page === "settings" || page === "assistant") accessStatus();
         window.scrollTo(0, 0);
       }
