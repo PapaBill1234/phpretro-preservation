@@ -34,6 +34,7 @@ import worker as run_worker
 import runtime_policy
 import sandbox
 import canary
+import ci_merge
 import billing
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1970,6 +1971,10 @@ def wait_for_checks(pr: int, timeout: int = CI_TIMEOUT) -> tuple[bool, str]:
     return ci_advisory(pr, {}, "legacy call")
 
 
+def required_ci(pr: int, head: str) -> tuple[str, str]:
+    return ci_merge.check(pr, head, GH_REPO, sh)
+
+
 def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
     """Local gate, quality and independent review on the exact rebased head."""
     with (LOCK_DIR / "merge.lock").open("w") as fh:
@@ -2028,8 +2033,13 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
         if rc:
             unit["status"], unit["reason"] = "parked", "unit push refused: " + tail(out, 3)
             return False
-        ci_clean, ci_detail = ci_advisory(pr, state, "pre-merge")
-        append_actions_note(pr, "pre-merge advisory: " + ("green" if ci_clean else "not green"), state)
+        ci_status, ci_detail = required_ci(pr, head)
+        if ci_status != "ready":
+            unit["status"] = "parked" if ci_status == "failed" else "pr_open"
+            unit["reason"] = "required CI: " + ci_detail
+            event(state, f"{unit['id']}: {unit['reason']}; builder/review charges retained")
+            return False
+        append_actions_note(pr, "required CI passed on exact head", state)
         if git_out("rev-parse", "HEAD", cwd=wt) != head or git_out("status", "--porcelain", cwd=wt):
             unit["status"], unit["reason"] = "parked", "head changed after review/gate"
             return False
@@ -2039,7 +2049,8 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
         rc, out = sh(["gh", "pr", "merge", str(pr), "--repo", GH_REPO,
                       "--merge", "--match-head-commit", head, "--delete-branch"], timeout=300)
         if rc:
-            unit["status"] = "parked"
+            retry_status, _ = required_ci(pr, head)
+            unit["status"] = "pr_open" if retry_status == "pending" else "parked"
             unit["reason"] = "merge refused: " + tail(out, 4).replace("\n", " | ")[:350]
             event(state, f"{unit['id']}: {unit['reason']}; protections unchanged")
             telemetry_event("parked", unit["id"], unit["reason"])
