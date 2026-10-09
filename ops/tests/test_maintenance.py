@@ -221,7 +221,7 @@ class ReviewBoundary(Isolated):
              patch.object(o, "changed_files", return_value=["internal/x/x.go"]), \
              patch.object(o, "run_check", return_value=(0, "passed")), patch.object(o, "quality_gate", return_value={"ok": True}), \
              patch.object(o, "hermes_run", return_value=(0, '{"verdict":"pass","findings":[]}', {"total_tokens": 1})) as review, \
-             patch.object(o, "ci_advisory", return_value=(True, "ok")), patch.object(o, "append_actions_note"), \
+             patch.object(o, "required_ci", return_value=("ready", "ok")), patch.object(o, "append_actions_note"), \
              patch.object(o, "sh", return_value=(1, "base branch policy refused")) as gh:
             self.assertFalse(o.merge_queue(u, self.repo, state()))
         self.assertEqual(review.call_count, 1)  # rebased head gets a fresh review
