@@ -13,16 +13,16 @@ import routing
 
 
 class ReconnectTests(unittest.TestCase):
-    def test_previous_transient_fallback_can_recover_on_a_later_turn(self):
+    def test_previous_transient_primary_can_recover_on_a_later_turn(self):
         failed, recoverable, calls = set(), set(), []
         def invoke(provider):
             calls.append(provider)
-            if len(calls) in (3, 6): return "continued"
+            if len(calls) in (4, 6): return "continued"
             raise TimeoutError()
         for _ in range(2):
             self.assertEqual(routing.call(["a6api", "portdan"], invoke, failed,
                 recoverable=recoverable, wait=lambda _: None), "continued")
-        self.assertEqual(calls, ["a6api", "portdan", "a6api", "a6api", "a6api", "portdan"])
+        self.assertEqual(calls, ["a6api", "portdan", "a6api", "portdan", "portdan", "a6api"])
 
     def test_single_route_reconnects_same_request_after_backoff(self):
         attempts, waits = [], []
