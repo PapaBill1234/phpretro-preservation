@@ -51,6 +51,19 @@ class CanaryTests(unittest.TestCase):
     def test_terminal_canary_stops_without_expanding_scope(self):
         self.assertTrue(canary.finished({'F39b': {'status': 'merged'}, 'F61': {'status': 'todo', 'attempts': 1}}))
 
+    def test_separate_confirmation_preserves_primary_after_canary_expiration(self):
+        data={'schema':'phpretro.operator-route.v1','authorized_by':'user',
+              'confirmed_at':100,'routes':{'a6api':['gpt-6.1-sol']}}
+        path=self.root/'state/provider-operator-admission.json'
+        path.write_text(json.dumps(data))
+        with patch.object(canary.time,'time',return_value=201):
+            self.assertFalse(canary.allowed())
+            self.assertTrue(canary.operator_route('a6api','gpt-6.1-sol'))
+            self.assertFalse(canary.operator_route('a6api','gpt-6-luna'))
+            self.assertFalse(canary.operator_route('portdan','gpt-6.1-sol'))
+        data['routes']['a6api'].append('gpt-6-luna');path.write_text(json.dumps(data))
+        with self.assertRaises(canary.control.IntegrityError):canary.operator_route('a6api','gpt-6.1-sol')
+
 
 if __name__ == '__main__':
     unittest.main()

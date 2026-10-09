@@ -164,7 +164,7 @@ def main(receipt_path):
         if outer:
             messages = args[0] if args else kwargs.get("messages", [])
             tools = args[1] if len(args) > 1 else kwargs.get("tools")
-            if llm.get_token_count(messages, tools) > 60000:
+            if llm.get_token_count(messages, tools) > requests.MAX_INPUT:
                 raise control.IntegrityError("context exceeds the reserved next-call ceiling")
             system = [m for m in messages if getattr(m,'role',None)=='system' or isinstance(m,dict) and m.get('role')=='system']
             context.request(llm.get_token_count(messages,tools),llm.get_token_count(messages,None),llm.get_token_count(system,None))
