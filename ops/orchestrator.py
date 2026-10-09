@@ -989,6 +989,7 @@ def prepare_worker(rid, state, profile, model, command, cwd, usage, timeout, att
 
 
 def accounted_usage(data):
+    import request_accounting
     if data is not None and not isinstance(data, dict):
         raise control.IntegrityError("usage checkpoint is not an object")
     data = dict(data or {})
@@ -1004,8 +1005,10 @@ def accounted_usage(data):
     conservative = control.nonnegative(data.get("conservative_tokens", 0), "conservative tokens")
     explicit_zero = data.get("api_calls") == 0 and data.get("total_tokens") == 0
     if data.get("usage_complete") is False or (tokens <= 0 and not explicit_zero):
-        tokens = max(tokens, TIMEOUT_FALLBACK_TOKENS, conservative)
-        data["accounting_source"] = "pessimistic-estimate" if not data.get("total_tokens") else "partial-with-conservative-floor"
+        bounded = request_accounting.bounded_tokens(data, tokens)
+        tokens = max(tokens, TIMEOUT_FALLBACK_TOKENS, conservative) if bounded is None else max(tokens, bounded)
+        data["accounting_source"] = ("bounded-unknown-estimate" if bounded is not None else
+                                     "pessimistic-estimate" if not data.get("total_tokens") else "partial-with-conservative-floor")
         data["usage_complete"] = False
     else:
         data.setdefault("usage_complete", True)

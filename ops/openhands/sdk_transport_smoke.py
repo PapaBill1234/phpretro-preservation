@@ -22,18 +22,21 @@ from litellm.types.llms.openai import ResponsesAPIResponse
 
 def main(model):
     nonce = "SDK_TRANSPORT_" + secrets.token_hex(12)
-    calls, pending = [], []
+    calls, pending, tool_calls = [], [], []
     module = importlib.import_module("openhands.sdk.llm.llm")
     runner.runtime_policy.ready = lambda model: True
     runner.runtime_policy.verified_providers = lambda model: ["a6api", "portdan"]
     runner.provider_credentials = lambda path: {"a6api": "synthetic", "portdan": {"openai": "synthetic", "deepseek": "synthetic"}}
+    runner.time.sleep = lambda _: None
 
     class Box:
         def __init__(self, *args, **kwargs): pass
         def prepare(self): pass
         def close(self): pass
         def export(self): pass
-        def execute(self, command, timeout): return 0, nonce
+        def execute(self, command, timeout):
+            tool_calls.append(command)
+            return 0, nonce
     runner.sandbox.Sandbox = Box
 
     with tempfile.TemporaryDirectory(prefix="phpretro-sdk-transport-") as td:
@@ -44,9 +47,9 @@ def main(model):
         def synthetic(**kwargs):
             calls.append(kwargs["api_base"])
             pending.append(json.loads(usage.read_text())["conservative_tokens"])
-            if len(calls) == 1:
+            if len(calls) in (2, 3):
                 raise TimeoutError()
-            tool_turn = len(calls) == 2
+            tool_turn = len(calls) == 1
             arguments = json.dumps({"command": "synthetic-only", "timeout": 5, "summary": "synthetic tool output"})
             if model.startswith("deepseek-"):
                 messages = kwargs["messages"]
@@ -74,14 +77,16 @@ def main(model):
         prompt.write_text("Run the execute tool once and return its result.")
         receipt = root / "receipt.json"
         receipt.write_text(json.dumps({"run_id": str(uuid.uuid4()), "status": "running", "model": model,
-                                      "role": "builder", "cwd": td, "allowed_paths": [], "reserved_tokens": 3000000,
+                                      "role": "builder", "cwd": td, "allowed_paths": [], "reserved_tokens": 300000,
                                       "prompt_path": str(prompt), "usage_path": str(usage)}))
         assert runner.main(receipt) == 0, "actual SDK conversation failed"
         recorded = json.loads(usage.read_text())
-        assert calls == ["https://api.a6api.com/v1", "https://portdan.com/v1", "https://portdan.com/v1"], calls
-        assert recorded["api_calls"] == 3 and recorded["total_tokens"] == 240, recorded
-        assert recorded["usage_complete"] is False and recorded["conservative_tokens"] == 1000240, recorded
-        assert pending == [1000000, 2000000, 2000120], pending
+        assert calls == ["https://api.a6api.com/v1", "https://api.a6api.com/v1", "https://portdan.com/v1", "https://api.a6api.com/v1"], calls
+        assert recorded["api_calls"] == 4 and recorded["total_tokens"] == 240, recorded
+        assert recorded["usage_complete"] is False and recorded["conservative_tokens"] == 139504, recorded
+        assert pending == [69632, 69752, 139384, 209016], pending
+        assert runner.requests.bounded_tokens(recorded, 240) == 139504
+        assert len(tool_calls) == 1, "reconnection replayed a completed tool action"
     print(json.dumps({"sdk_transport": "passed", "model": model, "http_calls": "synthetic-only"}))
 
 

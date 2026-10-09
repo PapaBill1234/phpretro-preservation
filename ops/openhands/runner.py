@@ -10,12 +10,14 @@ from pathlib import Path
 import signal
 import stat
 import sys
+import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import integrity as control
 import runtime_policy
 import sandbox
 import routing
+import request_accounting as requests
 
 os.environ["OPENHANDS_SUPPRESS_BANNER"] = "1"
 os.environ["OTEL_SDK_DISABLED"] = "true"
@@ -98,7 +100,7 @@ def main(receipt_path):
             return routed_call(self, "responses", args, kwargs)
 
     options = dict(model=runtime_policy.sdk_model(model), api_mode=settings["api_mode"],
-                     usage_id="agent", max_input_tokens=65536, max_output_tokens=4096,
+                     usage_id="agent", max_input_tokens=requests.MAX_INPUT, max_output_tokens=requests.MAX_OUTPUT,
                      num_retries=0, timeout=120, reasoning_effort="low", caching_prompt=False, log_completions=False,
                      input_cost_per_token=settings["input"] / 1e6,
                      output_cost_per_token=settings["output"] / 1e6)
@@ -115,7 +117,15 @@ def main(receipt_path):
                 result = getattr(client, method)(*args, **kwargs)
                 verify_provider_response(result)
                 return result
-        return routing.call(routes, invoke, state["failed"])
+        return routing.call(routes, invoke, state["failed"], wait=reconnect_wait)
+
+    def reconnect_wait(seconds):
+        # Preserve the same SDK conversation and sandbox while reconnecting.
+        # No new message, builder attempt, receipt, deadline or allowance.
+        for _ in range(seconds):
+            if receipt_path.with_suffix(".cancel.json").exists():
+                raise InterruptedError("run cancelled")
+            time.sleep(1)
 
     def verify_provider_response(result):
         raw = result.raw_response
@@ -133,7 +143,10 @@ def main(receipt_path):
         used = set(state["providers"])
         provider = "mixed:a6api-portdan" if len(used) > 1 else "custom:" + next(iter(used), routes[0])
         data.update(model=model, provider=provider, session_id=rid,
-                    conservative_tokens=data.get("total_tokens", 0) + (state["started"] - state["finished"]) * 1000000)
+                    usage_schema=requests.SCHEMA, request_token_ceiling=requests.CALL_CEILING,
+                    completed_api_calls=state["finished"], unknown_api_calls=state["started"] - state["finished"],
+                    usage_known_calls=len(llm.metrics.token_usages),
+                    conservative_tokens=data.get("total_tokens", 0) + (state["started"] - state["finished"]) * requests.CALL_CEILING)
         # Portdan Luna/DeepSeek prices have not been verified. Do not reuse A6 rates.
         if "portdan" in used and model != "gpt-6.1-sol":
             data["cost_status"] = "unknown-price"
@@ -150,7 +163,7 @@ def main(receipt_path):
                 raise control.IntegrityError("context exceeds the reserved next-call ceiling")
             usage = checkpoint(False)
             # Reserve maximum next-call context/output before starting it.
-            if usage.get("conservative_tokens", 0) + 65536 + 4096 > manifest["reserved_tokens"]:
+            if usage.get("conservative_tokens", 0) + requests.CALL_CEILING > manifest["reserved_tokens"]:
                 raise control.IntegrityError("next inference would exceed the reserved allowance")
             if receipt_path.with_suffix(".cancel.json").exists():
                 raise InterruptedError("run cancelled")
