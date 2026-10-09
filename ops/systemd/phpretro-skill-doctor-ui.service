@@ -1,0 +1,21 @@
+[Unit]
+Description=PHPRetro full upstream Skill Doctor UI
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/ubuntu/phpretro-preservation/ops/skill-doctor/ui.py
+ExecStop=-/usr/bin/docker stop --time 10 phpretro-skill-doctor-ui
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+UMask=0077
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/phpretro-skill-doctor
+MemoryMax=600M
+TasksMax=64
+
+[Install]
+WantedBy=default.target

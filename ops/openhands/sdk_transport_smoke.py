@@ -87,6 +87,10 @@ def main(model):
         assert pending == [69632, 69752, 139384, 209016], pending
         assert runner.requests.bounded_tokens(recorded, 240) == 139504
         assert len(tool_calls) == 1, "reconnection replayed a completed tool action"
+        history=runner.context_usage.summary(json.loads(receipt.with_suffix('.context.json').read_text()))
+        assert history['tool_calls']==1 and history['tool_errors']==0 and history['usage_status']=='complete', history
+        assert history['requests']==4 and history['unused_tools']==[],history
+        assert nonce not in receipt.with_suffix('.context.json').read_text(), 'tool output leaked into metadata'
     print(json.dumps({"sdk_transport": "passed", "model": model, "http_calls": "synthetic-only"}))
 
 
