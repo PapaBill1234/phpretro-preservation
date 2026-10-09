@@ -23,6 +23,7 @@ def bounded_tokens(data, observed):
     known = control.nonnegative(data.get("usage_known_calls"), "known calls")
     estimate = control.nonnegative(data.get("conservative_tokens"), "bounded estimate")
     if (ceiling != CALL_CEILING or started != completed + unknown or known != completed
-            or (completed > 0 and observed <= 0) or estimate != observed + unknown * ceiling):
+            or (completed > 0 and observed <= 0) or estimate != observed + unknown * ceiling
+            or (data.get("usage_complete") is True and unknown != 0)):
         raise control.IntegrityError("bounded request accounting mismatch")
     return estimate

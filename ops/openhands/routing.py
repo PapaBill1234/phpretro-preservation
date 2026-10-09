@@ -34,7 +34,7 @@ def retryable(exc):
                 "Timeout", "TimeoutError", "APITimeoutError", "APIConnectionError", "ConnectionError")
 
 
-def call(routes, invoke, failed, *, wait=time.sleep):
+def call(routes, invoke, failed, *, wait=time.sleep, recoverable=None):
     """Retry the same request, never a completed tool turn or conversation.
 
     Successful fallback remains preferred for this session. Only when all
@@ -42,7 +42,7 @@ def call(routes, invoke, failed, *, wait=time.sleep):
     Permanent failures stay suppressed. The caller owns budget/cancellation.
     """
     last = None
-    reconnect = set()
+    reconnect = set() if recoverable is None else recoverable
     for round_number in range(len(RECONNECT_DELAYS) + 1):
         for provider in routes:
             if provider in failed:
@@ -55,6 +55,8 @@ def call(routes, invoke, failed, *, wait=time.sleep):
                 failed.add(provider)
                 if transient(exc):
                     reconnect.add(provider)
+                else:
+                    reconnect.discard(provider)
                 last = exc
         if round_number == len(RECONNECT_DELAYS) or not reconnect:
             break

@@ -13,6 +13,17 @@ import routing
 
 
 class ReconnectTests(unittest.TestCase):
+    def test_previous_transient_fallback_can_recover_on_a_later_turn(self):
+        failed, recoverable, calls = set(), set(), []
+        def invoke(provider):
+            calls.append(provider)
+            if len(calls) in (3, 6): return "continued"
+            raise TimeoutError()
+        for _ in range(2):
+            self.assertEqual(routing.call(["a6api", "portdan"], invoke, failed,
+                recoverable=recoverable, wait=lambda _: None), "continued")
+        self.assertEqual(calls, ["a6api", "portdan", "a6api", "a6api", "a6api", "portdan"])
+
     def test_single_route_reconnects_same_request_after_backoff(self):
         attempts, waits = [], []
         def invoke(provider):
@@ -77,7 +88,7 @@ class BoundedUsageTests(unittest.TestCase):
     def test_malformed_envelope_cannot_lower_charge(self):
         for key, value in (("unknown_api_calls",0), ("request_token_ceiling",1),
                            ("completed_api_calls",True), ("usage_known_calls",1),
-                           ("conservative_tokens",240), ("total_tokens",0)):
+                           ("conservative_tokens",240), ("total_tokens",0), ("usage_complete",True)):
             data = self.usage(); data[key] = value
             with self.subTest(key=key), self.assertRaises(control.IntegrityError): o.accounted_usage(data)
 

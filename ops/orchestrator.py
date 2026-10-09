@@ -1004,8 +1004,8 @@ def accounted_usage(data):
     tokens = usage_tokens(data)
     conservative = control.nonnegative(data.get("conservative_tokens", 0), "conservative tokens")
     explicit_zero = data.get("api_calls") == 0 and data.get("total_tokens") == 0
+    bounded = request_accounting.bounded_tokens(data, tokens)
     if data.get("usage_complete") is False or (tokens <= 0 and not explicit_zero):
-        bounded = request_accounting.bounded_tokens(data, tokens)
         tokens = max(tokens, TIMEOUT_FALLBACK_TOKENS, conservative) if bounded is None else max(tokens, bounded)
         data["accounting_source"] = ("bounded-unknown-estimate" if bounded is not None else
                                      "pessimistic-estimate" if not data.get("total_tokens") else "partial-with-conservative-floor")

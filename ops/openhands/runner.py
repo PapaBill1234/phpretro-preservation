@@ -84,7 +84,7 @@ def main(receipt_path):
         raise control.IntegrityError("model has no verified provider route")
     usage_path = Path(manifest["usage_path"])
     state = {"started": 0, "finished": 0, "depth": 0, "complete": False,
-             "unknown_calls": 0, "providers": [], "failed": set()}
+             "unknown_calls": 0, "providers": [], "failed": set(), "recoverable": set()}
     box = sandbox.Sandbox(rid, manifest["cwd"], writable=manifest["role"] == "builder",
                           paths=manifest.get("allowed_paths", []))
     conversation = None
@@ -117,7 +117,7 @@ def main(receipt_path):
                 result = getattr(client, method)(*args, **kwargs)
                 verify_provider_response(result)
                 return result
-        return routing.call(routes, invoke, state["failed"], wait=reconnect_wait)
+        return routing.call(routes, invoke, state["failed"], wait=reconnect_wait, recoverable=state["recoverable"])
 
     def reconnect_wait(seconds):
         # Preserve the same SDK conversation and sandbox while reconnecting.
