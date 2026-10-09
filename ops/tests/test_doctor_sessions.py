@@ -13,3 +13,11 @@ class SessionsTest(unittest.TestCase):
    self.assertNotIn('secret',json.dumps(report));self.assertEqual(len(report['provider_calls']),1)
  def test_empty_history_stays_empty(self):
   with tempfile.TemporaryDirectory() as home:self.assertEqual(d.sessions(home)['sessions'],[])
+ def test_truncated_context_never_claims_complete_or_unused(self):
+  with tempfile.TemporaryDirectory() as directory:
+   home=Path(directory);receipts=home/'phpretro-ops/state/receipts';receipts.mkdir(parents=True)
+   (receipts/'test.json').write_text(json.dumps({'runtime':'openhands','run_id':'test'}))
+   (receipts/'test.context.json').write_text(json.dumps({'schema':'phpretro.context-usage.v1','complete':True,'requests_truncated':True,'enabled_tools':['execute'],'tool_calls':1,'tool_errors':0,'repeated_commands':0,'events':2,'brief_chars':10,'requests':[{'estimated_context_tokens':20,'estimated_tool_schema_tokens':3,'estimated_system_tokens':4,'secret':'secret'}]}))
+   row=d.sessions(home)['sessions'][0]
+   self.assertFalse(row['context_complete']);self.assertNotIn('secret',json.dumps(row))
+   self.assertEqual(row['context_requests'][0]['estimated_context_tokens'],20)

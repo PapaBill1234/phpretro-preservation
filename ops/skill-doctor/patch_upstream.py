@@ -1,5 +1,5 @@
 """Apply the maintained source extension to pinned upstream, never edit built JS."""
-import shutil,sys
+import json,shutil,sys
 from pathlib import Path
 root=Path(sys.argv[1]); here=Path(__file__).parent
 def replace(path,old,new):
@@ -28,6 +28,7 @@ replace('web/src/pages/ContextOptimizationPage.tsx',"  if (platform === 'codex')
 replace('src/models/testOpenAiCompatible.ts',"max_tokens: 5", "max_tokens: 512")
 replace('src/audit/ai-scanner.ts','    if (!raw) continue;',"    if (!raw) throw new Error('AI audit did not return valid JSON for ' + skill.name + '; check provider status, timeout and output allowance.');")
 shutil.copyfile(here/'OpenHandsSessions.tsx',root/'web/src/pages/OpenHandsSessions.tsx')
+shutil.copyfile(here/'OpenHandsSessions.test.tsx',root/'tests/ui/OpenHandsSessions.test.tsx')
 registry_test=root/'tests/platforms/registry.test.ts'
 registry_test.write_text(registry_test.read_text().replace("      'hermes',", "      'hermes',\n      'openhands',"))
 audit_test=root/'tests/audit/ai-scanner.test.ts'
@@ -45,3 +46,29 @@ text=text.replace(old,"""    await expect(runAiAudit(
     )).rejects.toThrow('AI audit did not return valid JSON');""")
 text=text.replace("    const first = await runAiAudit(skills, { llmOptions: makeLlmOptions(), useCache: true, homeDir: dir });\n    expect(first).toHaveLength(0);", "    await expect(runAiAudit(skills, { llmOptions: makeLlmOptions(), useCache: true, homeDir: dir })).rejects.toThrow('AI audit did not return valid JSON');")
 audit_test.write_text(text)
+# Ship the extension's real discovery scenario, rather than skipping upstream's
+# manifest check (the published source omits its internal scenario documents).
+scenario=root/'doc/scenarios/phpretro-openhands'
+(scenario/'evidence').mkdir(parents=True,exist_ok=True)
+(scenario/'spec.md').write_text('OpenHands audit snapshots must be discovered under their own platform at global and project scope. They must not become Codex skills or writable deployment targets. Runtime receipt evidence remains separate from provider billing calls.\n')
+(scenario/'tasks.md').write_text('Run npm test, typecheck:ui and build. Run the PHPRetro receipt privacy tests and manual preview Deep Scan. Verify OpenHands in scan settings and optimization sessions through the authenticated dashboard. Never count missing history as zero use.\n')
+(scenario/'discovery.md').write_text('Create synthetic global/project .openhands/skills entries. Verify scope and canonical platform, no Codex records, and no installation target. See tests/platforms/openhands.test.ts.\n')
+(scenario/'manifest.json').write_text(json.dumps({'feature':'phpretro-openhands','spec':'doc/scenarios/phpretro-openhands/spec.md','tasks':'doc/scenarios/phpretro-openhands/tasks.md','evidenceDir':'doc/scenarios/phpretro-openhands/evidence','scenarios':[{'id':'discovery','stage':'it','doc':'doc/scenarios/phpretro-openhands/discovery.md','test':'tests/platforms/openhands.test.ts'}]}))
+(root/'tests/platforms/openhands.test.ts').write_text("""import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {expect,it} from 'vitest';
+import {resolvePaths} from '../../src/discovery/resolvePaths';
+import {getPlatformAdapter,normalizePlatformName} from '../../src/platforms/registry';
+it('discovers OpenHands snapshots without Codex ownership or deployment writes',()=>{
+ const root=mkdtempSync(join(tmpdir(),'openhands-fixture-')),home=join(root,'home'),project=join(root,'project');
+ try {
+  for(const base of [home,project]){const dir=join(base,'.openhands/skills/test');mkdirSync(dir,{recursive:true});writeFileSync(join(dir,'SKILL.md'),'---\\nname: test\\ndescription: Audit fixture\\n---\\nbody');}
+  const rows=resolvePaths(project,{homeDir:home});
+  expect(rows.filter(r=>r.platform==='openhands').map(r=>r.scope).sort()).toEqual(['global','project']);
+  expect(rows.filter(r=>r.platform==='codex')).toHaveLength(0);
+  expect(normalizePlatformName('openhands')).toBe('openhands');
+  expect(getPlatformAdapter('openhands')?.installTargets).toEqual([]);
+ } finally {rmSync(root,{recursive:true,force:true});}
+});
+""")
