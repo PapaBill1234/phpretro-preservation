@@ -234,6 +234,12 @@ class AdmissionTests(unittest.TestCase):
 
 
 class ProviderRoutingTests(unittest.TestCase):
+    def test_deepseek_native_adapter_and_explicit_snapshot_label(self):
+        self.assertEqual(runtime_policy.sdk_model("deepseek-v4.1-flash"),"deepseek/deepseek-v4.1-flash")
+        self.assertTrue(runtime_policy.model_label_matches("deepseek-v4.1-flash","deepseek-v4-1-flash-260910"))
+        for other in ("deepseek-v4-flash", "deepseek-v4-pro", "gpt-6-luna", "deepseek-v4-1-flash-unknown"):
+            self.assertFalse(runtime_policy.model_label_matches("deepseek-v4.1-flash",other))
+
     def test_primary_first_and_failed_primary_suppressed_for_session(self):
         class GatewayError(Exception): status_code = 502
         calls, failed = [], set()

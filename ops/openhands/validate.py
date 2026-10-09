@@ -40,6 +40,15 @@ def main():
     run = subprocess.run(["bash", "ops/tests/run_all.sh"], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     (logdir / "ops.log").write_bytes(run.stdout)
     checks["ops"] = run.returncode == 0
+    sdk_logs = []
+    for model, settings in policy["models"].items():
+        if not settings.get("automatic"):
+            continue
+        smoke = subprocess.run([policy["sdk_python"], str(ROOT / "ops/openhands/sdk_transport_smoke.py"), "--model", model],
+                               cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60)
+        sdk_logs.append(smoke.stdout)
+        checks["ops"] = checks["ops"] and smoke.returncode == 0
+    (logdir / "sdk-transport.log").write_bytes(b"\n".join(sdk_logs))
     rc, output = sandbox.check(ROOT)
     (logdir / "foundation.log").write_text(output)
     checks["foundation"] = rc == 0

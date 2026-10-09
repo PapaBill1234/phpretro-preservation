@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import secrets
 from pathlib import Path
 import subprocess
 import sys
@@ -43,6 +44,7 @@ def run_probe(path):
     observed = {"started": 0, "finished": 0, "tool": False, "final": False, "identity": True}
     error = {}
     reported_models = set()
+    marker = "PHPRETRO_" + secrets.token_hex(12)
     class ProbeLLM(LLM):
         def completion(self, *args, **kwargs):
             return self.measured(super().completion, args, kwargs)
@@ -57,13 +59,13 @@ def run_probe(path):
             reported = str(getattr(result.raw_response, "model", "")).removeprefix("openai/")
             if re.fullmatch(r"[A-Za-z0-9_./-]{1,128}", reported):
                 reported_models.add(reported)
-            observed["identity"] &= reported == model
+            observed["identity"] &= runtime_policy.model_label_matches(model, reported)
             if getattr(result.raw_response, "usage", None) is None:
                 raise control.IntegrityError("provider usage absent")
             observed["finished"] += 1
             checkpoint(False)
             return result
-    llm = ProbeLLM(model="openai/" + model, api_key=SecretStr(key), base_url=policy["providers"][provider]["base_url"],
+    llm = ProbeLLM(model=runtime_policy.sdk_model(model), api_key=SecretStr(key), base_url=policy["providers"][provider]["base_url"],
                    api_mode=settings["api_mode"], max_input_tokens=65536, max_output_tokens=4096,
                    reasoning_effort="low", timeout=120, num_retries=0, caching_prompt=False, log_completions=False)
     def checkpoint(complete):
@@ -79,25 +81,28 @@ def run_probe(path):
         control.atomic_json(Path(rec["usage_path"]), usage)
     class MarkerAction(Action):
         pass
+    class MarkerObservation(Observation):
+        pass
     class MarkerExecutor(ToolExecutor):
         def __call__(self, action, conversation=None):
+            result = MarkerObservation.from_text(marker)
             observed["tool"] = True
-            return Observation.from_text("PHPRETRO_OK")
+            return result
     class MarkerTool(ToolDefinition):
         @classmethod
         def create(cls, conv_state=None, **params):
-            return [cls(description="Return the fixed PHPRETRO_OK marker; no arguments or side effects.", action_type=MarkerAction, observation_type=Observation, executor=MarkerExecutor())]
+            return [cls(description="Return a random marker that is only available in the tool result; no arguments or side effects.", action_type=MarkerAction, observation_type=MarkerObservation, executor=MarkerExecutor())]
     register_tool("PHPRetroMarker", MarkerTool)
     def callback(event):
         if isinstance(event, MessageEvent) and event.source == "agent":
-            observed["final"] = "PHPRETRO_OK" in "".join(getattr(x, "text", "") for x in event.llm_message.content)
+            observed["final"] = marker in "".join(getattr(x, "text", "") for x in event.llm_message.content)
     conversation = None
     passed = False
     try:
         agent = Agent(llm=llm, tools=[Tool(name="PHPRetroMarker")], include_default_tools=[])
-        conversation = Conversation(agent=agent, workspace=str(private), persistence_dir=None, callbacks=[callback], max_iteration_per_run=4)
+        conversation = Conversation(agent=agent, workspace=str(private), persistence_dir=None, visualizer=None, callbacks=[callback], max_iteration_per_run=4)
         conversation.set_confirmation_policy(NeverConfirm())
-        conversation.send_message("Call MarkerTool exactly once, then respond with exactly the marker returned by the tool.")
+        conversation.send_message("Call the marker tool exactly once, then respond with exactly the marker returned by the tool.")
         conversation.run()
         passed = observed["tool"] and observed["final"] and observed["identity"]
     except Exception as exc:

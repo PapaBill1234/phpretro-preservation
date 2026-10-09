@@ -43,6 +43,9 @@
       "provider_order": [
         "a6api",
         "portdan"
+      ],
+      "reported_model_aliases": [
+        "deepseek-v4-1-flash-260910"
       ]
     },
     "claude-haiku-5-5": {

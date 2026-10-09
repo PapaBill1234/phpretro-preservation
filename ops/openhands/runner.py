@@ -97,7 +97,7 @@ def main(receipt_path):
         def responses(self, *args, **kwargs):
             return routed_call(self, "responses", args, kwargs)
 
-    options = dict(model="openai/" + model, api_mode=settings["api_mode"],
+    options = dict(model=runtime_policy.sdk_model(model), api_mode=settings["api_mode"],
                      usage_id="agent", max_input_tokens=65536, max_output_tokens=4096,
                      num_retries=0, timeout=120, reasoning_effort="low", caching_prompt=False, log_completions=False,
                      input_cost_per_token=settings["input"] / 1e6,
@@ -120,7 +120,7 @@ def main(receipt_path):
     def verify_provider_response(result):
         raw = result.raw_response
         reported = str(getattr(raw, "model", ""))
-        if reported.removeprefix("openai/") != model or getattr(raw, "usage", None) is None:
+        if not runtime_policy.model_label_matches(model, reported) or getattr(raw, "usage", None) is None:
             raise control.IntegrityError("provider model identity or usage unavailable")
 
     def checkpoint(complete=False):
@@ -175,17 +175,20 @@ def main(receipt_path):
         command: str = Field(max_length=20000, description="Shell command executed only in the disposable /repo container")
         timeout: int = Field(default=300, ge=1, le=1800)
 
+    class ExecuteObservation(Observation):
+        pass
+
     class ExecuteExecutor(ToolExecutor):
         def __call__(self, action, conversation=None):
             rc, output = box.execute(action.command, action.timeout)
             checkpoint(False)
-            return Observation.from_text("exit=" + str(rc) + "\n" + output, is_error=rc != 0)
+            return ExecuteObservation.from_text("exit=" + str(rc) + "\n" + output, is_error=rc != 0)
 
     class ExecuteTool(ToolDefinition):
         @classmethod
         def create(cls, conv_state=None, **params):
             return [cls(description="Run shell commands and read/edit files in /repo. No host/network/secrets. Every command drains background processes. Git publication belongs to the controller.",
-                        action_type=ExecuteAction, observation_type=Observation, executor=ExecuteExecutor())]
+                        action_type=ExecuteAction, observation_type=ExecuteObservation, executor=ExecuteExecutor())]
 
     register_tool("PHPRetroExecute", ExecuteTool)
 
@@ -205,7 +208,7 @@ def main(receipt_path):
         box.prepare()
         agent = Agent(llm=llm, tools=[Tool(name="PHPRetroExecute")], include_default_tools=[])
         conversation = Conversation(agent=agent, workspace=str(private), callbacks=[event_callback],
-                                    persistence_dir=None, max_iteration_per_run=policy["max_iterations"])
+                                    persistence_dir=None, visualizer=None, max_iteration_per_run=policy["max_iterations"])
         conversation.set_confirmation_policy(NeverConfirm())
         role = manifest["role"]
         brief = Path(manifest["prompt_path"]).read_text()

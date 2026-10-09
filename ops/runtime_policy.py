@@ -128,6 +128,17 @@ def model_settings(model):
     return settings
 
 
+def sdk_model(model):
+    model_settings(model)
+    # Native DeepSeek preserves reasoning_content across tool turns.
+    return ("deepseek/" if model.startswith("deepseek-") else "openai/") + model
+
+
+def model_label_matches(model, reported):
+    label = str(reported).removeprefix("openai/").removeprefix("deepseek/")
+    return label in [model, *model_settings(model).get("reported_model_aliases", [])]
+
+
 def planning_needed(unit, reason):
     uid = unit.get("id", "nightly")
     if not isinstance(uid, str) or not __import__("re").fullmatch(r"[A-Za-z0-9_-]{1,80}", uid):

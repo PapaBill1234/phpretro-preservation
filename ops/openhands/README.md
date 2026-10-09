@@ -75,7 +75,19 @@ conservative 1M-token allowance. Provider labels distinguish A6API, Portdan and
 mixed sessions. Portdan Luna/DeepSeek costs stay unknown until its prices are
 verified; Sol uses the supplied merchant quote. Unknown charges still block later
 cash-spend admission. Model identity and
-provider usage must be present. Cache buckets are normalized once and reasoning
+provider usage must be present. DeepSeek uses the native SDK adapter so its
+reasoning_content is preserved across tool turns. Its explicit label allowlist
+includes the observed A6API snapshot deepseek-v4-1-flash-260910; this is gateway
+metadata matching, not independent model authentication.
+
+Tool outputs use concrete registered observation schemas. The abstract SDK base
+cannot be instantiated as a valid output and would turn real tool results into
+errors. Paid probes now return a random marker available only in the tool result,
+so a model cannot pass by guessing a marker printed in its prompt or schema. The
+validator also runs offline conversations through the actual SDK for all three
+models, asserting tool-result delivery, DeepSeek reasoning continuity, provider
+failover and durable per-call charges. SDK event visualization is disabled to
+keep raw prompts, reasoning and exception bodies out of worker logs. Cache buckets are normalized once and reasoning
 is not double-counted. Partial/unknown usage keeps the existing conservative
 1M-token floor and blocks cash-spend admission until reconciled. Original 3M/unit
 and 60M/day token caps and all roadmap/delivery history are retained.
