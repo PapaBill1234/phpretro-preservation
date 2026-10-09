@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh PHPRetro context audit every four hours
+
+[Timer]
+OnActiveSec=1min
+OnUnitActiveSec=4h
+Persistent=false
+
+[Install]
+WantedBy=timers.target
