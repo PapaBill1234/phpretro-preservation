@@ -9,6 +9,7 @@ import (
 )
 
 func TestRoutes(t *testing.T) {
+	// docs/evidence/F61-profile-http.md records the retained server.go demo smoke routes.
 	handler := New()
 	cases := []struct {
 		path string
