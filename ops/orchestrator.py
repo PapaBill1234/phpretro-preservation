@@ -33,6 +33,7 @@ import progress as roadmap_progress
 import worker as run_worker
 import runtime_policy
 import sandbox
+import canary
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -849,6 +850,8 @@ class RecoveryConflict(RuntimeError):
 
 def paid_allowed(state: dict, unit: dict | None, role: str) -> bool:
     rollover(state)
+    if not canary.allowed(unit):
+        return False
     if role in ("planner", "audit"):
         return False
     if RUNTIME != "openhands" or not runtime_policy.ready():
@@ -875,19 +878,25 @@ def admit_paid(state: dict, unit: dict | None, role: str, *, limit=None) -> str:
     allowance = min(PER_UNIT_TOKEN_CAP - used, AUDIT_TOKEN_CAP if role == "audit" else PER_UNIT_TOKEN_CAP)
     if limit is not None:
         allowance = min(allowance, limit)
+    allowance = canary.allowance(unit, role, allowance)
     policy = runtime_policy.load()
     # This is an estimated spending guard, never a claim about account deductions.
     rows = _load_telemetry().read_runs(STATE_DIR / "runs.jsonl")
     spent = 0.0
     day_charges = 0
     unknown = False
+    rate = max(float(m["output"]) for m in policy["models"].values() if m.get("automatic"))
     for row in rows:
         if row.get("record_type", "run") != "run" or not str(row.get("ts_end", "")).startswith(state["day"]):
             continue
         day_charges += control.charged_tokens(row, TIMEOUT_FALLBACK_TOKENS)
         cost = _load_telemetry()._finite_nonnegative(row.get("cost_estimate"))
         if cost is None or row.get("usage_complete") is False:
-            unknown = True
+            override = canary.unknown_estimate(row, rate)
+            if override is None:
+                unknown = True
+            else:
+                spent += override
         else:
             spent += cost
     if unknown:
@@ -2354,6 +2363,8 @@ def recover_units(roadmap: dict, history: dict, state: dict) -> None:
         u = roadmap[uid]
         if u.get("status") != "todo" or int(u.get("attempts", 0)) == 0:
             continue
+        if not canary.allowed(u):
+            continue
         if repair_requested(u) or u.get("split_requested") or u.get("blocked_reason"):
             continue
         entry = history.get(u["id"])
@@ -2485,6 +2496,8 @@ def resume_open_prs(roadmap: dict, state: dict) -> None:
         u = roadmap[uid]
         if u.get("status") not in ("queued", "pr_open") or not u.get("pr"):
             continue
+        if not canary.allowed(u):
+            continue
         try:
             wt = attach_worktree(u)
             event(state, f"{uid}: resuming merge queue for PR #{u['pr']}")
@@ -2588,6 +2601,8 @@ def select_ready(roadmap: dict, state: dict) -> list:
     ready = []
     for uid in sorted(roadmap):
         u = roadmap[uid]
+        if not canary.allowed(u) or canary.allowance(u, 'builder', PER_UNIT_TOKEN_CAP) <= 0:
+            continue
         if u.get("status") != "todo":
             continue
         if u.get("blocked_reason") or u.get("implementation_ready") is False:
@@ -3961,13 +3976,17 @@ def cycle(*, no_dispatch: bool = False) -> None:
                     recover_units(roadmap, history, state)
                     resume_open_prs(roadmap, state)
                 dispatch(roadmap, state)
-                queue_nightly_fixes(roadmap, state)
-                maybe_refactor_unit(roadmap, state)
-                used_agent = maybe_plan_nightly_fix(roadmap, state)
-                if not used_agent:
-                    used_agent = maybe_plan(roadmap, state)
-                if not used_agent:
-                    maybe_audit(roadmap, state)
+                if canary.load() is None:
+                    queue_nightly_fixes(roadmap, state)
+                    maybe_refactor_unit(roadmap, state)
+                    used_agent = maybe_plan_nightly_fix(roadmap, state)
+                    if not used_agent:
+                        used_agent = maybe_plan(roadmap, state)
+                    if not used_agent:
+                        maybe_audit(roadmap, state)
+                elif canary.finished(roadmap):
+                    STOP_FILE.touch()
+                    event(state, 'bounded canary finished or expired; STOP restored')
             else:
                 event(state, "dispatch-disabled maintenance cycle: no workers, review or merges")
             save_roadmap(roadmap)

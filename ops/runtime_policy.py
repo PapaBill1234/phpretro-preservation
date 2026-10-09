@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 import integrity as control
+import canary
 
 ROOT = Path(__file__).resolve().parent
 OPS = Path(os.environ.get("PHPRETRO_OPS", Path.home() / "phpretro-ops"))
@@ -63,6 +64,7 @@ def fingerprint():
 
 def capability_fingerprint():
     digest = hashlib.sha256()
+    digest.update((ROOT / 'canary.py').read_bytes())
     for name in ("runner.py", "probe_models.py", "routing.py", "requirements.lock"):
         digest.update((ROOT / "openhands" / name).read_bytes())
     digest.update(Path(__file__).read_bytes())
@@ -118,7 +120,7 @@ def verified_providers(model, checked=None):
             return []
     evidence = checked.get("provider_models", {})
     return [p for p in model_settings(model)["provider_order"]
-            if route_passed(evidence.get(p, {}).get(model, {}))]
+            if route_passed(evidence.get(p, {}).get(model, {})) or canary.operator_route(p, model)]
 
 
 def model_settings(model):
