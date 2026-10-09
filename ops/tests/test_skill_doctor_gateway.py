@@ -12,3 +12,9 @@ class DoctorGatewayTests(unittest.TestCase):
         self.assertIn(b'"/skill-doctor/assets/',rewritten)
         self.assertIn(b'"/skill-doctor/api/bootstrap',rewritten)
         self.assertIn(b'`/skill-doctor/api/scans/',rewritten)
+    def test_agent_view_and_manual_only_default(self):
+        self.assertEqual(g.backend_route('/agent-doctor/api/bootstrap'),(38123,'/api/bootstrap',False))
+        data=g.skill_doctor_asset(b'<head></head><script src="/assets/app.js"></script>',b'/agent-doctor')
+        self.assertIn(b'/agent-doctor/assets/',data)
+        self.assertIn(b'useAiAudit:false',data)
+        self.assertIn(b"'skill-doctor-analysis-mode','standard'",data)
