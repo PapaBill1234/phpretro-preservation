@@ -88,9 +88,10 @@ def main(model):
         recorded = json.loads(usage.read_text())
         assert calls == ["https://api.a6api.com/v1", "https://api.a6api.com/v1", "https://portdan.com/v1", "https://api.a6api.com/v1"], calls
         assert recorded["api_calls"] == 4 and recorded["total_tokens"] == 240, recorded
-        assert recorded["usage_complete"] is False and recorded["conservative_tokens"] == 139504, recorded
-        assert pending == [69632, 69752, 139384, 209016], pending
-        assert runner.requests.bounded_tokens(recorded, 240) == 139504
+        ceiling = runner.requests.CALL_CEILING
+        assert recorded["usage_complete"] is False and recorded["conservative_tokens"] == 240 + 2 * ceiling, recorded
+        assert pending == [ceiling, ceiling + 120, 2 * ceiling + 120, 3 * ceiling + 120], pending
+        assert runner.requests.bounded_tokens(recorded, 240) == 240 + 2 * ceiling
         assert len(tool_calls) == 1, "reconnection replayed a completed tool action"
         history=runner.context_usage.summary(json.loads(receipt.with_suffix('.context.json').read_text()))
         assert history['tool_calls']==1 and history['tool_errors']==0 and history['usage_status']=='complete', history

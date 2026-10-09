@@ -55,6 +55,22 @@ def unknown_estimate(row, rate):
 
 
 def operator_route(provider, model):
+    # Operator availability is separate from measured tool/usage evidence and
+    # from the expiring coding canary. The user verified this exact primary.
+    path = OPS / 'state/provider-operator-admission.json'
+    if path.exists():
+        if path.is_symlink() or path.stat().st_size > 4096:
+            raise control.IntegrityError('invalid operator route authorization')
+        confirmation = json.loads(path.read_text())
+        if (not isinstance(confirmation, dict)
+                or confirmation.get('schema') != 'phpretro.operator-route.v1'
+                or confirmation.get('authorized_by') != 'user'
+                or confirmation.get('routes') != {'a6api': ['gpt-6.1-sol']}
+                or type(confirmation.get('confirmed_at')) not in (int, float)
+                or not 0 < confirmation['confirmed_at'] <= time.time()):
+            raise control.IntegrityError('invalid operator route authorization')
+        if provider == 'a6api' and model == 'gpt-6.1-sol':
+            return True
     data = load()
     return bool(data and allowed() and provider == 'a6api' and model == 'gpt-6.1-sol'
                 and data.get('a6api_sol_operator_confirmation') is True)

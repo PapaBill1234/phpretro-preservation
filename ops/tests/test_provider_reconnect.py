@@ -79,7 +79,20 @@ class BoundedUsageTests(unittest.TestCase):
         control.atomic_json(path, self.usage())
         result = worker.usage_snapshot(path, root / "unused.db", "", "openhands")
         self.assertFalse(result["usage_complete"])
-        self.assertEqual(o.accounted_usage(result)["accounted_tokens"], 69872)
+        self.assertEqual(o.accounted_usage(result)["accounted_tokens"], 240 + requests.CALL_CEILING)
+
+    def test_historical_v1_charge_is_not_reduced_by_new_ceiling(self):
+        data = self.usage()
+        data.update(usage_schema='phpretro.bounded-usage.v1', request_token_ceiling=69632,
+                    conservative_tokens=69872)
+        self.assertEqual(o.accounted_usage(data)['accounted_tokens'], 69872)
+        data['request_token_ceiling'] = requests.CALL_CEILING
+        with self.assertRaises(control.IntegrityError): o.accounted_usage(data)
+
+    def test_new_ceiling_matches_existing_enforced_context_limit(self):
+        self.assertEqual(requests.MAX_INPUT, 60000)
+        self.assertEqual(requests.CALL_CEILING, 64096)
+        self.assertLess(requests.CALL_CEILING, 69455)
 
     def test_legacy_unknown_usage_keeps_million_token_floor(self):
         data = self.usage(); data.pop("usage_schema")
