@@ -30,3 +30,18 @@ replace('src/audit/ai-scanner.ts','    if (!raw) continue;',"    if (!raw) throw
 shutil.copyfile(here/'OpenHandsSessions.tsx',root/'web/src/pages/OpenHandsSessions.tsx')
 registry_test=root/'tests/platforms/registry.test.ts'
 registry_test.write_text(registry_test.read_text().replace("      'hermes',", "      'hermes',\n      'openhands',"))
+audit_test=root/'tests/audit/ai-scanner.test.ts'
+text=audit_test.read_text()
+old="""    const result = await runAiAudit(
+      [makeSkill('skill', 'desc')],
+      { llmOptions: makeLlmOptions(), useCache: false },
+    );
+
+    expect(result).toHaveLength(0);"""
+assert text.count(old)==2
+text=text.replace(old,"""    await expect(runAiAudit(
+      [makeSkill('skill', 'desc')],
+      { llmOptions: makeLlmOptions(), useCache: false },
+    )).rejects.toThrow('AI audit did not return valid JSON');""")
+text=text.replace("    const first = await runAiAudit(skills, { llmOptions: makeLlmOptions(), useCache: true, homeDir: dir });\n    expect(first).toHaveLength(0);", "    await expect(runAiAudit(skills, { llmOptions: makeLlmOptions(), useCache: true, homeDir: dir })).rejects.toThrow('AI audit did not return valid JSON');")
+audit_test.write_text(text)
