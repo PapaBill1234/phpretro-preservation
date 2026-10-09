@@ -2,6 +2,7 @@
   "schema": "phpretro.runtime.v1",
   "automatic_planning": false,
   "automatic_sol": false,
+  "required_review_families": 3,
   "max_builders": 2,
   "sdk_python": "/home/ubuntu/phpretro-openhands/venv/bin/python",
   "providers_file": "/home/ubuntu/phpretro-openhands/secrets/providers.json",
@@ -19,7 +20,7 @@
   "models": {
     "gpt-6-luna": {"automatic": true, "api_mode": "responses", "input_includes_cache": true, "input": 0.018, "output": 0.09, "cache_read": 0.0018, "cache_write": 0.0225},
     "deepseek-v4.1-flash": {"automatic": true, "api_mode": "chat", "input_includes_cache": true, "input": 0.0516, "output": 0.2064, "cache_read": 0.001, "cache_write": 0.0516},
-    "claude-haiku-5-5": {"automatic": true, "api_mode": "chat", "input_includes_cache": true, "input": 0.024, "output": 0.12, "cache_read": 0.0024, "cache_write": 0.03},
+    "claude-haiku-5-5": {"automatic": false, "retirement_reason": "Retired pending a verified independent replacement", "api_mode": "chat", "input_includes_cache": true, "input": 0.024, "output": 0.12, "cache_read": 0.0024, "cache_write": 0.03},
     "gpt-6.1-sol": {"automatic": false, "api_mode": "responses", "input_includes_cache": true, "input": 0.12, "output": 0.6, "cache_read": 0.006, "cache_write": 0.12}
   }
 }

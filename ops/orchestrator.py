@@ -115,9 +115,9 @@ MODEL = {
     "luna": "gpt-6-luna",
     "deepseek": "deepseek-v4.1-flash",
     "sol": "gpt-6.1-sol",
-    "haiku": "claude-haiku-5-5",
+    "haiku": "claude-haiku-5-5",  # Historical identity only; retired from dispatch.
 }
-LADDER = ["luna", "deepseek", "haiku", "deepseek"]
+LADDER = ["luna", "deepseek", "deepseek", "deepseek"]
 PROFILE_HOME = {name: HOME / ".hermes" / "profiles" / name
                 for name in ("builder", "reviewer", "planner", "auditor")}
 HERMES = shutil.which("hermes") or str(HOME / ".local" / "bin" / "hermes")
@@ -1282,10 +1282,17 @@ def normalize_verdict(raw) -> str:
 
 
 def reviewer_model_for(author: str) -> str:
-    for candidate in (MODEL["haiku"], MODEL["deepseek"], MODEL["luna"]):
+    for candidate in automatic_review_models():
         if control.model_family(candidate) != control.model_family(author):
             return candidate
     raise control.IntegrityError("no independent reviewer family")
+
+
+def automatic_review_models() -> tuple[str, ...]:
+    models = runtime_policy.load()["models"]
+    preferred = (MODEL["deepseek"], MODEL["luna"])
+    candidates = (*preferred, *(m for m in models if m not in preferred))
+    return tuple(m for m in candidates if m != MODEL["sol"] and models.get(m, {}).get("automatic") is True)
 
 def unit_branch(unit: dict) -> str:
     return unit.get("branch") or f"unit/{unit['id']}"
@@ -1650,14 +1657,14 @@ def push_and_open_pr(unit: dict, wt: Path, check_out: str, state: dict) -> int:
 
 def review_fallback(primary: str, author: str, excluded=()) -> str:
     forbidden = {control.model_family(m) for m in (primary, author, *excluded)}
-    for candidate in (MODEL["haiku"], MODEL["deepseek"], MODEL["luna"]):
+    for candidate in automatic_review_models():
         if control.model_family(candidate) not in forbidden:
             return candidate
     return ""
 
 def second_reviewer_model(author: str, primary: str) -> str:
     forbidden = {control.model_family(author), control.model_family(primary)}
-    for candidate in (MODEL["haiku"], MODEL["deepseek"], MODEL["luna"]):
+    for candidate in automatic_review_models():
         if control.model_family(candidate) not in forbidden:
             return candidate
     return ""
@@ -1719,6 +1726,7 @@ def approval_valid(unit: dict, slot: str, head: str) -> bool:
     valid = (rec.get("unit") == unit["id"] and rec.get("head") == head and
              rec.get("rc") == 0 and rec.get("verdict") == "pass" and
              rec.get("model") == unit.get(slot + "_model"))
+    valid = valid and rec.get("model") in automatic_review_models()
     valid = valid and control.model_family(rec.get("model", "")) != control.model_family(unit.get("model") or MODEL["luna"])
     if slot == "review2":
         valid = valid and control.model_family(rec.get("model", "")) != control.model_family(unit.get("review_model", ""))
@@ -2039,7 +2047,7 @@ def rung_index(model: str) -> int:
 
 
 # Ladder strength order, weakest first. Escalating means the next one up.
-_LADDER_ORDER = ["luna", "deepseek", "haiku"]
+_LADDER_ORDER = ["luna", "deepseek"]
 
 
 def _next_stronger_model(unit: dict, attempt: int) -> str:
@@ -4085,10 +4093,12 @@ units:
     assert got["depends_on"] == ["F1"], got
     assert paths_overlap(["internal/home/**"], ["internal/home/home.go"])
     assert not paths_overlap(["internal/home/**"], ["internal/account/**"])
-    assert reviewer_model_for(MODEL["luna"]) == MODEL["haiku"]
-    assert reviewer_model_for(MODEL["deepseek"]) == MODEL["haiku"]
+    assert reviewer_model_for(MODEL["luna"]) == MODEL["deepseek"]
+    assert reviewer_model_for(MODEL["deepseek"]) == MODEL["luna"]
+    assert MODEL["haiku"] not in automatic_review_models()
+    assert second_reviewer_model(MODEL["luna"], MODEL["deepseek"]) == ""
     assert model_for_attempt(1) == MODEL["luna"]
-    assert model_for_attempt(3) == MODEL["haiku"]
+    assert model_for_attempt(3) == MODEL["deepseek"]
     assert model_for_attempt(4) == MODEL["deepseek"]
     # diff guard: protected paths and out-of-scope paths are rejected, the
     # unit's own listed paths (including its delivery note) are not.

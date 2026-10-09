@@ -13,8 +13,13 @@ or delivered units cannot be replaced, protected paths are forbidden, and
 attempt/token counters survive re-import. Unclear/split/nightly/audit work becomes
 a durable `state/planning-needed/<ID>.json` handoff. Other ready work can proceed.
 
-Automatic builders use Luna, DeepSeek, Haiku, then DeepSeek; four attempts remain
-the ceiling. There is no automatic Sol, paid planner or paid weekly audit.
+Haiku is retired from automatic builders, reviewers and fallbacks. Builders use
+Luna then DeepSeek for the remaining attempts; four attempts remain the ceiling.
+Luna and DeepSeek can review each other. The third family is awaiting a verified
+replacement; provider activation remains blocked until three automatic families
+are available and all capability checks pass. Step through OpenCode was tested
+but every inference request returned HTTP 403, including both official clients.
+There is no automatic Sol, paid planner or paid weekly audit.
 Independent review always runs. Sensitive work requires author, first reviewer
 and second reviewer from three different families, including after fallbacks
 and when cached receipts are reused. F38 remains parked until its original
@@ -118,7 +123,7 @@ DockerWorkspace is used.
     "acceptance": ["<observable original behavior with source citation>"],
     "tests": ["<independent acceptance command>"],
     "fixtures": ["<synthetic or disposable evidence>"],
-    "allowed_models": ["gpt-6-luna", "deepseek-v4.1-flash", "claude-haiku-5-5"],
+    "allowed_models": ["gpt-6-luna", "deepseek-v4.1-flash"],
     "token_cap": 3000000
   }]
 }
@@ -136,7 +141,8 @@ one probe and failed a later call; it needs a fresh successful probe after the
 endpoint failure is understood. The requested `claude-haiku-5-5` route returned
 `cb/deepseek-v4.1-flash`. It therefore fails model identity and cannot provide an
 independent Claude review. The runtime deliberately rejects this response.
-Keep STOP and disabled timers until a genuine configured reviewer route passes
+Haiku has now been retired; historical receipts and charges remain unchanged.
+Keep STOP and disabled timers until a verified third-family replacement passes
 the exact identity, tool-call and usage checks. Do not weaken family checks or
 substitute automatic Sol. Provider evidence currently records failure, so no
 passing validation stamp or coding canary has been established.

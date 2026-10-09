@@ -102,24 +102,24 @@ class ReviewBoundary(Isolated):
             return "1"
         return ""
 
-    def test_outage_retry_keeps_author_independence_without_unapproved_route(self):
+    def test_outage_defers_when_no_other_independent_route_exists(self):
         u, st = unit(attempts=1), state()
         response = [(124, "", {"total_tokens": 10}), (0, '{"verdict":"pass","findings":[]}', {"total_tokens": 20})]
         with patch.object(o, "git_out", side_effect=self.git_value), patch.object(o, "hermes_run", side_effect=response) as run:
-            self.assertEqual(o.run_review(u, self.repo, st, u["model"])[0], "pass")
-        self.assertEqual(run.call_count, 2)
+            self.assertEqual(o.run_review(u, self.repo, st, u["model"])[0], "unavailable")
+        self.assertEqual(run.call_count, 1)
         models = [r.args[1] for r in run.call_args_list]
-        self.assertEqual(models, [o.MODEL["haiku"], o.MODEL["deepseek"]])
-        self.assertNotEqual(c.model_family(u["model"]), c.model_family(models[1]))
-        self.assertEqual(u["review_head"], "reviewed-head")
-        self.assertEqual(st["tokens_today"], 30)
+        self.assertEqual(models, [o.MODEL["deepseek"]])
+        self.assertNotEqual(c.model_family(u["model"]), c.model_family(models[0]))
+        self.assertNotIn("review_head", u)
+        self.assertEqual(st["tokens_today"], 10)
         self.assertEqual(u["attempts"], 1)
 
-    def test_two_malformed_reviews_park_only_unit(self):
+    def test_malformed_review_without_independent_fallback_parks_only_unit(self):
         u, st = unit(attempts=1), state()
         with patch.object(o, "git_out", side_effect=self.git_value), patch.object(o, "hermes_run", return_value=(0, "bad JSON", {"total_tokens": 2})) as run:
             self.assertFalse(o.ensure_reviewed(u, self.repo, st))
-        self.assertEqual(run.call_count, 2)
+        self.assertEqual(run.call_count, 1)
         self.assertEqual(u["status"], "parked")
         self.assertFalse(o.STOP_FILE.exists())
 
@@ -139,11 +139,11 @@ class ReviewBoundary(Isolated):
         self.assertEqual(u["pr"], 7)
         self.assertEqual(u["attempts"], 1)
 
-    def test_sensitive_second_review_never_uses_author_family(self):
+    def test_sensitive_second_review_waits_for_replacement_family(self):
         u = unit(attempts=4, model=o.MODEL["sol"], review_model=o.MODEL["deepseek"])
         with patch.object(o, "git_out", side_effect=self.git_value), patch.object(o, "hermes_run", return_value=(0, '{"verdict":"pass","findings":[]}', {"total_tokens": 1})) as run:
-            self.assertEqual(o.run_second_review(u, self.repo, state())[0], "pass")
-        self.assertEqual(run.call_args.args[1], o.MODEL["haiku"])
+            self.assertEqual(o.run_second_review(u, self.repo, state())[0], "unavailable")
+        run.assert_not_called()
 
     def test_changed_head_discards_approval(self):
         u = unit(attempts=1)
@@ -192,9 +192,9 @@ class ReviewBoundary(Isolated):
             return (0, "malformed" if len(models) == 1 else '{"verdict":"pass","findings":[]}', {"total_tokens": 2})
         with patch.object(o, "git_out", side_effect=self.git_value), patch.object(o, "hermes_run", side_effect=reviewer):
             verdict, _, _ = o.validated_review(u, self.repo, st, o.MODEL["deepseek"], "review")
-        self.assertEqual(verdict, "pass")
-        self.assertEqual(models, [o.MODEL["deepseek"], o.MODEL["haiku"]])
-        self.assertTrue(o.approval_valid(u, "review", "reviewed-head"))
+        self.assertEqual(verdict, "unavailable")
+        self.assertEqual(models, [o.MODEL["deepseek"]])
+        self.assertFalse(o.approval_valid(u, "review", "reviewed-head"))
 
     def test_merge_refusal_parks_without_protection_mutation(self):
         u = unit(attempts=1, pr=1, review_head="before-rebase", review_verdict="pass")

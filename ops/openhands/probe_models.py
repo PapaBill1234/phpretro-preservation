@@ -167,7 +167,7 @@ def main():
             models[model] = {"tool_calls": done["rc"] == 0 and result.get("tool_calls") is True, "usage": result.get("usage") is True}
     control.atomic_json(o.STATE_DIR / "openhands-provider-evidence.json", {"capability_sha256": runtime_policy.capability_fingerprint(), "completed_at": time.time(), "models": models})
     print(json.dumps(models))
-    return 0 if len(models) == 3 and all(all(row.values()) for row in models.values()) else 1
+    return 0 if runtime_policy.review_families_available() and all(all(row.values()) for row in models.values()) else 1
 
 
 if __name__ == "__main__":

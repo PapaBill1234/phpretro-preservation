@@ -26,17 +26,24 @@ class PolicyTests(unittest.TestCase):
               patch.object(o,"event"), patch.object(o,"telemetry_event")):
             o._apply_failure_triage(u,{},"failed",{})
         self.assertFalse(tri.call_args.args[-1])
-    def test_no_automatic_sol_and_three_review_families(self):
+    def test_haiku_retired_and_third_review_family_gated(self):
         policy = runtime_policy.load()
         self.assertFalse(policy["automatic_planning"])
         self.assertFalse(policy["automatic_sol"])
         with self.assertRaises(control.IntegrityError):
             runtime_policy.model_settings("gpt-6.1-sol")
-        for author in (o.MODEL["luna"], o.MODEL["deepseek"], o.MODEL["haiku"]):
+        with self.assertRaises(control.IntegrityError):
+            runtime_policy.model_settings("claude-haiku-5-5")
+        self.assertFalse(runtime_policy.review_families_available())
+        self.assertEqual(policy["required_review_families"], 3)
+        self.assertNotIn(o.MODEL["haiku"], o.automatic_review_models())
+        for author in (o.MODEL["luna"], o.MODEL["deepseek"]):
             first = o.reviewer_model_for(author)
             second = o.second_reviewer_model(author, first)
-            self.assertEqual(len({control.model_family(m) for m in (author, first, second)}), 3)
-            self.assertEqual(o.review_fallback(second, author, (first,)), "")
+            self.assertNotEqual(control.model_family(author), control.model_family(first))
+            self.assertEqual(second, "")
+            self.assertEqual(o.review_fallback(first, author), "")
+        self.assertTrue(all(o.model_for_attempt(a) != o.MODEL["haiku"] for a in range(1, 6)))
         self.assertNotIn("sol", o.LADDER)
 
     def test_paid_planning_denied_even_with_validation(self):
@@ -72,6 +79,17 @@ class PolicyTests(unittest.TestCase):
                             {"unit":"F99","head":"head","rc":0,"verdict":"pass","model":o.MODEL["deepseek"]})
         with patch.object(o, "LOG_DIR", root):
             self.assertFalse(o.approval_valid(u,"review2","head"))
+
+    def test_retired_haiku_cached_approval_is_rejected(self):
+        root = tmpdir("retired-review-")
+        rid = control.identity()
+        u = {"id":"F99", "model":o.MODEL["luna"],
+             "review_model":o.MODEL["haiku"], "review_id":rid}
+        control.atomic_json(root / ("F99-review-" + rid + ".verdict.json"),
+                            {"unit":"F99", "head":"head", "rc":0,
+                             "verdict":"pass", "model":o.MODEL["haiku"]})
+        with patch.object(o, "LOG_DIR", root):
+            self.assertFalse(o.approval_valid(u,"review","head"))
 
 
 class BriefTests(unittest.TestCase):

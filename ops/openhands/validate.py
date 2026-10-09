@@ -29,7 +29,7 @@ def main():
                         and 0 <= time.time() - evidence.get("completed_at", 0) <= 86400)
     policy = runtime_policy.load()
     models = evidence.get("models", {})
-    checks = {"provider": provider_current and all(models.get(m, {}).get("tool_calls") is True and models.get(m, {}).get("usage") is True
+    checks = {"provider": runtime_policy.review_families_available() and provider_current and all(models.get(m, {}).get("tool_calls") is True and models.get(m, {}).get("usage") is True
                                for m, v in policy["models"].items() if v.get("automatic"))}
     logdir = OPS / "logs" / "openhands-validation"
     logdir.mkdir(parents=True, exist_ok=True)

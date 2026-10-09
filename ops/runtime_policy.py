@@ -24,7 +24,16 @@ def load():
         raise control.IntegrityError("paid planning/automatic Sol are forbidden")
     if data.get("max_builders") != 2:
         raise control.IntegrityError("migration requires the reviewed two-builder ceiling")
+    if data.get("required_review_families") != 3:
+        raise control.IntegrityError("migration requires three independent review families")
     return data
+
+
+def review_families_available():
+    policy = load()
+    families = {control.model_family(m) for m, v in policy["models"].items()
+                if v.get("automatic") is True}
+    return len(families) >= policy["required_review_families"]
 
 
 def fingerprint():
@@ -50,6 +59,8 @@ def capability_fingerprint():
 
 def ready(model=None):
     data = load()
+    if model is not None and data["models"].get(model, {}).get("automatic") is not True:
+        return False
     stamp = OPS / "state" / "openhands-validation.json"
     try:
         checked = json.loads(stamp.read_text())
