@@ -39,7 +39,7 @@ func TestExpiryAndLogout(t *testing.T) {
 	}
 }
 func TestCookiePolicy(t *testing.T) {
-	cookie := NewCookie("session", "synthetic-token", true, time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC))
+	cookie := NewCookie("session", "synthetic-token", time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC))
 	if !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("cookie policy = %#v", cookie)
 	}

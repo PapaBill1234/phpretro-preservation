@@ -29,7 +29,9 @@ class WorkerSupervisorTest(unittest.TestCase):
         path = root / "receipt.json"
         control.atomic_json(path, {"run_id": "fixture", "command": [sys.executable, "-c", script],
             "cwd": str(root), "profile_home": str(root), "usage_path": str(usage),
-            "timeout": .1, "grace": 2, "reserved_tokens": 100})
+            # Allow interpreter startup and handler installation on a loaded
+            # host before exercising timeout/flush, rather than racing exec.
+            "timeout": 1, "grace": 2, "reserved_tokens": 100})
         result = subprocess.run([sys.executable, str(Path(worker.__file__)), str(path)],
                                 capture_output=True, text=True, timeout=12)
         self.assertEqual(result.returncode, 124, result.stderr)

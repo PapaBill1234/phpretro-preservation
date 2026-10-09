@@ -16,7 +16,7 @@ Design rules (all of them matter):
   probability/confidence. Missing confidence is treated as ``0``.
 * **Bounded input.** Jev's context is 32K tokens. The state is trimmed to fit;
   if it still does not fit, Jev is skipped and the rule is used.
-* **No secrets in logs.** The key is read from ``~/.hermes/.env`` and never
+* **No secrets in logs.** The key is read from the dedicated service environment and never
   printed or written; only the decision is logged.
 
 State lives in ``~/phpretro-ops/state/jev.json`` (enable flags + counters) and
@@ -82,7 +82,6 @@ def _env_files() -> list:
     the deployment's source of truth for this key."""
     return [
         Path(os.environ.get("PHPRETRO_JEV_ENV", "")) if os.environ.get("PHPRETRO_JEV_ENV") else None,
-        HOME / ".hermes" / ".env",
         HOME / "phpretro-dashboard" / "secrets" / "openrouter.env",
     ]
 
@@ -120,7 +119,7 @@ def api_key() -> str:
 
 def _default_state() -> dict:
     return {
-        "enabled": {"a": True, "b": True, "c": True},
+        "enabled": {"a": False, "b": False, "c": False},
         "disabled_reason": {"a": "", "b": "", "c": ""},
         "calls": 0,
         "spend": 0.0,
@@ -147,11 +146,12 @@ def load_state() -> dict:
     st = _default_state()
     for k, v in raw.items():
         if k == "enabled" and isinstance(v, dict):
-            st["enabled"].update({p: bool(v.get(p, True)) for p in PLACES})
+            st["enabled"].update({p: bool(v.get(p, False)) if p != "c" else False for p in PLACES})
         elif k == "disabled_reason" and isinstance(v, dict):
             st["disabled_reason"].update({p: str(v.get(p, "")) for p in PLACES})
         else:
             st[k] = v
+    st["disabled_reason"]["c"] = "Review skipping disabled by runtime policy"
     return st
 
 

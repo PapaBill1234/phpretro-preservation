@@ -1,0 +1,9 @@
+**
+!go.mod
+!go.sum
+!frontend/
+!frontend/package.json
+!frontend/package-lock.json
+!ops/
+!ops/openhands/
+!ops/openhands/Dockerfile

@@ -710,9 +710,15 @@ github.com/PapaBill1234/phpretro-preservation/internal/other/other.go:1.1,2.2 4 
 def main() -> int:
     ap = argparse.ArgumentParser(description="quality safeguards for a unit attempt")
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--evaluate-json", type=Path)
     args = ap.parse_args()
     if args.selftest:
         return selftest()
+    if args.evaluate_json:
+        import json
+        request = json.loads(args.evaluate_json.read_text())
+        print(json.dumps(evaluate(Path.cwd(), request["base"], request["unit"], floor=request.get("floor", 60))))
+        return 0
     ap.error("nothing to do (try --selftest)")
     return 2
 

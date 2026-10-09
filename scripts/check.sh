@@ -32,9 +32,9 @@ ensure_tool() { # name version module-path
   bad "cannot install $1@$2 (need it on PATH or a working module proxy)"
 }
 
-ensure_tool staticcheck v0.6.1 honnef.co/go/tools/cmd/staticcheck
-ensure_tool gosec v2.21.4 github.com/securego/gosec/v2/cmd/gosec
-ensure_tool govulncheck v1.1.4 golang.org/x/vuln/cmd/govulncheck
+ensure_tool staticcheck v0.7.0 honnef.co/go/tools/cmd/staticcheck
+ensure_tool gosec v2.28.0 github.com/securego/gosec/v2/cmd/gosec
+ensure_tool govulncheck v1.7.0 golang.org/x/vuln/cmd/govulncheck
 
 # --- foundation checks (mirror the `foundation` CI job) ---------------------
 note "gofmt"
@@ -61,7 +61,11 @@ note "gosec ./..."
 gosec -quiet -fmt=text ./... || bad "gosec"
 
 note "govulncheck ./..."
-govulncheck ./... || bad "govulncheck"
+vuln_args=()
+if [ -n "${PHPRETRO_VULNDB:-}" ]; then
+  vuln_args=(-db "$PHPRETRO_VULNDB")
+fi
+govulncheck "${vuln_args[@]}" ./... || bad "govulncheck"
 
 if [ "$fail" -ne 0 ]; then
   printf '\nCHECK FAILED\n'

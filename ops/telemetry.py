@@ -481,6 +481,9 @@ def build_run(*, ts_start: str, ts_end: str, role: str, model: str,
     usage = usage or {}
     norm = parse_usage(usage)
     prices = load_prices()
+    if usage.get("runtime") == "openhands":
+        import runtime_policy
+        prices = runtime_policy.load()["models"]
     est = norm.get("provider_cost_estimate") if norm.get("usage_complete") is not False else None
     cost_source = "usage-file" if est is not None else "none"
     if est is None:
@@ -489,7 +492,7 @@ def build_run(*, ts_start: str, ts_end: str, role: str, model: str,
             estimate_usage["model"] = model
         est = estimate_cost(estimate_usage, prices)
         if est is not None:
-            cost_source = "prices.yaml"
+            cost_source = "runtime-policy" if usage.get("runtime") == "openhands" else "prices.yaml"
     rec = {
         "ts_start": ts_start,
         "ts_end": ts_end,
@@ -498,6 +501,7 @@ def build_run(*, ts_start: str, ts_end: str, role: str, model: str,
         "role": role if role in ROLES else "other",
         "model": model or (usage.get("model") or ""),
         "provider": provider,
+        "runtime": usage.get("runtime", "hermes"),
         "input_tokens": norm["input_tokens"],
         "output_tokens": norm["output_tokens"],
         "cached_tokens": norm["cached_tokens"],
@@ -509,7 +513,7 @@ def build_run(*, ts_start: str, ts_end: str, role: str, model: str,
         "api_calls": norm["api_calls"],
         "cost_estimate": est,
         "cost_source": cost_source,
-        "cost_unit": "USD (provider estimate)" if cost_source == "usage-file" else "A6API price-table units (uncalibrated)" if cost_source == "prices.yaml" else "unknown",
+        "cost_unit": "USD (provider estimate)" if cost_source == "usage-file" else "A6API price-table units (uncalibrated)" if cost_source in ("prices.yaml", "runtime-policy") else "unknown",
         "rc": _int_or_none(rc),
         "outcome": outcome if outcome in OUTCOMES else "other",
         "flags": flags or {},
@@ -530,8 +534,8 @@ def build_run(*, ts_start: str, ts_end: str, role: str, model: str,
 def read_runs(path: Path | None = None):
     """Every run record in the current log plus its rotated predecessors."""
     path = path or RUNS
-    files = sorted(STATE.glob(f"{RUNS.stem}-*{RUNS.suffix}")) + [path]
-    records, outcomes = [], {}
+    files = sorted(path.parent.glob(f"{path.stem}-*{path.suffix}")) + [path]
+    records, outcomes, seen = [], {}, set()
     for f in files:
         try:
             for line in f.read_text(errors="replace").splitlines():
@@ -541,8 +545,15 @@ def read_runs(path: Path | None = None):
                     if kind == "outcome":
                         outcomes[rec.get("run_id")] = rec.get("outcome", "other")
                     elif kind == "run":
+                        rid = rec.get("run_id")
+                        if rid and rid in seen:
+                            continue
+                        if rid:
+                            seen.add(rid)
                         records.append(rec)
-        except (OSError, json.JSONDecodeError):
+        except OSError:
+            if f.exists():
+                raise
             continue
     for rec in records:
         if rec.get("run_id") in outcomes:
@@ -568,11 +579,11 @@ def run_total(rec: dict) -> int:
     if val is None:
         val = rec.get("total_including_auxiliary")
     if val is None:
-        parts = [rec.get(k) for k in ("input_tokens", "output_tokens", "cached_tokens")]
+        parts = [rec.get(k) for k in ("input_tokens", "output_tokens", "cached_tokens", "cache_write_tokens")]
         if any(p is not None for p in parts):
             val = sum(p or 0 for p in parts)
     if val is None:
-        return int(rec.get("tokens_pessimistic") or 0)
+        return int(rec.get("tokens_pessimistic", PESSIMISTIC_TOKENS))
     return int(val)
 
 

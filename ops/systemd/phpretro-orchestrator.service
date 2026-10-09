@@ -12,7 +12,8 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=/home/ubuntu/phpretro-preservation
 Environment=HOME=/home/ubuntu
-Environment=HERMES_ACCEPT_HOOKS=1
+Environment=PHPRETRO_RUNTIME=openhands
+Environment=PHPRETRO_MAX_PARALLEL=2
 Environment=PATH=/home/ubuntu/.local/bin:/home/ubuntu/.local/go-bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/usr/bin/python3 /home/ubuntu/phpretro-preservation/ops/orchestrator.py --once
 Restart=on-failure

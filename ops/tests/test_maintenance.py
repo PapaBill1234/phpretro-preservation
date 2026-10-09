@@ -38,7 +38,12 @@ class Isolated(unittest.TestCase):
                   "MERGE_CAP_FILE": self.ops / "state/merge-cap.json",
                   "HISTORY_JSON": self.ops / "state/history.json"}
         self.patches = [patch.object(o, k, v) for k, v in values.items()]
+        token_policy = o.runtime_policy.load()
+        token_policy["estimated_daily_cost_ceiling"] = 100
         self.patches += [patch.object(o, "sh", Mock(side_effect=AssertionError("unexpected external command"))),
+                         patch.object(o.runtime_policy, "load", return_value=token_policy),
+                         patch.object(o.runtime_policy, "ready", return_value=True),
+                         patch.object(o.sandbox, "cleanup"), patch.object(o.sandbox, "assert_absent"),
                          patch.object(o, "_load_jev", return_value=None),
                          patch.object(o, "telemetry_event"), patch.object(o, "_load_telemetry", return_value=tel),
                          patch.object(tel, "STATE", self.ops / "state"),
@@ -48,6 +53,15 @@ class Isolated(unittest.TestCase):
         for p in self.patches:
             p.start()
         o.ensure_dirs()
+        # Existing supervisor fixtures execute only synthetic commands. Preserve
+        # the fixture command instead of loading the paid SDK runner.
+        prepare = o.prepare_worker
+        def fixture_prepare(*args, **kwargs):
+            with patch.object(o, "RUNTIME", "fixture"):
+                return prepare(*args, **kwargs)
+        wrapper = patch.object(o, "prepare_worker", side_effect=fixture_prepare)
+        wrapper.start()
+        self.patches.append(wrapper)
 
     def tearDown(self):
         for p in reversed(self.patches):
@@ -95,7 +109,7 @@ class ReviewBoundary(Isolated):
             self.assertEqual(o.run_review(u, self.repo, st, u["model"])[0], "pass")
         self.assertEqual(run.call_count, 2)
         models = [r.args[1] for r in run.call_args_list]
-        self.assertEqual(models, [o.MODEL["deepseek"], o.MODEL["deepseek"]])
+        self.assertEqual(models, [o.MODEL["haiku"], o.MODEL["deepseek"]])
         self.assertNotEqual(c.model_family(u["model"]), c.model_family(models[1]))
         self.assertEqual(u["review_head"], "reviewed-head")
         self.assertEqual(st["tokens_today"], 30)
@@ -128,8 +142,8 @@ class ReviewBoundary(Isolated):
     def test_sensitive_second_review_never_uses_author_family(self):
         u = unit(attempts=4, model=o.MODEL["sol"], review_model=o.MODEL["deepseek"])
         with patch.object(o, "git_out", side_effect=self.git_value), patch.object(o, "hermes_run", return_value=(0, '{"verdict":"pass","findings":[]}', {"total_tokens": 1})) as run:
-            self.assertEqual(o.run_second_review(u, self.repo, state())[0], "unavailable")
-        run.assert_not_called()  # Two configured families cannot supply a third.
+            self.assertEqual(o.run_second_review(u, self.repo, state())[0], "pass")
+        self.assertEqual(run.call_args.args[1], o.MODEL["haiku"])
 
     def test_changed_head_discards_approval(self):
         u = unit(attempts=1)
@@ -179,7 +193,7 @@ class ReviewBoundary(Isolated):
         with patch.object(o, "git_out", side_effect=self.git_value), patch.object(o, "hermes_run", side_effect=reviewer):
             verdict, _, _ = o.validated_review(u, self.repo, st, o.MODEL["deepseek"], "review")
         self.assertEqual(verdict, "pass")
-        self.assertEqual(models, [o.MODEL["deepseek"], o.MODEL["deepseek"]])
+        self.assertEqual(models, [o.MODEL["deepseek"], o.MODEL["haiku"]])
         self.assertTrue(o.approval_valid(u, "review", "reviewed-head"))
 
     def test_merge_refusal_parks_without_protection_mutation(self):
@@ -344,8 +358,8 @@ class Admission(Isolated):
         with self.assertRaises(o.BudgetDenied):
             o.admit_paid(st, unit("Y"), "builder")
         st = state()
-        rid = o.admit_paid(st, None, "audit")
-        self.assertEqual(st["reservations"][rid]["reserved_tokens"], o.AUDIT_TOKEN_CAP)
+        with self.assertRaises(o.BudgetDenied):
+            o.admit_paid(st, None, "audit")
 
     def test_three_provider_failures_pause_dispatch_and_back_off(self):
         st = state()
@@ -420,10 +434,10 @@ class Providers(Isolated):
                  planning_acceptance=["synthetic behavior"], planning_tests=["go test ./internal/x/..."])
         st = state()
         with patch.object(o, "hermes_run", return_value=(1, "API HTTP error 502", {"total_tokens": 7})):
-            self.assertTrue(o.maybe_plan({"P": u}, st))
+            self.assertFalse(o.maybe_plan({"P": u}, st))
         self.assertEqual(u["planner_retries"], 1)
         self.assertEqual(u["status"], "design")
-        self.assertEqual(u["tokens"], 7)
+        self.assertEqual(u["tokens"], 0)
 
     def test_success_without_usage_is_never_free(self):
         u, st = unit(), state()
@@ -434,7 +448,7 @@ class Providers(Isolated):
             o.write_json(path, rec)
             return 0, "done"
         with patch.object(o, "sh", side_effect=complete_worker):
-            _, _, usage = o.hermes_run("planner", o.MODEL["deepseek"], "fixture", "file", self.repo,
+            _, _, usage = o.hermes_run("reviewer", o.MODEL["deepseek"], "fixture", "file", self.repo,
                                        "planner", 1, state=st, budget_unit=u)
         self.assertEqual(usage["accounted_tokens"], o.TIMEOUT_FALLBACK_TOKENS)
         self.assertFalse(st["reservations"])
@@ -443,7 +457,7 @@ class Providers(Isolated):
         u, st = unit(), state()
         with patch.object(o, "sh", return_value=(1, "service stop failed")):
             with self.assertRaises(c.IntegrityError):
-                o.hermes_run("planner", o.MODEL["deepseek"], "fixture", "file", self.repo,
+                o.hermes_run("reviewer", o.MODEL["deepseek"], "fixture", "file", self.repo,
                              "planner", 1, state=st, budget_unit=u)
         rows = c.ledger_records(o.STATE_DIR)
         self.assertEqual(len(rows), 1)

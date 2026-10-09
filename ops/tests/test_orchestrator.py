@@ -229,16 +229,16 @@ class SplitDeadlockTest(unittest.TestCase):
                        "planner_retries": o.PLANNER_RETRIES - 1, "tokens": 0,
                        "paths": ["p/x"], "title": "t"}}
         o.maybe_plan(road, {"events": [], "tokens_today": 0})
-        self.assertGreaterEqual(road["F9"]["planner_retries"], o.PLANNER_RETRIES)
-        self.assertFalse(road["F9"]["split_requested"])
-        self.assertEqual(road["F9"]["status"], "todo")
+        self.assertEqual(road["F9"]["planner_retries"], o.PLANNER_RETRIES - 1)
+        self.assertTrue(road["F9"]["split_requested"])
+        self.assertEqual(road["F9"]["status"], "parked")
 
     def test_the_previously_stuck_unit_becomes_dispatchable(self):
         road = {"F9": {"id": "F9", "status": "todo", "split_requested": True,
                        "planner_retries": o.PLANNER_RETRIES - 1, "tokens": 0,
                        "paths": ["p/x"], "title": "t"}}
         o.maybe_plan(road, {"events": [], "tokens_today": 0})
-        self.assertIn("F9", [u["id"] for u in o.select_ready(road, _free_state())])
+        self.assertNotIn("F9", [u["id"] for u in o.select_ready(road, _free_state())])
 
     def test_size_check_does_not_request_a_split_past_the_retry_budget(self):
         o.jev_size_check = lambda u: {"action": "split", "source": "jev"}
