@@ -18,6 +18,7 @@ import runtime_policy
 import sandbox
 import routing
 import request_accounting as requests
+import context_usage
 
 os.environ["OPENHANDS_SUPPRESS_BANNER"] = "1"
 os.environ["OTEL_SDK_DISABLED"] = "true"
@@ -85,6 +86,7 @@ def main(receipt_path):
     usage_path = Path(manifest["usage_path"])
     state = {"started": 0, "finished": 0, "depth": 0, "complete": False,
              "unknown_calls": 0, "providers": [], "failed": set(), "recoverable": set()}
+    context = context_usage.Recorder(receipt_path.with_suffix('.context.json'))
     box = sandbox.Sandbox(rid, manifest["cwd"], writable=manifest["role"] == "builder",
                           paths=manifest.get("allowed_paths", []))
     conversation = None
@@ -161,6 +163,8 @@ def main(receipt_path):
             tools = args[1] if len(args) > 1 else kwargs.get("tools")
             if llm.get_token_count(messages, tools) > 60000:
                 raise control.IntegrityError("context exceeds the reserved next-call ceiling")
+            system = [m for m in messages if getattr(m,'role',None)=='system' or isinstance(m,dict) and m.get('role')=='system']
+            context.request(llm.get_token_count(messages,tools),llm.get_token_count(messages,None),llm.get_token_count(system,None))
             usage = checkpoint(False)
             # Reserve maximum next-call context/output before starting it.
             if usage.get("conservative_tokens", 0) + requests.CALL_CEILING > manifest["reserved_tokens"]:
@@ -193,7 +197,10 @@ def main(receipt_path):
 
     class ExecuteExecutor(ToolExecutor):
         def __call__(self, action, conversation=None):
+            context.tool(action.command)
             rc, output = box.execute(action.command, action.timeout)
+            context.data['tool_errors']+=int(rc!=0)
+            context.save()
             checkpoint(False)
             return ExecuteObservation.from_text("exit=" + str(rc) + "\n" + output, is_error=rc != 0)
 
@@ -206,6 +213,8 @@ def main(receipt_path):
     register_tool("PHPRetroExecute", ExecuteTool)
 
     def event_callback(event):
+        context.data['events']+=1
+        context.save()
         if isinstance(event, MessageEvent) and event.source == "agent":
             final[:] = ["".join(getattr(item, "text", "") for item in event.llm_message.content)]
         checkpoint(False)
@@ -225,6 +234,8 @@ def main(receipt_path):
         conversation.set_confirmation_policy(NeverConfirm())
         role = manifest["role"]
         brief = Path(manifest["prompt_path"]).read_text()
+        context.data['brief_chars']=len(brief)
+        context.save()
         if role == "reviewer":
             brief += "\nReturn exactly one JSON verdict: {\"verdict\":\"pass|fix|block\",\"findings\":[{\"severity\":\"blocker|minor\",\"file\":\"\",\"line\":0,\"issue\":\"\"}]}. Tools are read-only; do not run tests."
         conversation.send_message(brief + "\nTools see only /repo; use ExecuteTool for file reads and edits. Provider secrets, host files and publication tools are unavailable.")
@@ -244,6 +255,7 @@ def main(receipt_path):
                           "error_type": type(exc).__name__}), flush=True)
         rc = 1
     finally:
+        context.finish(state['complete'])
         try:
             if conversation is not None:
                 conversation.close()

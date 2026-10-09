@@ -3,6 +3,7 @@
 import argparse, json, math, os, subprocess, time
 from pathlib import Path
 import integrity as control
+import context_usage
 
 HOME=Path.home()
 BASE=HOME/'phpretro-skill-doctor'
@@ -55,6 +56,13 @@ def collect():
         control.atomic_text(view/'AGENTS.md',prompt.read_text())
         item=cost(view,'openhands-'+role)
         item.update(basis='retained-role-brief',source_completed_at=row['completed_at'])
+        receipt_id=row.get('run_id','')
+        if isinstance(receipt_id,str) and len(receipt_id)==36 and all(c in '0123456789abcdef-' for c in receipt_id):
+            history=OPS/'state/receipts'/(receipt_id+'.context.json')
+            try:
+                if history.stat().st_size>65536:raise ValueError()
+                item['history']=context_usage.summary(json.loads(history.read_text()))
+            except (OSError,ValueError,TypeError):pass
         audits.append(item)
     control.atomic_json(STATE,{'schema':'phpretro.skill-doctor.v1','checked_at':time.time(),
                               'version':VERSION,'mode':'report-only','audits':audits})
@@ -71,7 +79,17 @@ def public_summary(ops=OPS):
             if not isinstance(item,dict):continue
             if item.get('id') not in ('project','supervisor','openhands-builder','openhands-reviewer'):continue
             if not number(item.get('estimated_tokens')) or not number(item.get('items')):continue
-            audits.append({k:item[k] for k in ('id','estimated_tokens','items')})
+            safe={k:item[k] for k in ('id','estimated_tokens','items')}
+            history=item.get('history')
+            if isinstance(history,dict):
+                keys=('tool_calls','tool_errors','repeated_commands','events','brief_chars','requests')
+                if all(number(history.get(k)) for k in keys):
+                    safe['history']={k:history[k] for k in keys}
+                    safe['history']['usage_status']='complete' if history.get('usage_status')=='complete' else 'partial'
+                    safe['history']['unused_tools']=['execute'] if history.get('unused_tools')==['execute'] else []
+                    for key in ('first_context_tokens','peak_context_tokens','peak_tool_schema_tokens'):
+                        safe['history'][key]=history.get(key) if number(history.get(key)) else None
+            audits.append(safe)
         return {'available':True,'checked_at':data['checked_at'],'mode':'report-only',
                 'version':VERSION,'tokenizer':'approx','audits':audits}
     except (OSError,ValueError,KeyError,TypeError):return {'available':False,'mode':'report-only'}

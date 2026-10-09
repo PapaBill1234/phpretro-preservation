@@ -6,9 +6,13 @@ from http.cookies import SimpleCookie
 from urllib.parse import urlsplit
 ROOT=Path.home()/'phpretro-dashboard'; DB=ROOT/'access.sqlite3'; RATE={}; RATE_LOCK=threading.Lock()
 OPENHANDS_PORT=38082
+SKILL_DOCTOR_PORT=38123
 
 def backend_route(raw_path):
  path=urlsplit(raw_path).path
+ if path=='/skill-doctor' or path.startswith('/skill-doctor/'):
+  suffix=raw_path[len('/skill-doctor'):]
+  return SKILL_DOCTOR_PORT,('/'+suffix if not suffix.startswith('/') else suffix),False
  if path=='/canvas' or path.startswith('/canvas/'):
   return OPENHANDS_PORT,raw_path,True
  if path=='/openhands' or path.startswith('/openhands/'):
@@ -41,6 +45,13 @@ def openhands_html(data):
  }
 })();</script>'''
  return data.replace(b'</head>',script+b'</head>',1)
+
+def skill_doctor_asset(data):
+ # Upstream serves at /; scope its same-origin API/assets to our authenticated prefix.
+ for prefix in (b'"',b"'",b'`'):
+  for route in (b'/api/',b'/assets/'):
+   data=data.replace(prefix+route,prefix+b'/skill-doctor'+route)
+ return data
 def db():
  c=sqlite3.connect(DB,timeout=1); c.execute('CREATE TABLE IF NOT EXISTS account(id INTEGER PRIMARY KEY CHECK(id=1),salt TEXT,hash TEXT)'); c.execute('CREATE TABLE IF NOT EXISTS sessions(hash TEXT PRIMARY KEY,expires REAL)'); c.commit(); return c
 def configured():
@@ -159,6 +170,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
    body=self.rfile.read(n) if n else None
    headers={k:v for k,v in self.headers.items() if k.lower() not in ('host','origin','cookie','connection','authorization','proxy-authorization','x-forwarded-host','x-forwarded-proto','x-forwarded-prefix','cf-connecting-ip','cf-visitor','accept-encoding')}
    headers['Host']='127.0.0.1:'+str(port)
+   if port==SKILL_DOCTOR_PORT:
+    token=(Path.home()/'phpretro-skill-doctor/ui-session').read_text().strip()
+    if not re.fullmatch(r'[A-Za-z0-9_-]{43}',token):raise ValueError()
+    headers['Cookie']='skill_doctor_session='+token
    if port==9119: headers['X-Forwarded-Prefix']='/hermes'
    if self.command not in ('GET','HEAD'): headers['Origin']='http://127.0.0.1:'+str(port)
    con=http.client.HTTPConnection('127.0.0.1',port,timeout=120); con.request(self.command,upstream_path,body,headers); resp=con.getresponse()
@@ -178,6 +193,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     data=resp.read(32*1024*1024)
     if openhands and resp.getheader('Content-Type','').startswith('text/html'):
      data=openhands_html(data)
+    if port==SKILL_DOCTOR_PORT and resp.getheader('Content-Type','').startswith(('text/html','text/javascript')):
+     data=skill_doctor_asset(data)
     self.send_header('Content-Length',str(len(data))); self.end_headers(); self.wfile.write(data)
    con.close()
   except (OSError,ValueError,http.client.HTTPException):
