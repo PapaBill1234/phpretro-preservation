@@ -20,8 +20,11 @@ def load():
     data = json.loads(POLICY.read_text())
     if data.get("schema") != "phpretro.runtime.v1":
         raise control.IntegrityError("unsupported runtime policy")
-    if data.get("automatic_planning") is not False or data.get("automatic_sol") is not False:
-        raise control.IntegrityError("paid planning/automatic Sol are forbidden")
+    if data.get("automatic_planning") is not False:
+        raise control.IntegrityError("paid planning is forbidden")
+    sol_enabled = data.get("models", {}).get("gpt-6.1-sol", {}).get("automatic") is True
+    if data.get("automatic_sol") is not sol_enabled:
+        raise control.IntegrityError("Sol automation flag and model policy disagree")
     if data.get("max_builders") != 2:
         raise control.IntegrityError("migration requires the reviewed two-builder ceiling")
     if data.get("required_review_families") != 3:

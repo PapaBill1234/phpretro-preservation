@@ -13,13 +13,22 @@ or delivered units cannot be replaced, protected paths are forbidden, and
 attempt/token counters survive re-import. Unclear/split/nightly/audit work becomes
 a durable `state/planning-needed/<ID>.json` handoff. Other ready work can proceed.
 
-Haiku is retired from automatic builders, reviewers and fallbacks. Builders use
-Luna then DeepSeek for the remaining attempts; four attempts remain the ceiling.
-Luna and DeepSeek can review each other. The third family is awaiting a verified
-replacement; provider activation remains blocked until three automatic families
-are available and all capability checks pass. Step through OpenCode was tested
-but every inference request returned HTTP 403, including both official clients.
-There is no automatic Sol, paid planner or paid weekly audit.
+Haiku is retired from automatic builders, reviewers and fallbacks. At the user's
+request, Sol 6.1 fills its model slot: Luna, DeepSeek, Sol, then DeepSeek; four
+attempts remain the ceiling. Review prefers Sol, then DeepSeek, then Luna, subject
+to author-family independence. Sol and Luna are both GPT-family models, so only
+two independent families are configured. Provider activation remains blocked
+until three automatic families are available and all capability checks pass.
+Step through OpenCode was tested but every inference request returned HTTP 403,
+including both official clients. There is no paid planner or paid weekly audit.
+
+Sol uses Responses for tool calling, as required by the
+[official model documentation](https://developers.openai.com/api/docs/models/gpt-6.1-sol).
+Its user-supplied merchant quote per million tokens is $0.09 input, $0.45 output,
+$0.0045 cache reads and $0 cache writes. Prices remain uncalibrated; no provider
+identity, tool capability or actual billing acceptance is implied by this quote.
+The unchanged conservative 3M-token reservation is $1.35 at the highest configured
+automatic output rate, within the $5 daily quote ceiling before other spending.
 Independent review always runs. Sensitive work requires author, first reviewer
 and second reviewer from three different families, including after fallbacks
 and when cached receipts are reused. F38 remains parked until its original
@@ -87,7 +96,7 @@ DockerWorkspace is used.
    `/home/ubuntu/phpretro-openhands/venv/bin/python ops/openhands/probe_models.py --paid-probes`.
    They use durable supervised receipts, record actual usage in the controller
    ledger and preserve reservations on interruption. A failed model is not
-   declared capable. No Sol probe is automatic.
+   declared capable. Explicit paid probes now include the configured Sol route.
 4. Run `python3 ops/openhands/validate.py --provider-evidence
    /home/ubuntu/phpretro-ops/state/openhands-provider-evidence.json` on one line.
    It runs ops, foundation, frontend and container isolation/resource/lifecycle
@@ -123,7 +132,7 @@ DockerWorkspace is used.
     "acceptance": ["<observable original behavior with source citation>"],
     "tests": ["<independent acceptance command>"],
     "fixtures": ["<synthetic or disposable evidence>"],
-    "allowed_models": ["gpt-6-luna", "deepseek-v4.1-flash"],
+    "allowed_models": ["gpt-6-luna", "deepseek-v4.1-flash", "gpt-6.1-sol"],
     "token_cap": 3000000
   }]
 }
@@ -144,7 +153,7 @@ independent Claude review. The runtime deliberately rejects this response.
 Haiku has now been retired; historical receipts and charges remain unchanged.
 Keep STOP and disabled timers until a verified third-family replacement passes
 the exact identity, tool-call and usage checks. Do not weaken family checks or
-substitute automatic Sol. Provider evidence currently records failure, so no
+count Sol and Luna as distinct families. Provider evidence currently records failure, so no
 passing validation stamp or coding canary has been established.
 
 Failed or interrupted probes retain conservative ledger charges and unknown

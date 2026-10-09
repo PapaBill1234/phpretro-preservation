@@ -29,22 +29,25 @@ class PolicyTests(unittest.TestCase):
     def test_haiku_retired_and_third_review_family_gated(self):
         policy = runtime_policy.load()
         self.assertFalse(policy["automatic_planning"])
-        self.assertFalse(policy["automatic_sol"])
-        with self.assertRaises(control.IntegrityError):
-            runtime_policy.model_settings("gpt-6.1-sol")
+        self.assertTrue(policy["automatic_sol"])
+        sol = runtime_policy.model_settings("gpt-6.1-sol")
+        self.assertEqual(sol["api_mode"], "responses")
+        self.assertEqual((sol["input"],sol["output"],sol["cache_read"],sol["cache_write"]), (.09,.45,.0045,0))
         with self.assertRaises(control.IntegrityError):
             runtime_policy.model_settings("claude-haiku-5-5")
         self.assertFalse(runtime_policy.review_families_available())
         self.assertEqual(policy["required_review_families"], 3)
         self.assertNotIn(o.MODEL["haiku"], o.automatic_review_models())
-        for author in (o.MODEL["luna"], o.MODEL["deepseek"]):
+        for author in (o.MODEL["luna"], o.MODEL["deepseek"], o.MODEL["sol"]):
             first = o.reviewer_model_for(author)
             second = o.second_reviewer_model(author, first)
             self.assertNotEqual(control.model_family(author), control.model_family(first))
             self.assertEqual(second, "")
             self.assertEqual(o.review_fallback(first, author), "")
         self.assertTrue(all(o.model_for_attempt(a) != o.MODEL["haiku"] for a in range(1, 6)))
-        self.assertNotIn("sol", o.LADDER)
+        self.assertEqual(o.model_for_attempt(3),o.MODEL["sol"])
+        self.assertEqual(o.reviewer_model_for(o.MODEL["luna"]),o.MODEL["deepseek"])
+        self.assertEqual(o.reviewer_model_for(o.MODEL["deepseek"]),o.MODEL["sol"])
 
     def test_paid_planning_denied_even_with_validation(self):
         with patch.object(runtime_policy, "ready", return_value=True):
@@ -107,7 +110,9 @@ class BriefTests(unittest.TestCase):
         saved = o.parse_yaml("units:\n" + o.dump_unit_yaml(result))["units"][0]
         self.assertEqual(saved["allowed_models"],["gpt-6-luna"])
         self.assertEqual(saved["brief_base"],"head")
-        for changed in ({"paths":["ops/worker.py"]},{"allowed_models":["gpt-6.1-sol"]},{"depends_on":["F99"]}):
+        sol_doc = self.brief(); sol_doc["units"][0]["allowed_models"] = ["gpt-6.1-sol"]
+        self.assertEqual(import_brief.validate(sol_doc,road,"head")[0]["allowed_models"], ["gpt-6.1-sol"])
+        for changed in ({"paths":["ops/worker.py"]},{"allowed_models":["claude-haiku-5-5"]},{"depends_on":["F99"]}):
             bad = self.brief();bad["units"][0].update(changed)
             with self.assertRaises(control.IntegrityError): import_brief.validate(bad,road,"head")
         with self.assertRaises(control.IntegrityError): import_brief.validate(doc,road,"other-head")

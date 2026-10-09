@@ -73,7 +73,7 @@ DAILY_TOKEN_CAP = int(os.environ.get("PHPRETRO_DAILY_TOKEN_CAP", "60000000"))
 # nightly self-check has failed twice in a row (see apply_merge_cap_guard).
 MAX_MERGE_PER_DAY = int(os.environ.get("PHPRETRO_MAX_MERGE_PER_DAY", "30"))
 MERGE_CAP_REVERTED = int(os.environ.get("PHPRETRO_MERGE_CAP_REVERTED", "12"))
-MAX_ATTEMPTS = 4            # Luna, DeepSeek, Haiku, DeepSeek; then parked
+MAX_ATTEMPTS = 4            # Luna, DeepSeek, Sol, DeepSeek; then parked
 PLANNER_RETRIES = 2
 DIFF_LINE_CAP = 700
 # Quality safeguards (see ops/quality.py).
@@ -117,7 +117,7 @@ MODEL = {
     "sol": "gpt-6.1-sol",
     "haiku": "claude-haiku-5-5",  # Historical identity only; retired from dispatch.
 }
-LADDER = ["luna", "deepseek", "deepseek", "deepseek"]
+LADDER = ["luna", "deepseek", "sol", "deepseek"]
 PROFILE_HOME = {name: HOME / ".hermes" / "profiles" / name
                 for name in ("builder", "reviewer", "planner", "auditor")}
 HERMES = shutil.which("hermes") or str(HOME / ".local" / "bin" / "hermes")
@@ -1290,9 +1290,9 @@ def reviewer_model_for(author: str) -> str:
 
 def automatic_review_models() -> tuple[str, ...]:
     models = runtime_policy.load()["models"]
-    preferred = (MODEL["deepseek"], MODEL["luna"])
+    preferred = (MODEL["sol"], MODEL["deepseek"], MODEL["luna"])
     candidates = (*preferred, *(m for m in models if m not in preferred))
-    return tuple(m for m in candidates if m != MODEL["sol"] and models.get(m, {}).get("automatic") is True)
+    return tuple(m for m in candidates if models.get(m, {}).get("automatic") is True)
 
 def unit_branch(unit: dict) -> str:
     return unit.get("branch") or f"unit/{unit['id']}"
@@ -2047,7 +2047,7 @@ def rung_index(model: str) -> int:
 
 
 # Ladder strength order, weakest first. Escalating means the next one up.
-_LADDER_ORDER = ["luna", "deepseek"]
+_LADDER_ORDER = ["luna", "deepseek", "sol"]
 
 
 def _next_stronger_model(unit: dict, attempt: int) -> str:
@@ -4094,11 +4094,11 @@ units:
     assert paths_overlap(["internal/home/**"], ["internal/home/home.go"])
     assert not paths_overlap(["internal/home/**"], ["internal/account/**"])
     assert reviewer_model_for(MODEL["luna"]) == MODEL["deepseek"]
-    assert reviewer_model_for(MODEL["deepseek"]) == MODEL["luna"]
+    assert reviewer_model_for(MODEL["deepseek"]) == MODEL["sol"]
     assert MODEL["haiku"] not in automatic_review_models()
     assert second_reviewer_model(MODEL["luna"], MODEL["deepseek"]) == ""
     assert model_for_attempt(1) == MODEL["luna"]
-    assert model_for_attempt(3) == MODEL["deepseek"]
+    assert model_for_attempt(3) == MODEL["sol"]
     assert model_for_attempt(4) == MODEL["deepseek"]
     # diff guard: protected paths and out-of-scope paths are rejected, the
     # unit's own listed paths (including its delivery note) are not.
