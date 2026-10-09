@@ -19,6 +19,7 @@ import time
 import re
 
 import integrity as control
+import request_accounting
 
 COUNTERS = ("input_tokens", "output_tokens", "cache_read_tokens",
             "cache_write_tokens", "reasoning_tokens", "total_tokens", "api_calls")
@@ -194,6 +195,10 @@ def usage_snapshot(path, db, marker, runtime="hermes"):
                         input_includes_cache=False)
             if runtime == "openhands":
                 data["runtime"] = "openhands"
+                for key in request_accounting.FIELDS:
+                    if key in raw:
+                        data[key] = raw[key]
+                request_accounting.bounded_tokens(data, data.get("total_tokens", 0))
             # Missing totals/parts are not evidence of a zero-spend run.
             if "total_tokens" not in data and not all(k in data for k in ("input_tokens", "output_tokens")):
                 raise ValueError("incomplete usage")

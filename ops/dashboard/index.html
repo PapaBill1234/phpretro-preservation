@@ -661,6 +661,57 @@
       .pr-card a { display: inline-block; margin-top: 8px; font-size: 12px; color: var(--accent); }
       .published-artifact { white-space: pre-wrap; overflow-wrap: anywhere; }
       .empty.unavailable { color: var(--warning); }
+      :root { --bg:#101217; --panel:#181b23; --panel2:#202430; --text:#f0f1f6; --muted:#a1a8bb; --line:#303543; --accent:#b5a2ff; --good:#67ddb0; }
+      body.light { --bg:#f4f5f9; --panel:#fff; --panel2:#eff1f7; --text:#202338; --muted:#606982; --line:#dce0ec; --accent:#6652c5; --good:#187a59; }
+      body { font-size:14px; background:var(--bg); }
+      h1 { letter-spacing:-1.3px; font-size:34px; }
+      h2 { letter-spacing:-.4px; font-size:18px; }
+      .card { border-radius:18px; padding:24px; box-shadow:0 8px 28px #0000000a; }
+      .grid { gap:20px; } .summary { border-radius:18px; background:var(--panel); }
+      .eyebrow { letter-spacing:2px; font-size:10px; color:var(--muted); }
+      .section-note { line-height:1.7; } .pagehead { margin-bottom:30px; }
+      .activity-hero { background:linear-gradient(125deg,var(--panel2),var(--panel)); border:1px solid var(--line); border-radius:20px; padding:30px; margin-bottom:22px; }
+      .activity-hero h2 { font-size:28px; margin:16px 0 8px; letter-spacing:-.8px; }
+      .activity-hero p { color:var(--muted); max-width:760px; margin:0 0 24px; }
+      .hero-top,.worker-top { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+      .state-badge { border:1px solid var(--line); border-radius:30px; padding:5px 12px; font-size:12px; color:var(--warn); }
+      .state-badge.running { color:var(--good); } .state-badge.idle { color:var(--muted); }
+      .hero-actions { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+      .button-link { display:inline-block; padding:10px 16px; border-radius:10px; background:var(--accent); color:var(--bg); font-weight:650; text-decoration:none; }
+      .worker-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:18px; }
+      .worker-card { border:1px solid var(--line); background:var(--panel2); border-radius:14px; padding:22px; }
+      .worker-card h3 { margin:16px 0 6px; } .worker-card p { color:var(--muted); }
+      .worker-stats { display:flex; gap:24px; margin-top:22px; } .worker-stats strong { display:block; font-size:23px; font-variant-numeric:tabular-nums; }
+      .worker-stats small { color:var(--muted); } .activity-table { overflow:auto; }
+      .activity-table table { width:100%; border-collapse:collapse; } .activity-table td,.activity-table th { padding:14px 12px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
+      .activity-table th { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); }
+      .activity-table td small { display:block; color:var(--muted); } .timeline-item { padding:16px 0; border-bottom:1px solid var(--line); display:flex; gap:14px; }
+      .timeline-mark { width:8px; height:8px; border-radius:50%; background:var(--accent); margin-top:7px; flex-shrink:0; }
+      #builder-timeline { max-height:420px; overflow:auto; scrollbar-width:thin; }
+      section[data-view="builders"] > .card { margin-bottom:22px; }
+      #builder-allowances small { display:block; margin-top:6px; }
+      .timeline-item small { display:block; color:var(--muted); } .builders-intro { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:18px; }
+      .blank-state { padding:34px 24px; border:1px dashed var(--line); border-radius:14px; text-align:center; color:var(--muted); }
+      .blank-state strong { display:block; color:var(--text); font-size:18px; margin-bottom:8px; }
+      @media(min-width:1050px) {
+        header.top { position:fixed; inset:0 auto 0 0; width:244px; height:100vh; border-right:1px solid var(--line); border-bottom:0; background:var(--panel); }
+        .top .shell { width:auto; padding:30px 20px; margin:0; height:100%; }
+        .topline { height:auto; display:block; } .brand { padding:0 8px 28px; }
+        .brandmark { width:38px; height:38px; border-radius:12px; font-size:22px; }
+        .brand strong { font-size:18px; } .brand small { font-size:9px; }
+        .actions { position:absolute; bottom:24px; left:20px; right:20px; display:flex; flex-wrap:wrap; gap:8px; }
+        .actions .pill { width:100%; margin-bottom:4px; } .actions button { padding:8px 10px; font-size:11px; }
+        nav { display:flex; flex-direction:column; gap:5px; overflow:visible; }
+        nav a { border:0; border-radius:10px; padding:12px 14px; font-size:13px; }
+        nav a.active { background:var(--panel2); border:0; box-shadow:inset 3px 0 var(--accent); }
+        main.shell { margin:0 0 0 244px; width:auto; max-width:1700px; padding:42px 40px !important; }
+      }
+      @media(max-width:650px) {
+        h1 { font-size:27px; } .activity-hero { padding:22px; } .activity-hero h2 { font-size:23px; }
+        .card { padding:18px; } .topline { height:76px; } nav a { padding:12px 14px; }
+        .hero-top { align-items:flex-start; } .worker-grid { grid-template-columns:1fr; }
+      }
+      @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none !important; transition:none !important; } }
     </style>
   </head>
   <body>
@@ -684,12 +735,13 @@
         <nav aria-label="Main navigation">
           <a href="#overview" data-page="overview">Overview</a
           ><a href="#units" data-page="units">Units</a
+          ><a href="#builders" data-page="builders">Builders</a
           ><a href="#parity" data-page="parity">Parity</a
           ><a href="#analytics" data-page="analytics">Analytics</a
           ><a href="#operations" data-page="operations">Operations</a
           ><a href="#assistant" data-page="assistant">Assistant</a
           ><a href="#settings" data-page="settings">Settings</a
-          ><a href="#openhands" data-page="openhands">OpenHands</a><a href="/hermes/" target="_blank" rel="noopener">Hermes ?</a>
+          ><a href="#openhands" data-page="openhands">Interactive OpenHands</a><a href="/hermes/" target="_blank" rel="noopener">Hermes ↗</a>
         </nav>
       </div>
     </header>
@@ -706,6 +758,7 @@
         <div class="page-date" id="page-date"></div>
       </div>
       <section data-view="overview">
+        <div id="activity-hero" class="activity-hero"></div>
         <div id="summary" class="summary"></div>
         <div id="health"></div>
         <div id="kpis" class="grid kpis"></div>
@@ -720,12 +773,30 @@
           </section>
         </div>
         <section class="card">
-          <h2>Live output</h2>
+          <h2>Recent builder runs</h2>
           <div id="tails" class="scroll"></div>
           <p class="section-note">
-            Raw output is withheld when secret redaction cannot be guaranteed.
+            Worker activity and outcomes. Open Builders for details.
           </p>
         </section>
+      </section>
+      <section data-view="builders" hidden>
+        <div id="builders-status" class="activity-hero"></div>
+        <section class="card">
+          <h2>Subscription supervisor</h2>
+          <div id="subscription-supervisor"></div>
+          <p class="section-note">Ubuntu health checks every 30 minutes once enabled. Healthy checks use no model tokens. Sol selects bounded operational repairs; quotas, STOP and unit allowances stay enforced.</p>
+        </section>
+        <section class="card">
+          <div class="builders-intro"><h2>Active workers <span id="worker-count" class="board-count">0</span></h2><span id="builders-freshness" class="muted">Waiting for data</span></div>
+          <div id="worker-cards" class="worker-grid"></div>
+          <p class="section-note">Includes builders and reviewers. Token counts update as calls report usage; unfinished calls may not appear yet.</p>
+        </section>
+        <div class="grid twocol">
+          <section class="card"><h2>Activity timeline</h2><div id="builder-timeline"></div><p class="section-note">Only safe activity metadata is shown. Prompts, credentials and raw command output stay private.</p></section>
+          <section class="card"><h2>Bounded run allowances</h2><div id="builder-allowances"></div><p class="section-note">Allowances preserve all previous charges, including conservative charges for missing usage.</p></section>
+        </div>
+        <section class="card"><h2>Recent runs</h2><div id="builder-runs" class="activity-table"></div></section>
       </section>
       <section data-view="units" hidden>
         <section class="card">
@@ -841,6 +912,7 @@
         ></iframe>
       </section>
       <section data-view="openhands" hidden>
+        <p id="provider-billing" class="section-note">A6API billing: loading. Portdan cost checks are disabled for your fallback trial.</p>
         <p class="section-note">Interactive chats have separate provider billing. Select a saved Portdan profile if you need a backup. <a href="/canvas/" target="_blank" rel="noopener">Open full window</a></p>
         <iframe id="openhands-frame" class="assistant-frame" title="OpenHands Agent Canvas"></iframe>
       </section>
@@ -953,11 +1025,39 @@
             .join(" ");
         return `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="${label}"><line x1="${p}" y1="${h - p}" x2="${w - p}" y2="${h - p}"/><polyline points="${pts}"/><text x="${p}" y="${h - 5}">${esc(values[0].x)}</text><text x="${w - p}" y="${h - 5}" text-anchor="end">${esc(values.at(-1).x)}</text><text x="${p + 4}" y="18">${fmt(max)}</text></svg>`;
       }
+      function recentRuns(rows) {
+        if (!rows.length) return '<div class="blank-state"><strong>No recorded runs yet</strong>Completed builder and reviewer runs will appear here.</div>';
+        return `<div class="activity-table"><table><thead><tr><th>Unit / role</th><th>Model / provider</th><th>Outcome</th><th>Observed / charged tokens</th><th>Finished</th></tr></thead><tbody>${rows.map(r => `<tr><td><b>${esc(r.unit)}</b><small>${esc(r.role)}</small></td><td>${esc(r.model)}<small>${esc(r.provider.replace("custom:",""))}</small></td><td>${esc(r.outcome.replaceAll("_"," "))}<small>${r.usage_complete ? "Usage complete" : "Usage incomplete"}</small></td><td>${fmt(r.observed_tokens)} / ${fmt(r.charged_tokens)}</td><td>${esc(new Date(r.ended_at).toLocaleString())}</td></tr>`).join("")}</tbody></table></div>`;
+      }
+      function renderBuilders(s) {
+        const a = s.builder_activity;
+        const mode = a?.mode || "unavailable";
+        const live = a?.live || [];
+        const headline = mode === "paused" ? "The pipeline is paused" : mode === "running" ? `${live.length} worker${live.length === 1 ? " is" : "s are"} at work` : mode === "idle" ? "Ready for the next dispatch" : "Activity data unavailable";
+        const hero = `<div class="hero-top"><span class="eyebrow">AUTOMATED BUILDERS</span><span class="state-badge ${esc(mode)}">${esc(mode)}</span></div><h2>${esc(headline)}</h2><p>${esc(a?.reason || "Waiting for a fresh dashboard snapshot.")}</p>`;
+        $("activity-hero").innerHTML = hero + '<div class="hero-actions"><a class="button-link" href="#builders">View builder activity →</a><a href="#openhands">Start an interactive session ↗</a></div>';
+        $("builders-status").innerHTML = hero + '<div class="hero-actions"><a href="#units">Explore the unit board →</a><a href="#operations">Pipeline operations →</a></div>';
+        $("worker-count").textContent = live.length;
+        $("builders-freshness").textContent = a ? `Updated ${new Date(a.updated_at * 1000).toLocaleTimeString()} · refreshes every 10 seconds` : "Activity unavailable";
+        $("worker-cards").innerHTML = live.length ? live.map(w => `<article class="worker-card"><div class="worker-top"><b>${esc(w.id)}</b><span class="state-badge running">${esc(w.role)}</span></div><h3>${esc(w.title)}</h3><p>${esc(w.model)}<br>${esc(w.provider.replace("custom:",""))}</p><div class="worker-stats"><div><strong>${fmt(w.tokens)}</strong><small>observed tokens</small></div><div><strong>${fmt(w.api_calls)}</strong><small>API calls started</small></div></div><p>Running ${age(w.age)} · attempt ${fmt(w.attempts)}<br>Reported ${w.updated_at ? age(Math.max(0,s.updated-w.updated_at)) + " ago" : "time unavailable"}</p></article>`).join("") : `<div class="blank-state"><strong>No workers running</strong>${esc(a?.reason || "Activity data is unavailable.")}</div>`;
+        $("builder-runs").innerHTML = recentRuns(a?.recent || []);
+        $("builder-timeline").innerHTML = a?.timeline?.length ? a.timeline.map(e => `<div class="timeline-item"><span class="timeline-mark"></span><div><b>${esc(e.unit)} · ${esc(e.label)}</b><small>${esc(new Date(e.at).toLocaleString())}</small></div></div>`).join("") : '<div class="blank-state"><strong>No activity events yet</strong>Recorded dispatches, reviews and merges will appear here.</div>';
+        $("builder-allowances").innerHTML = a?.bounded?.length ? a.bounded.map(b => `<div class="row"><b>${esc(b.unit)}</b><span style="float:right">${fmt(b.remaining_tokens)} tokens remaining</span><small class="muted">${esc(b.status)} · ${b.expired ? "authorization expired" : b.remaining_tokens <= 0 ? "allowance exhausted" : "bounded allowance"}</small></div>`).join("") : '<div class="empty">No bounded run authorization recorded.</div>';
+      }
       function render(s) {
+        renderBuilders(s);
+        const supervisor = s.subscription_supervisor || {};
+        const supervisionReasons = {disabled:"Disabled until the autonomy run finishes",pipeline_paused:"Coding is intentionally paused",pipeline_inactive:"The pipeline is not running",healthy:"No operational faults detected",quota_margin:"Waiting for subscription quota headroom",quota_unavailable:"Subscription quota unavailable",not_authenticated:"ChatGPT sign-in required",model_unavailable:"Sol 6.1 unavailable",cooldown:"Repair cooldown",daily_limit:"Daily repair limit reached",repair_complete:"Operational repair verified",repair_failed:"Repair failed; no further action taken",repair_in_progress:"A bounded repair is in progress",no_safe_repair:"No supported automatic repair",cli_changed:"CLI version changed; validation required",unavailable:"Status unavailable"};
+        const windowText = q => q ? `${q.used_percent}% used · resets ${new Date(q.resets_at * 1000).toLocaleString()}` : "Not available";
+        $("subscription-supervisor").innerHTML = `<div class="row"><b>${esc(supervisor.mode || "disabled")}</b><span style="float:right">${supervisor.authenticated ? "Signed in with ChatGPT" : "Sign-in not recorded"}</span></div><p>${esc(supervisionReasons[supervisor.reason] || "Status unavailable")}</p><p>Five-hour window: ${esc(windowText(supervisor.primary))}<br>Weekly window: ${esc(windowText(supervisor.secondary))}</p><p class="muted">Last check: ${supervisor.checked_at ? esc(new Date(supervisor.checked_at * 1000).toLocaleString()) : "Not checked yet"}. ${supervisor.enabled ? "Scheduled every 30 minutes" : "Timer disabled"}.</p>` + (supervisor.history?.length ? `<table><thead><tr><th>Time</th><th>Action</th><th>Result</th><th>Input / cached / output</th></tr></thead><tbody>${supervisor.history.map(r => `<tr><td>${esc(new Date(r.at * 1000).toLocaleString())}</td><td>${esc(r.action.replaceAll("_"," "))}</td><td>${esc(r.mode)}</td><td>${r.input_tokens === undefined ? "Unknown" : fmt(r.input_tokens)} / ${r.cached_input_tokens === undefined ? "Unknown" : fmt(r.cached_input_tokens)} / ${r.output_tokens === undefined ? "Unknown" : fmt(r.output_tokens)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No automatic repair jobs yet.</div>`);
+        const bill = s.provider_billing;
+        $("provider-billing").textContent = (bill?.available ?
+          `A6API: $${Number(bill.account_day_billed_usd).toFixed(4)} billed today; $${Number(bill.account_balance_usd).toFixed(4)} balance. ${bill.fresh ? "Current" : "Stale"} observation from ${new Date(bill.collected_at * 1000).toISOString()}. ` :
+          "A6API billing is unavailable. ") + "Portdan cost checks are disabled for your fallback trial. Missing SDK usage remains incomplete.";
         state = s;
         let h = s.health || {};
         $("top-status").textContent =
-          h.color === "green"
+          s.stop ? "Coding paused" : s.live?.length ? `${s.live.length} active workers` : h.color === "green"
             ? "Merging normally"
             : h.color === "amber"
               ? "Needs a glance"
@@ -1340,12 +1440,7 @@
             esc(s.runway?.assumptions) +
             "</p>";
         $("tails").innerHTML =
-          (s.live || [])
-            .map(
-              (x) =>
-                `<div class=row><b>${esc(x.id)}</b><pre>${esc((x.tail || []).join("\n") || x.tail_reason || "n/a")}</pre></div>`,
-            )
-            .join("") || "<div class=empty>No active builders.</div>";
+          recentRuns(s.builder_activity?.recent?.slice(0,5) || []);
         $("events").innerHTML =
           (s.events || [])
             .map(
@@ -1494,8 +1589,9 @@
         }
       }
       load();
-      setInterval(load, 5000);
+      setInterval(load, 10000);
       const pages = {
+        builders: ["Builder activity", "Watch automated builds and independent reviews in one place."],
         overview: [
           "Pipeline overview",
           "A clear picture of what is moving, what needs you, and what comes next.",

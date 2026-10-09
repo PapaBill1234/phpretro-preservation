@@ -1,0 +1,28 @@
+[Unit]
+Description=PHPRetro subscription Codex health check and bounded operational repair
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=/home/ubuntu
+Environment=PHPRETRO_OPS=/home/ubuntu/phpretro-ops
+Environment=PHPRETRO_REPO=/home/ubuntu/phpretro-preservation
+Environment=PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
+WorkingDirectory=/home/ubuntu/phpretro-codex/work
+ExecStart=/usr/bin/python3 /home/ubuntu/phpretro-preservation/ops/codex_supervisor.py --once
+TimeoutStartSec=12min
+TimeoutStopSec=15
+KillMode=control-group
+MemoryMax=700M
+TasksMax=64
+CPUQuota=50%
+UMask=0077
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/phpretro-codex /home/ubuntu/phpretro-ops /home/ubuntu/phpretro-preservation
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+StandardOutput=journal
+StandardError=journal
+

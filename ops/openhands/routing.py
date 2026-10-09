@@ -1,6 +1,14 @@
 """Explicit provider failover; no model substitution or implicit retries."""
 from __future__ import annotations
 import integrity as control
+import time
+
+RECONNECT_DELAYS = (5, 15)
+
+
+def transient(exc):
+    """Authentication/model errors can fail over, but cannot reconnect."""
+    return retryable(exc) and getattr(exc, "status_code", None) not in (401, 403, 404)
 
 
 def credential(credentials, provider, model):
@@ -26,19 +34,35 @@ def retryable(exc):
                 "Timeout", "TimeoutError", "APITimeoutError", "APIConnectionError", "ConnectionError")
 
 
-def call(routes, invoke, failed):
-    """A route is attempted once per session; failed routes stay suppressed."""
+def call(routes, invoke, failed, *, wait=time.sleep, recoverable=None):
+    """Retry the same request, never a completed tool turn or conversation.
+
+    Successful fallback remains preferred for this session. Only when all
+    routes fail do transient routes reconnect, in original primary-first order.
+    Permanent failures stay suppressed. The caller owns budget/cancellation.
+    """
     last = None
-    for provider in routes:
-        if provider in failed:
-            continue
-        try:
-            return invoke(provider)
-        except Exception as exc:
-            if not retryable(exc):
-                raise
-            failed.add(provider)
-            last = exc
+    reconnect = set() if recoverable is None else recoverable
+    for round_number in range(len(RECONNECT_DELAYS) + 1):
+        for provider in routes:
+            if provider in failed:
+                continue
+            try:
+                return invoke(provider)
+            except Exception as exc:
+                if not retryable(exc):
+                    raise
+                failed.add(provider)
+                if transient(exc):
+                    reconnect.add(provider)
+                else:
+                    reconnect.discard(provider)
+                last = exc
+        if round_number == len(RECONNECT_DELAYS) or not reconnect:
+            break
+        wait(RECONNECT_DELAYS[round_number])
+        failed.difference_update(reconnect)
+        reconnect.clear()
     if last is not None:
         raise last
     raise control.IntegrityError("no verified provider route remains")

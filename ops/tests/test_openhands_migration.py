@@ -270,9 +270,9 @@ class ProviderRoutingTests(unittest.TestCase):
         def invoke(p):
             calls.append(p)
             raise TimeoutError()
-        with self.assertRaises(TimeoutError): routing.call(["a6api", "portdan"], invoke, failed)
+        with self.assertRaises(TimeoutError): routing.call(["a6api", "portdan"], invoke, failed, wait=lambda _: None)
         with self.assertRaises(control.IntegrityError): routing.call(["a6api", "portdan"], invoke, failed)
-        self.assertEqual(calls, ["a6api", "portdan"])
+        self.assertEqual(calls, ["a6api", "portdan"] * 3)
 
     def test_ready_route_must_match_provider_model_and_fresh_usage(self):
         row = {"tool_calls":True,"usage":True,"checked_at":o.time.time()}

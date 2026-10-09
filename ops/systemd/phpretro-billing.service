@@ -1,0 +1,11 @@
+[Unit]
+Description=Read-only A6API billing collector
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /home/ubuntu/phpretro-preservation/ops/billing.py
+UMask=0077
+TimeoutStartSec=300
+NoNewPrivileges=true
+CPUQuota=10%
+MemoryMax=192M
