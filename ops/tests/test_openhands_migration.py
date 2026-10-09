@@ -21,6 +21,10 @@ import routing
 
 
 class PolicyTests(unittest.TestCase):
+    def test_luna_reported_namespace_is_an_exact_alias(self):
+        self.assertTrue(runtime_policy.model_label_matches('gpt-6-luna','cb/gpt-6-luna'))
+        self.assertFalse(runtime_policy.model_label_matches('gpt-6-luna','cb/gpt-6.1-sol'))
+        self.assertFalse(runtime_policy.model_label_matches('gpt-6-luna','other/gpt-6-luna'))
     def test_second_attempt_deepseek_does_not_look_like_fourth_attempt(self):
         u = {"id":"F99","model":o.MODEL["deepseek"],"attempts":2,"tokens":0}
         with (patch.object(o,"jev_triage",return_value={"action":"retry_same","source":"rule"}) as tri,

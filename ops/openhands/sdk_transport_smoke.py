@@ -20,7 +20,7 @@ from litellm import ModelResponse
 from litellm.types.llms.openai import ResponsesAPIResponse
 
 
-def main(model):
+def main(model, small_allowance=False):
     nonce = "SDK_TRANSPORT_" + secrets.token_hex(12)
     calls, pending, tool_calls = [], [], []
     module = importlib.import_module("openhands.sdk.llm.llm")
@@ -47,7 +47,7 @@ def main(model):
         def synthetic(**kwargs):
             calls.append(kwargs["api_base"])
             pending.append(json.loads(usage.read_text())["conservative_tokens"])
-            if len(calls) in (2, 3):
+            if not small_allowance and len(calls) in (2, 3):
                 raise TimeoutError()
             tool_turn = len(calls) == 1
             arguments = json.dumps({"command": "synthetic-only", "timeout": 5, "summary": "synthetic tool output"})
@@ -77,30 +77,39 @@ def main(model):
         prompt.write_text("Run the execute tool once and return its result.")
         receipt = root / "receipt.json"
         receipt.write_text(json.dumps({"run_id": str(uuid.uuid4()), "status": "running", "model": model,
-                                      "role": "builder", "cwd": td, "allowed_paths": [], "reserved_tokens": 300000,
+                                      "role": "builder", "cwd": td, "allowed_paths": [], "reserved_tokens": 20000 if small_allowance else 300000,
                                       "prompt_path": str(prompt), "usage_path": str(usage)}))
         assert runner.main(receipt) == 0, "actual SDK conversation failed"
         journal=json.loads(receipt.with_suffix('.session.json').read_text())
         assert journal['schema']=='phpretro.session-journal.v1'
         assert any(e['kind']=='tool' for e in journal['events']), 'tool timeline missing'
-        assert any(e['kind']=='provider_error' for e in journal['events']), 'fallback failure timeline missing'
+        assert small_allowance or any(e['kind']=='provider_error' for e in journal['events']), 'fallback failure timeline missing'
         assert all('synthetic-only' not in e['text'] for e in journal['events']), 'known credential was not redacted'
         recorded = json.loads(usage.read_text())
-        assert calls == ["https://api.a6api.com/v1", "https://api.a6api.com/v1", "https://portdan.com/v1", "https://api.a6api.com/v1"], calls
-        assert recorded["api_calls"] == 4 and recorded["total_tokens"] == 240, recorded
         ceiling = runner.requests.CALL_CEILING
-        assert recorded["usage_complete"] is False and recorded["conservative_tokens"] == 240 + 2 * ceiling, recorded
-        assert pending == [ceiling, ceiling + 120, 2 * ceiling + 120, 3 * ceiling + 120], pending
-        assert runner.requests.bounded_tokens(recorded, 240) == 240 + 2 * ceiling
+        if small_allowance:
+            assert calls == ["https://api.a6api.com/v1"] * 2, calls
+            assert recorded["api_calls"] == 2 and recorded["total_tokens"] == 240, recorded
+            assert recorded["usage_complete"] is True and recorded["conservative_tokens"] == 240, recorded
+            assert pending == [20000, 20000], pending
+            assert recorded["unknown_request_ceilings"] == []
+            assert runner.requests.bounded_tokens(recorded, 240) == 240
+        else:
+            assert calls == ["https://api.a6api.com/v1", "https://api.a6api.com/v1", "https://portdan.com/v1", "https://api.a6api.com/v1"], calls
+            assert recorded["api_calls"] == 4 and recorded["total_tokens"] == 240, recorded
+            assert recorded["usage_complete"] is False and recorded["conservative_tokens"] == 240 + 2 * ceiling, recorded
+            assert pending == [ceiling, ceiling + 120, 2 * ceiling + 120, 3 * ceiling + 120], pending
+            assert runner.requests.bounded_tokens(recorded, 240) == 240 + 2 * ceiling
         assert len(tool_calls) == 1, "reconnection replayed a completed tool action"
         history=runner.context_usage.summary(json.loads(receipt.with_suffix('.context.json').read_text()))
         assert history['tool_calls']==1 and history['tool_errors']==0 and history['usage_status']=='complete', history
-        assert history['requests']==4 and history['unused_tools']==[],history
+        assert history['requests']==(2 if small_allowance else 4) and history['unused_tools']==[],history
         assert nonce not in receipt.with_suffix('.context.json').read_text(), 'tool output leaked into metadata'
-    print(json.dumps({"sdk_transport": "passed", "model": model, "http_calls": "synthetic-only"}))
+    print(json.dumps({"sdk_transport": "passed", "model": model, "small_allowance":small_allowance,"http_calls": "synthetic-only"}))
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True)
     main(ap.parse_args().model)
+    main(ap.parse_args().model, small_allowance=True)
