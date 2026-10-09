@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh A6API billing every two minutes
+
+[Timer]
+OnBootSec=60
+OnUnitInactiveSec=120
+Unit=phpretro-billing.service
+
+[Install]
+WantedBy=timers.target

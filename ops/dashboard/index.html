@@ -841,6 +841,7 @@
         ></iframe>
       </section>
       <section data-view="openhands" hidden>
+        <p id="provider-billing" class="section-note">A6API billing: loading. Portdan cost checks are disabled for your fallback trial.</p>
         <p class="section-note">Interactive chats have separate provider billing. Select a saved Portdan profile if you need a backup. <a href="/canvas/" target="_blank" rel="noopener">Open full window</a></p>
         <iframe id="openhands-frame" class="assistant-frame" title="OpenHands Agent Canvas"></iframe>
       </section>
@@ -954,6 +955,10 @@
         return `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="${label}"><line x1="${p}" y1="${h - p}" x2="${w - p}" y2="${h - p}"/><polyline points="${pts}"/><text x="${p}" y="${h - 5}">${esc(values[0].x)}</text><text x="${w - p}" y="${h - 5}" text-anchor="end">${esc(values.at(-1).x)}</text><text x="${p + 4}" y="18">${fmt(max)}</text></svg>`;
       }
       function render(s) {
+        const bill = s.provider_billing;
+        $("provider-billing").textContent = (bill?.available ?
+          `A6API: $${Number(bill.account_day_billed_usd).toFixed(4)} billed today; $${Number(bill.account_balance_usd).toFixed(4)} balance. ${bill.fresh ? "Current" : "Stale"} observation from ${new Date(bill.collected_at * 1000).toISOString()}. ` :
+          "A6API billing is unavailable. ") + "Portdan cost checks are disabled for your fallback trial. Missing SDK usage remains incomplete.";
         state = s;
         let h = s.health || {};
         $("top-status").textContent =
