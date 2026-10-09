@@ -1,0 +1,111 @@
+{
+  "fidelity": "guessed",
+  "source": "docs/evidence/F39-a-audit-redaction.md",
+  "successes": [
+    {
+      "name": "hostname",
+      "actor": {
+        "ID": "fixture.operator",
+        "Role": "staff"
+      },
+      "mutation": {
+        "Target": "synthetic.settings",
+        "TargetID": "hostname",
+        "Value": "host-f39b.example.invalid"
+      },
+      "expected": {
+        "ActorID": "fixture.operator",
+        "ActorRole": "staff",
+        "Action": "website.mutation.update",
+        "Target": "synthetic.settings",
+        "TargetID": "hostname"
+      }
+    },
+    {
+      "name": "credential_text",
+      "actor": {
+        "ID": "fixture.operator",
+        "Role": "staff"
+      },
+      "mutation": {
+        "Target": "synthetic.settings",
+        "TargetID": "credential_text",
+        "Value": "password=synthetic-only; token=fixture-not-a-credential; bearer example"
+      },
+      "expected": {
+        "ActorID": "fixture.operator",
+        "ActorRole": "staff",
+        "Action": "website.mutation.update",
+        "Target": "synthetic.settings",
+        "TargetID": "credential_text"
+      }
+    }
+  ],
+  "unsafe_identifiers": [
+    {
+      "name": "empty",
+      "value": ""
+    },
+    {
+      "name": "over64",
+      "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "secret",
+      "value": "client.SeCrEt"
+    },
+    {
+      "name": "token",
+      "value": "client.TOKEN"
+    },
+    {
+      "name": "password",
+      "value": "client.Password"
+    },
+    {
+      "name": "sk",
+      "value": "SK-example"
+    },
+    {
+      "name": "bearer",
+      "value": "BeArEr-example"
+    },
+    {
+      "name": "newline",
+      "value": "line\nbreak"
+    },
+    {
+      "name": "carriage_return",
+      "value": "line\rbreak"
+    },
+    {
+      "name": "nul",
+      "value": "null\u0000byte"
+    },
+    {
+      "name": "tab",
+      "value": "tab\tbyte"
+    },
+    {
+      "name": "delete",
+      "value": "delete\u007fbyte"
+    },
+    {
+      "name": "space",
+      "value": "two words"
+    },
+    {
+      "name": "non_ascii",
+      "value": "caf\u00e9"
+    },
+    {
+      "name": "slash",
+      "value": "path/name"
+    }
+  ],
+  "safe_identifiers": [
+    "A",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "AZaz09_.:-"
+  ]
+}
