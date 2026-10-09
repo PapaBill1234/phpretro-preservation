@@ -1,0 +1,17 @@
+[Unit]
+Description=PHPRetro read-only Skill Doctor context report
+
+[Service]
+Type=oneshot
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 /home/ubuntu/phpretro-preservation/ops/skill_doctor.py
+TimeoutStartSec=300
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/phpretro-skill-doctor /home/ubuntu/phpretro-ops/state
+MemoryMax=400M
+TasksMax=32
+
