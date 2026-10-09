@@ -65,6 +65,7 @@ def fingerprint():
 def capability_fingerprint():
     digest = hashlib.sha256()
     digest.update((ROOT / 'canary.py').read_bytes())
+    digest.update((ROOT / 'request_accounting.py').read_bytes())
     for name in ("runner.py", "probe_models.py", "routing.py", "requirements.lock"):
         digest.update((ROOT / "openhands" / name).read_bytes())
     digest.update(Path(__file__).read_bytes())
