@@ -122,7 +122,7 @@ PROFILE_HOME = {name: HOME / ".hermes" / "profiles" / name
                 for name in ("builder", "reviewer", "planner", "auditor")}
 HERMES = shutil.which("hermes") or str(HOME / ".local" / "bin" / "hermes")
 
-# Paths whose diff requires a third independent family (auth / session / schema).
+# Paths whose diff requires a third family when strict review policy is enabled.
 SENSITIVE = ("internal/authflow", "internal/session", "internal/account",
              "internal/polaris", "internal/profile/settings", "internal/staff", "migrations")
 
@@ -1739,7 +1739,8 @@ def ensure_reviewed(unit: dict, wt: Path, state: dict) -> bool:
     if unit.get("review_head") != head or verdict != "pass" or not approval_valid(unit, "review", head):
         verdict, findings, _ = run_review(unit, wt, state, unit.get("model") or MODEL["luna"])
     sensitive = diff_touches_sensitive(git_out("diff", f"{BASE_REF}...HEAD", cwd=wt))
-    if verdict == "pass" and sensitive:
+    review_policy = runtime_policy.load()
+    if verdict == "pass" and sensitive and review_policy["required_review_families"] == 3:
         if unit.get("review2_head") != head or unit.get("review2_verdict") != "pass" or not approval_valid(unit, "review2", head):
             second, details, _ = run_second_review(unit, wt, state)
         else:
@@ -1748,7 +1749,9 @@ def ensure_reviewed(unit: dict, wt: Path, state: dict) -> bool:
             verdict, findings = second, details
         elif len({control.model_family(unit.get(k, "")) for k in ("model", "review_model", "review2_model")}) != 3:
             verdict, findings = "unavailable", "sensitive review requires three distinct families"
-    telemetry_event("review_verdict", unit["id"], f"review verdict={verdict}", verdict=verdict, head=head[:12])
+    telemetry_event("review_verdict", unit["id"], f"review verdict={verdict}", verdict=verdict, head=head[:12],
+                    required_review_families=review_policy["required_review_families"],
+                    review_policy=review_policy.get("review_policy", "strict-three-family"))
     if verdict == "unavailable" and (unit.get("review_admission_denied") or int(state.get("provider_errors", 0))):
         unit["status"], unit["reason"] = "pr_open", "review deferred: admission or provider backoff/pause"
         return False

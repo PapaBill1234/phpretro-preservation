@@ -26,7 +26,7 @@ class PolicyTests(unittest.TestCase):
               patch.object(o,"event"), patch.object(o,"telemetry_event")):
             o._apply_failure_triage(u,{},"failed",{})
         self.assertFalse(tri.call_args.args[-1])
-    def test_haiku_retired_and_third_review_family_gated(self):
+    def test_haiku_retired_and_temporary_two_family_policy(self):
         policy = runtime_policy.load()
         self.assertFalse(policy["automatic_planning"])
         self.assertTrue(policy["automatic_sol"])
@@ -35,8 +35,9 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual((sol["input"],sol["output"],sol["cache_read"],sol["cache_write"]), (.09,.45,.0045,0))
         with self.assertRaises(control.IntegrityError):
             runtime_policy.model_settings("claude-haiku-5-5")
-        self.assertFalse(runtime_policy.review_families_available())
-        self.assertEqual(policy["required_review_families"], 3)
+        self.assertTrue(runtime_policy.review_families_available())
+        self.assertEqual(policy["required_review_families"], 2)
+        self.assertEqual(policy["review_policy"], "temporary-two-family-user-override")
         self.assertNotIn(o.MODEL["haiku"], o.automatic_review_models())
         for author in (o.MODEL["luna"], o.MODEL["deepseek"], o.MODEL["sol"]):
             first = o.reviewer_model_for(author)
@@ -48,6 +49,15 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(o.model_for_attempt(3),o.MODEL["sol"])
         self.assertEqual(o.reviewer_model_for(o.MODEL["luna"]),o.MODEL["deepseek"])
         self.assertEqual(o.reviewer_model_for(o.MODEL["deepseek"]),o.MODEL["sol"])
+
+    def test_two_family_policy_cannot_be_enabled_implicitly(self):
+        root = tmpdir("explicit-policy-")
+        policy = runtime_policy.load()
+        policy.pop("review_policy")
+        destination = root / "policy.json"
+        control.atomic_json(destination, policy)
+        with patch.object(runtime_policy,"POLICY",destination):
+            with self.assertRaises(control.IntegrityError): runtime_policy.load()
 
     def test_paid_planning_denied_even_with_validation(self):
         with patch.object(runtime_policy, "ready", return_value=True):

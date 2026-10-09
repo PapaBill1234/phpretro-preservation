@@ -27,8 +27,11 @@ def load():
         raise control.IntegrityError("Sol automation flag and model policy disagree")
     if data.get("max_builders") != 2:
         raise control.IntegrityError("migration requires the reviewed two-builder ceiling")
-    if data.get("required_review_families") != 3:
-        raise control.IntegrityError("migration requires three independent review families")
+    families = data.get("required_review_families")
+    if type(families) is not int or families not in (2, 3):
+        raise control.IntegrityError("review requires two or three independent families")
+    if families == 2 and data.get("review_policy") != "temporary-two-family-user-override":
+        raise control.IntegrityError("two-family review requires the explicit temporary policy")
     return data
 
 

@@ -93,6 +93,25 @@ class ReviewSchema(unittest.TestCase):
 
 
 class ReviewBoundary(Isolated):
+    def test_sensitive_work_obeys_temporary_and_restored_strict_policy(self):
+        def sensitive_git(*args, **kwargs):
+            if args[0] == "diff":
+                return "diff --git a/internal/authflow/x.go b/internal/authflow/x.go\n+++ b/internal/authflow/x.go\n+ change\n"
+            return self.git_value(*args, **kwargs)
+        u = unit(model=o.MODEL["deepseek"])
+        with (patch.object(o,"git_out",side_effect=sensitive_git),
+              patch.object(o,"hermes_run",return_value=(0,'{"verdict":"pass","findings":[]}',{"total_tokens":2})) as run):
+            self.assertTrue(o.ensure_reviewed(u,self.repo,state()))
+        self.assertEqual(run.call_count,1)
+        self.assertEqual(run.call_args.args[1],o.MODEL["sol"])
+        policy = o.runtime_policy.load().copy()
+        policy["required_review_families"] = 3
+        with (patch.object(o.runtime_policy,"load",return_value=policy),
+              patch.object(o,"git_out",side_effect=sensitive_git),
+              patch.object(o,"hermes_run") as run):
+            self.assertFalse(o.ensure_reviewed(u,self.repo,state()))
+        run.assert_not_called()
+
     def git_value(self, *args, **kwargs):
         if args[:2] == ("rev-parse", "HEAD"):
             return "reviewed-head"

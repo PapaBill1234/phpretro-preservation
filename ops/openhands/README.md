@@ -17,8 +17,9 @@ Haiku is retired from automatic builders, reviewers and fallbacks. At the user's
 request, Sol 6.1 fills its model slot: Luna, DeepSeek, Sol, then DeepSeek; four
 attempts remain the ceiling. Review prefers Sol, then DeepSeek, then Luna, subject
 to author-family independence. Sol and Luna are both GPT-family models, so only
-two independent families are configured. Provider activation remains blocked
-until three automatic families are available and all capability checks pass.
+two independent families are configured. The user has explicitly authorized a
+temporary two-family review policy for ordinary and sensitive work. Provider
+activation still requires every configured model's capability checks to pass.
 Step through OpenCode was tested but every inference request returned HTTP 403,
 including both official clients. There is no paid planner or paid weekly audit.
 
@@ -29,10 +30,12 @@ $0.0045 cache reads and $0 cache writes. Prices remain uncalibrated; no provider
 identity, tool capability or actual billing acceptance is implied by this quote.
 The unchanged conservative 3M-token reservation is $1.35 at the highest configured
 automatic output rate, within the $5 daily quote ceiling before other spending.
-Independent review always runs. Sensitive work requires author, first reviewer
-and second reviewer from three different families, including after fallbacks
-and when cached receipts are reused. F38 remains parked until its original
-durable replay and sensitive-review requirements are delivered.
+Independent review always runs, including for sensitive work: the reviewer must
+be a different family from the author, including cached receipts and fallbacks.
+The temporary policy waives the third independent-family review; telemetry records
+the active family requirement. Set `required_review_families` back to 3 when a
+verified third family is configured to restore sensitive-path second review.
+F38 remains parked until its original durable replay requirements are delivered.
 
 The installed OpenHands SDK runs trusted inference on the host. Its only agent
 tool runs in a disposable Docker container: no network, provider credentials,
