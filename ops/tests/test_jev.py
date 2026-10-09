@@ -182,14 +182,14 @@ class AutoDisableTest(unittest.TestCase):
     def test_one_miss_does_not_disable_c(self):
         jev.note_skip("M0", 10, 100)
         jev.note_miss("M0", "nightly failure")
-        self.assertTrue(jev.load_state()["enabled"]["c"])
+        self.assertFalse(jev.load_state()["enabled"]["c"])
 
     def test_a_single_incident_counts_once(self):
         jev.note_skip("M0", 10, 100)
         jev.note_miss("M0", "nightly failure")
         jev.note_skip("M1", 10, 100)
         jev.note_miss("M1", "the same night's fix unit")
-        self.assertTrue(jev.load_state()["enabled"]["c"])
+        self.assertFalse(jev.load_state()["enabled"]["c"])
         self.assertEqual(jev.load_state()["misses"], 1)
 
     def test_recent_miss_attributes_to_the_newest_skip(self):

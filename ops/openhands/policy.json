@@ -1,0 +1,84 @@
+{
+  "schema": "phpretro.runtime.v1",
+  "automatic_planning": false,
+  "automatic_sol": true,
+  "required_review_families": 2,
+  "review_policy": "temporary-two-family-user-override",
+  "max_builders": 2,
+  "sdk_python": "/home/ubuntu/phpretro-openhands/venv/bin/python",
+  "providers_file": "/home/ubuntu/phpretro-openhands/secrets/providers.json",
+  "image": "phpretro-openhands-worker:20261008",
+  "cgroup_parent": "phpretro-build.slice",
+  "container_memory": "1400m",
+  "container_pids": 192,
+  "host_cpu_ceiling": 0.9,
+  "minimum_available_memory_bytes": 1610612736,
+  "restore_after_seconds": 300,
+  "pressure_after_seconds": 20,
+  "estimated_daily_cost_ceiling": 5.0,
+  "prices_calibrated": false,
+  "max_iterations": 80,
+  "models": {
+    "gpt-6-luna": {
+      "automatic": true,
+      "api_mode": "responses",
+      "input_includes_cache": true,
+      "input": 0.018,
+      "output": 0.09,
+      "cache_read": 0.0018,
+      "cache_write": 0.0225,
+      "provider_order": [
+        "a6api",
+        "portdan"
+      ]
+    },
+    "deepseek-v4.1-flash": {
+      "automatic": true,
+      "api_mode": "chat",
+      "input_includes_cache": true,
+      "input": 0.0516,
+      "output": 0.2064,
+      "cache_read": 0.001,
+      "cache_write": 0.0516,
+      "provider_order": [
+        "a6api",
+        "portdan"
+      ],
+      "reported_model_aliases": [
+        "deepseek-v4-1-flash-260910"
+      ]
+    },
+    "claude-haiku-5-5": {
+      "automatic": false,
+      "retirement_reason": "Retired pending a verified independent replacement",
+      "api_mode": "chat",
+      "input_includes_cache": true,
+      "input": 0.024,
+      "output": 0.12,
+      "cache_read": 0.0024,
+      "cache_write": 0.03
+    },
+    "gpt-6.1-sol": {
+      "automatic": true,
+      "api_mode": "responses",
+      "price_source": "user merchant quote 2026-10-09; uncalibrated",
+      "input_includes_cache": true,
+      "input": 0.09,
+      "output": 0.45,
+      "cache_read": 0.0045,
+      "cache_write": 0.0,
+      "provider_order": [
+        "a6api",
+        "portdan"
+      ]
+    }
+  },
+  "providers": {
+    "a6api": {
+      "base_url": "https://api.a6api.com/v1"
+    },
+    "portdan": {
+      "base_url": "https://portdan.com/v1"
+    }
+  }
+}

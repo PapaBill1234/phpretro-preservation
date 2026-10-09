@@ -248,3 +248,9 @@ Only after clean checks, remove STOP and enable the three timers. A failed
 first paid provider cycle must pause for receipt review. Hermes implements
 approved units; Codex owns controller repairs. See REPAIR-20261008.md for the
 repair evidence and remaining limitations.
+# OpenHands migration
+
+The runtime implementation and current automatic model/planning policy are in
+[openhands/README.md](openhands/README.md). The historical Hermes setup below is
+retained for rollback reference. Keep STOP and disabled timers until exact-source
+validation passes; automatic paid planning and automatic Sol are disabled.

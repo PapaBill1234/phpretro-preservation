@@ -164,6 +164,7 @@ func (m *Manager) PostLogoutPage(token string) PublicPage {
 	return PublicPage{}
 }
 
-func NewCookie(name, token string, secure bool, now time.Time) *http.Cookie {
-	return &http.Cookie{Name: name, Value: token, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: secure, Expires: now.Add(30 * time.Minute), MaxAge: 1800}
+// NewCookie requires HTTPS for session transport. Callers cannot downgrade it.
+func NewCookie(name, token string, now time.Time) *http.Cookie {
+	return &http.Cookie{Name: name, Value: token, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: true, Expires: now.Add(30 * time.Minute), MaxAge: 1800}
 }

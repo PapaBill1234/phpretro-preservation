@@ -62,8 +62,9 @@ class TimeoutAccountingTest(unittest.TestCase):
         rid = o.control.identity()
         state["reservations"] = {rid: {"run_id": rid, "role": "builder", "unit": uid,
             "ts_start": o.now(), "reserved_tokens": o.PER_UNIT_TOKEN_CAP}}
-        receipt = o.prepare_worker(rid, state, "builder", o.MODEL["luna"], ["fixture"],
-                                   unit["wt"], usage, 10, 1)
+        with unittest.mock.patch.object(o, "RUNTIME", "fixture"):
+            receipt = o.prepare_worker(rid, state, "builder", o.MODEL["luna"], ["fixture"],
+                                       unit["wt"], usage, 10, 1)
         rec = o.read_json(receipt, {})
         rec.update(status="complete", rc=rc, completed_at=o.time.time(), usage=usage_obj or {})
         o.write_json(receipt, rec)

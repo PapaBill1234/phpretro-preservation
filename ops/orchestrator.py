@@ -31,6 +31,8 @@ import time
 import integrity as control
 import progress as roadmap_progress
 import worker as run_worker
+import runtime_policy
+import sandbox
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -48,7 +50,8 @@ GH_REPO = os.environ.get("PHPRETRO_GH_REPO", "PapaBill1234/phpretro-preservation
 # at that branch so units can run the not-yet-merged scripts/check.sh.
 BASE_REF = os.environ.get("PHPRETRO_BASE_REF", "origin/main")
 
-MAX_PARALLEL = int(os.environ.get("PHPRETRO_MAX_PARALLEL", "1"))
+MAX_PARALLEL = min(2, int(os.environ.get("PHPRETRO_MAX_PARALLEL", "2")))
+RUNTIME = os.environ.get("PHPRETRO_RUNTIME", "openhands")
 RUN_TIMEOUT = int(os.environ.get("PHPRETRO_RUN_TIMEOUT", "1500"))       # 25 min
 CHECK_TIMEOUT = int(os.environ.get("PHPRETRO_CHECK_TIMEOUT", "1800"))
 # GitHub Actions is ADVISORY. scripts/check.sh, run on the exact rebased head
@@ -70,7 +73,7 @@ DAILY_TOKEN_CAP = int(os.environ.get("PHPRETRO_DAILY_TOKEN_CAP", "60000000"))
 # nightly self-check has failed twice in a row (see apply_merge_cap_guard).
 MAX_MERGE_PER_DAY = int(os.environ.get("PHPRETRO_MAX_MERGE_PER_DAY", "30"))
 MERGE_CAP_REVERTED = int(os.environ.get("PHPRETRO_MERGE_CAP_REVERTED", "12"))
-MAX_ATTEMPTS = 4            # luna x2, deepseek x1, sol x1, then parked
+MAX_ATTEMPTS = 4            # Luna, DeepSeek, Sol, DeepSeek; then parked
 PLANNER_RETRIES = 2
 DIFF_LINE_CAP = 700
 # Quality safeguards (see ops/quality.py).
@@ -101,6 +104,7 @@ PROTECTED_PREFIXES = (
 PROTECTED_FILES = (
     "AGENTS.md",
     "scripts/check.sh",
+    ".go-version",
 )
 # A disabled diff guard denies paid work and merge admission. Debugging may
 # inspect state, but cannot publish unguarded agent output.
@@ -111,13 +115,14 @@ MODEL = {
     "luna": "gpt-6-luna",
     "deepseek": "deepseek-v4.1-flash",
     "sol": "gpt-6.1-sol",
+    "haiku": "claude-haiku-5-5",  # Historical identity only; retired from dispatch.
 }
-LADDER = ["luna", "luna", "deepseek", "sol"]
+LADDER = ["luna", "deepseek", "sol", "deepseek"]
 PROFILE_HOME = {name: HOME / ".hermes" / "profiles" / name
                 for name in ("builder", "reviewer", "planner", "auditor")}
 HERMES = shutil.which("hermes") or str(HOME / ".local" / "bin" / "hermes")
 
-# Paths whose diff escalates to a Sol second review (auth / session / schema).
+# Paths whose diff requires a third family when strict review policy is enabled.
 SENSITIVE = ("internal/authflow", "internal/session", "internal/account",
              "internal/polaris", "internal/profile/settings", "internal/staff", "migrations")
 
@@ -127,6 +132,7 @@ BRIEF_DIR = OPS / "briefs"
 LOCK_DIR = OPS / "locks"
 STOP_FILE = OPS / "STOP"
 STATE_JSON = STATE_DIR / "units.state.json"
+AUDIT_STATE = STATE_DIR / "audit.json"
 STATE_MD = STATE_DIR / "STATE.md"
 LIVE_UNITS = STATE_DIR / "units.live.yaml"
 REPO_UNITS = REPO / "units.yaml"
@@ -353,7 +359,8 @@ STATE_KEYS = ("status", "pr", "attempts", "tokens", "wall_s", "model", "reason",
 DEF_KEYS = ("title", "depends_on", "paths", "tests", "acceptance", "fixtures",
              "fidelity_notes", "size", "design_doc", "unclear_semantics",
              "planning_ready", "planning_paths", "planning_acceptance", "planning_tests",
-             "planning_context", "implementation_ready")
+             "planning_context", "implementation_ready", "allowed_models", "token_cap",
+             "planning_source", "brief_base")
 
 
 def dump_unit_yaml(unit: dict) -> str:
@@ -802,7 +809,7 @@ def quality_gate(wt: Path, unit: dict, state: dict, base: str) -> dict:
     if pin:
         env["GOTOOLCHAIN"] = f"go{pin}"
     try:
-        return mod.evaluate(wt, base, unit, env=env, floor=COVERAGE_FLOOR)
+        return sandbox.quality(wt, base, unit, floor=COVERAGE_FLOOR, timeout=CHECK_TIMEOUT)
     except Exception as exc:
         return {"ok": False, "reason": f"quality gate error: {exc}",
                 "checks": {}, "coverage": None, "fidelity": "unknown"}
@@ -842,6 +849,10 @@ class RecoveryConflict(RuntimeError):
 
 def paid_allowed(state: dict, unit: dict | None, role: str) -> bool:
     rollover(state)
+    if role in ("planner", "audit"):
+        return False
+    if RUNTIME != "openhands" or not runtime_policy.ready():
+        return False
     if _SHUTDOWN_REQUESTED or STOP_FILE.exists() or state.get("dispatch_disabled") or GUARD_DISABLED:
         return False
     if float(state.get("provider_retry_at", 0)) > time.time():
@@ -864,13 +875,38 @@ def admit_paid(state: dict, unit: dict | None, role: str, *, limit=None) -> str:
     allowance = min(PER_UNIT_TOKEN_CAP - used, AUDIT_TOKEN_CAP if role == "audit" else PER_UNIT_TOKEN_CAP)
     if limit is not None:
         allowance = min(allowance, limit)
+    policy = runtime_policy.load()
+    # This is an estimated spending guard, never a claim about account deductions.
+    rows = _load_telemetry().read_runs(STATE_DIR / "runs.jsonl")
+    spent = 0.0
+    day_charges = 0
+    unknown = False
+    for row in rows:
+        if row.get("record_type", "run") != "run" or not str(row.get("ts_end", "")).startswith(state["day"]):
+            continue
+        day_charges += control.charged_tokens(row, TIMEOUT_FALLBACK_TOKENS)
+        cost = _load_telemetry()._finite_nonnegative(row.get("cost_estimate"))
+        if cost is None or row.get("usage_complete") is False:
+            unknown = True
+        else:
+            spent += cost
+    if unknown:
+        raise BudgetDenied("daily spend contains unknown usage; accounting reconciliation required")
+    rate = max(float(m["output"]) for m in policy["models"].values() if m.get("automatic"))
+    # Imported historical counters have no exact bill. Reserve their worst-case
+    # quote estimate so preserved baselines cannot become free spending.
+    spent += max(0, int(state.get("tokens_today", 0)) - day_charges) * rate / 1e6
+    held_cost = sum(float(r.get("reserved_cost_estimate", r["reserved_tokens"] * rate / 1e6)) for r in reservations.values())
+    estimate = allowance * rate / 1e6
+    if spent + held_cost + estimate > policy["estimated_daily_cost_ceiling"]:
+        raise BudgetDenied("estimated daily spending allowance exhausted")
     held = sum(r["reserved_tokens"] for r in reservations.values())
     held_unit = sum(r["reserved_tokens"] for r in reservations.values() if uid and r.get("unit") == uid)
     if allowance <= 0 or held + int(state.get("tokens_today", 0)) + allowance > DAILY_TOKEN_CAP or used + held_unit + allowance > PER_UNIT_TOKEN_CAP:
         raise BudgetDenied(f"{role}: in-flight allowance exceeds a cap")
     rid = control.identity()
     rec = {"record_type": "reservation", "run_id": rid, "role": role,
-           "unit": uid, "reserved_tokens": allowance, "ts_start": now()}
+           "unit": uid, "reserved_tokens": allowance, "reserved_cost_estimate": estimate, "ts_start": now()}
     control.append_record(STATE_DIR / "runs.jsonl", rec)
     reservations[rid] = rec
     write_json(STATE_JSON, state)
@@ -884,6 +920,8 @@ def release_paid(state: dict, rid: str) -> None:
 def completed_receipt(path, rid, state):
     """Settlement requires durable proof that requester and cgroup drained."""
     rec = read_json(path, {})
+    if rec.get("runtime") == "openhands":
+        sandbox.assert_absent(rec["run_id"])
     reservation = state.get("reservations", {}).get(rid, {})
     if (not isinstance(rec, dict) or rec.get("status") != "complete"
             or rec.get("run_id") != rid or not reservation
@@ -903,15 +941,27 @@ def completed_receipt(path, rid, state):
     return rec
 
 
-def prepare_worker(rid, state, profile, model, command, cwd, usage, timeout, attempt=None):
+def prepare_worker(rid, state, profile, model, command, cwd, usage, timeout, attempt=None, paths=()):
     rec = dict(state["reservations"][rid])
     rec.update(status="prepared", model=model, attempt=attempt, command=command,
                cwd=str(cwd), profile=profile, profile_home=str(PROFILE_HOME[profile]),
                usage_path=str(usage), timeout=timeout, grace=TERM_GRACE,
                controller_pid=os.getpid(), controller_identity=run_worker.process_identity(os.getpid()),
                prepared_at=time.time())
-    if command and command[0] == HERMES:
-        rec["unit_name"] = "phpretro-run-" + rid + ".service"
+    # Every paid runtime gets the same containment/cancellation contract.
+    rec["runtime"] = RUNTIME
+    rec["unit_name"] = "phpretro-run-" + rid + ".service"
+    if RUNTIME == "openhands":
+        runtime_policy.model_settings(model)
+        if not runtime_policy.ready(model):
+            raise BudgetDenied("model capabilities or migration validation are pending")
+        rec["sandbox_name"] = sandbox.container_name(rid)
+        rec["allowed_paths"] = list(paths)
+        if rec.get("role") == "builder" and rec.get("unit"):
+            rec["allowed_paths"].append("docs/units/" + rec["unit"] + ".md")
+        rec["profile_home"] = str(STATE_DIR / "receipts" / (rid + "-sdk"))
+        rec["command"] = [runtime_policy.load()["sdk_python"], str(Path(__file__).with_name("openhands") / "runner.py"), str(STATE_DIR / "receipts" / (rid + ".json"))]
+        rec["prompt_path"] = str(BRIEF_DIR / (rid + ".md"))
     path = STATE_DIR / "receipts" / (rid + ".json")
     control.atomic_json(path, rec)
     return path
@@ -930,15 +980,16 @@ def accounted_usage(data):
     if "usage_complete" in data and not isinstance(data["usage_complete"], bool):
         raise control.IntegrityError("receipt completeness flag is invalid")
     tokens = usage_tokens(data)
+    conservative = control.nonnegative(data.get("conservative_tokens", 0), "conservative tokens")
     explicit_zero = data.get("api_calls") == 0 and data.get("total_tokens") == 0
     if data.get("usage_complete") is False or (tokens <= 0 and not explicit_zero):
-        tokens = max(tokens, TIMEOUT_FALLBACK_TOKENS)
+        tokens = max(tokens, TIMEOUT_FALLBACK_TOKENS, conservative)
         data["accounting_source"] = "pessimistic-estimate" if not data.get("total_tokens") else "partial-with-conservative-floor"
         data["usage_complete"] = False
     else:
         data.setdefault("usage_complete", True)
         data.setdefault("accounting_source", "usage-file")
-    data["input_includes_cache"] = False  # Verified Hermes canonical counters.
+    data.setdefault("input_includes_cache", False)  # Runtime-normalized canonical counters.
     data["accounted_tokens"] = tokens
     return data
 
@@ -1001,8 +1052,10 @@ def settle_worker_receipts():
                 # Drain the requester first, then stop the cgroup. The durable
                 # cancellation guard also denies registrations arriving later.
                 run_worker.stop_unit(run_worker.checked_unit(rec["unit_name"], rid))
+            if rec.get("runtime") == "openhands":
+                sandbox.cleanup(rid)
             fresh = run_worker.usage_snapshot(Path(rec["usage_path"]),
-                Path(rec["profile_home"]) / "state.db", "RUN ID " + rid)
+                Path(rec["profile_home"]) / "state.db", "RUN ID " + rid, rec.get("runtime", "hermes"))
             checkpoint = rec.get("usage") or {}
             accounted_usage(checkpoint)  # Reject malformed receipts before comparing counters.
             if fresh.get("usage_complete"):
@@ -1073,6 +1126,9 @@ def hermes_run(profile: str, model: str, prompt: str, toolsets: str,
     if state is None:
         raise control.IntegrityError("paid role missing accounting state")
     try:
+        runtime_policy.model_settings(model)
+        if not runtime_policy.ready(model):
+            raise BudgetDenied("model capability validation pending")
         rid = admit_paid(state, budget_unit, role)
     except BudgetDenied as exc:
         return 75, str(exc), {"total_tokens": 0, "api_calls": 0, "admission_denied": True}
@@ -1082,7 +1138,9 @@ def hermes_run(profile: str, model: str, prompt: str, toolsets: str,
            "--provider", PROVIDER, "--reasoning", "low", "-t", toolsets,
            "-s", SKILL_NAME[profile], "--in", str(cwd), "--accept-hooks"]
     ts_start = now()
-    receipt = prepare_worker(rid, state, profile, model, cmd, cwd, usage, timeout, attempt)
+    control.atomic_text(BRIEF_DIR / (rid + ".md"), prompt)
+    receipt = prepare_worker(rid, state, profile, model, cmd, cwd, usage, timeout, attempt,
+                             (budget_unit or {}).get("paths", []))
     rc, out = sh([sys.executable, str(Path(__file__).with_name("worker.py")), str(receipt)],
                  cwd=cwd, timeout=timeout + TERM_GRACE + 15, env=env)
     rec = completed_receipt(receipt, rid, state)
@@ -1130,7 +1188,9 @@ def log_model_run(role: str, model: str, unit: str, attempt, rc, outcome: str,
     rec = mod.build_run(
         ts_start=ts_start or now(), ts_end=ts_end or now(), role=role, model=model,
         unit=unit or "", attempt=attempt, rc=rc, outcome=outcome, usage=usage or {},
-        provider=provider_override or PROVIDER, flags=mod.default_flags(profile, toolsets,
+        provider=provider_override or (usage or {}).get("provider") or PROVIDER,
+        flags={"runtime": "openhands", "context_engine": "sdk", "plugins": {"active": False}, "toolsets": "docker-exec"}
+              if (usage or {}).get("runtime") == "openhands" else mod.default_flags(profile, toolsets,
                     session=str((usage or {}).get("session_id") or "")))
     rec["run_id"] = run_id or control.identity()
     rec["record_type"] = "run"
@@ -1223,13 +1283,17 @@ def normalize_verdict(raw) -> str:
 
 
 def reviewer_model_for(author: str) -> str:
-    """A reviewer never shares the author's model family."""
-    return MODEL["deepseek"] if author in (MODEL["luna"], MODEL["sol"]) else MODEL["luna"]
+    for candidate in automatic_review_models():
+        if control.model_family(candidate) != control.model_family(author):
+            return candidate
+    raise control.IntegrityError("no independent reviewer family")
 
 
-# --------------------------------------------------------------------------
-# Worktrees
-# --------------------------------------------------------------------------
+def automatic_review_models() -> tuple[str, ...]:
+    models = runtime_policy.load()["models"]
+    preferred = (MODEL["sol"], MODEL["deepseek"], MODEL["luna"])
+    candidates = (*preferred, *(m for m in models if m not in preferred))
+    return tuple(m for m in candidates if models.get(m, {}).get("automatic") is True)
 
 def unit_branch(unit: dict) -> str:
     return unit.get("branch") or f"unit/{unit['id']}"
@@ -1325,7 +1389,7 @@ unrelated repository files.
 Write the tests first, from the fixtures above, and cite in each test the
 evidence file the assertion comes from. Implement until they pass. Then run
 `bash scripts/check.sh` in this worktree and fix every failure it reports -
-it is the only gate. Commit with `unit({unit['id']}): <what changed>`.
+it is the required local gate. The controller commits and publishes your exported changes; do not run git push or create a PR.
 Write `docs/units/{unit['id']}.md` (30 lines maximum): what works, what is
 guessed, how to run it. Where evidence is missing, build from fixtures and
 label it "fidelity: guessed". Never edit AGENTS.md, skills, CI or ops/.
@@ -1410,7 +1474,7 @@ Output only the YAML block.
 # --------------------------------------------------------------------------
 
 def run_check(wt: Path) -> tuple[int, str]:
-    rc, out = sh(["bash", "scripts/check.sh"], cwd=wt, timeout=CHECK_TIMEOUT)
+    rc, out = sandbox.check(wt, timeout=CHECK_TIMEOUT)
     return rc, out
 
 
@@ -1592,22 +1656,19 @@ def push_and_open_pr(unit: dict, wt: Path, check_out: str, state: dict) -> int:
     return int(m.group(1))
 
 
-def review_fallback(primary: str, author: str) -> str:
-    # Third family prevents an outage retry from becoming self-review.
-    for candidate in (MODEL["deepseek"], MODEL["luna"], MODEL["sol"]):
-        if control.model_family(candidate) not in (control.model_family(primary), control.model_family(author)):
+def review_fallback(primary: str, author: str, excluded=()) -> str:
+    forbidden = {control.model_family(m) for m in (primary, author, *excluded)}
+    for candidate in automatic_review_models():
+        if control.model_family(candidate) not in forbidden:
             return candidate
     return ""
-
 
 def second_reviewer_model(author: str, primary: str) -> str:
-    """Choose a sensitive-path reviewer from a family unlike both prior roles."""
-    for candidate in (MODEL["sol"], MODEL["luna"], MODEL["deepseek"]):
-        family = control.model_family(candidate)
-        if family not in (control.model_family(author), control.model_family(primary)):
+    forbidden = {control.model_family(author), control.model_family(primary)}
+    for candidate in automatic_review_models():
+        if control.model_family(candidate) not in forbidden:
             return candidate
     return ""
-
 
 def validated_review(unit: dict, wt: Path, state: dict, model: str, slot: str) -> tuple[str, str, int]:
     head = git_out("rev-parse", "HEAD", cwd=wt)
@@ -1620,7 +1681,8 @@ def validated_review(unit: dict, wt: Path, state: dict, model: str, slot: str) -
     unit["review_admission_denied"] = False
     total, finding = 0, "review unavailable"
     for index in range(2):
-        chosen = model if index == 0 else review_fallback(model, author) or model
+        excluded = (unit.get("review_model", ""),) if slot == "review2" else ()
+        chosen = model if index == 0 else review_fallback(model, author, excluded)
         if not chosen:
             break
         prompt = reviewer_brief(unit, diff, chosen) + f"\nExact reviewed head: {head}\nRead-only: never write files.\n"
@@ -1640,7 +1702,7 @@ def validated_review(unit: dict, wt: Path, state: dict, model: str, slot: str) -
         dirty = git_out("status", "--porcelain", cwd=wt)
         if git_out("rev-parse", "HEAD", cwd=wt) != head or dirty:
             verdict, finding = "unavailable", "reviewer changed reviewed checkout"
-        if control.model_family(chosen) == control.model_family(author):
+        if control.model_family(chosen) in {control.model_family(m) for m in (author, *excluded)}:
             verdict, finding = "unavailable", "review model shares author family"
         review_id = control.identity()
         control.atomic_json(LOG_DIR / f"{unit['id']}-{slot}-{review_id}.verdict.json",
@@ -1665,7 +1727,10 @@ def approval_valid(unit: dict, slot: str, head: str) -> bool:
     valid = (rec.get("unit") == unit["id"] and rec.get("head") == head and
              rec.get("rc") == 0 and rec.get("verdict") == "pass" and
              rec.get("model") == unit.get(slot + "_model"))
+    valid = valid and rec.get("model") in automatic_review_models()
     valid = valid and control.model_family(rec.get("model", "")) != control.model_family(unit.get("model") or MODEL["luna"])
+    if slot == "review2":
+        valid = valid and control.model_family(rec.get("model", "")) != control.model_family(unit.get("review_model", ""))
     return bool(valid)
 
 
@@ -1675,14 +1740,19 @@ def ensure_reviewed(unit: dict, wt: Path, state: dict) -> bool:
     if unit.get("review_head") != head or verdict != "pass" or not approval_valid(unit, "review", head):
         verdict, findings, _ = run_review(unit, wt, state, unit.get("model") or MODEL["luna"])
     sensitive = diff_touches_sensitive(git_out("diff", f"{BASE_REF}...HEAD", cwd=wt))
-    if verdict == "pass" and sensitive:
+    review_policy = runtime_policy.load()
+    if verdict == "pass" and sensitive and review_policy["required_review_families"] == 3:
         if unit.get("review2_head") != head or unit.get("review2_verdict") != "pass" or not approval_valid(unit, "review2", head):
             second, details, _ = run_second_review(unit, wt, state)
         else:
             second, details = "pass", ""
         if second != "pass":
             verdict, findings = second, details
-    telemetry_event("review_verdict", unit["id"], f"review verdict={verdict}", verdict=verdict, head=head[:12])
+        elif len({control.model_family(unit.get(k, "")) for k in ("model", "review_model", "review2_model")}) != 3:
+            verdict, findings = "unavailable", "sensitive review requires three distinct families"
+    telemetry_event("review_verdict", unit["id"], f"review verdict={verdict}", verdict=verdict, head=head[:12],
+                    required_review_families=review_policy["required_review_families"],
+                    review_policy=review_policy.get("review_policy", "strict-three-family"))
     if verdict == "unavailable" and (unit.get("review_admission_denied") or int(state.get("provider_errors", 0))):
         unit["status"], unit["reason"] = "pr_open", "review deferred: admission or provider backoff/pause"
         return False
@@ -2010,7 +2080,7 @@ def _apply_failure_triage(unit: dict, state: dict, output: str,
     uid = unit["id"]
     unit["repair_required"] = True
     attempt = int(unit.get("attempts", 1))
-    at_last = rung_index(unit.get("model", "")) >= len(LADDER) - 1
+    at_last = attempt >= len(LADDER)
     allowed = allowed_triage_names(attempt, at_last)
     tri = jev_triage(unit, output, attempt, at_last)
     action = tri.get("action", "retry_same") if tri.get("source") != "jev" else "retry_same"
@@ -2596,9 +2666,14 @@ def start_build(unit: dict, state: dict, roadmap: dict | None = None):
     if unit.get("status") == "merged" or int(unit.get("attempts", 0)) >= MAX_ATTEMPTS:
         raise BudgetDenied("unit already delivered or builder limit reached")
     wt = ensure_worktree(unit)
-    rid = admit_paid(state, unit, "builder")
     attempt = int(unit.get("attempts", 0)) + 1
     model = unit.pop("model_override", "") or model_for_attempt(attempt)
+    if unit.get("allowed_models") and model not in unit["allowed_models"]:
+        model = unit["allowed_models"][min(attempt - 1, len(unit["allowed_models"]) - 1)]
+    runtime_policy.model_settings(model)
+    if not runtime_policy.ready(model):
+        raise BudgetDenied("model capability validation pending")
+    rid = admit_paid(state, unit, "builder")
     prompt = builder_brief(unit, attempt, model, unit.get("feedback", ""))
     stem = f"{unit['id']}-attempt{attempt}-{rid}"
     control.atomic_text(BRIEF_DIR / (stem + ".md"), prompt)
@@ -2609,7 +2684,8 @@ def start_build(unit: dict, state: dict, roadmap: dict | None = None):
            "--provider", PROVIDER, "--reasoning", "low", "-t", toolsets,
            "-s", SKILL_NAME["builder"], "--in", str(wt), "--accept-hooks"]
     ts_start = now()
-    receipt = prepare_worker(rid, state, "builder", model, cmd, wt, usage, RUN_TIMEOUT, attempt)
+    control.atomic_text(BRIEF_DIR / (rid + ".md"), prompt)
+    receipt = prepare_worker(rid, state, "builder", model, cmd, wt, usage, RUN_TIMEOUT, attempt, unit.get("paths", []))
     try:
         proc = subprocess.Popen([sys.executable, str(Path(__file__).with_name("worker.py")), str(receipt)],
                      cwd=str(wt), env={**os.environ, "HERMES_HOME": str(PROFILE_HOME["builder"])},
@@ -2892,107 +2968,13 @@ def apply_planner_output(roadmap: dict, state: dict, unit: dict, out: str,
 
 
 def maybe_plan(roadmap: dict, state: dict) -> bool:
-    """Run one planner pass (split / rewrite / promote) if the board needs it.
-
-    Returns True when the planner was actually invoked (it consumed the cycle's
-    one agent call), False otherwise.
-    """
-    active = [u for u in roadmap.values() if u.get("status") in ("building", "pr_open", "queued")]
-    if active:
-        return False
-    todo = [u for u in roadmap.values() if u.get("status") == "todo"
-            and not u.get("split_requested") and deps_merged(u, roadmap)
-            and not is_advisory(u)]
-    if todo:
-        return False
-    # A unit that timed out or produced no change gets split into smaller units
-    # rather than retried at the same size. This takes precedence over the
-    # parked/design queues because it is the failure the pipeline just produced.
-    splits = sorted([u for u in roadmap.values()
-                     if u.get("split_requested") and u.get("status") == "todo"
-                     and int(u.get("planner_retries", 0)) < PLANNER_RETRIES],
-                    key=lambda u: u["id"])
-    if splits:
-        target, mode = splits[0], "split"
-    else:
-        parked = sorted([u for u in roadmap.values()
-                         if u.get("status") == "parked"
-                          and not u.get("blocked_reason")
-                         and int(u.get("planner_retries", 0)) < PLANNER_RETRIES],
-                        key=lambda u: u["id"])
-        design = sorted([u for u in roadmap.values()
-                         if u.get("status") == "design"
-                          and planning_eligible(u)
-                         and int(u.get("planner_retries", 0)) < PLANNER_RETRIES],
-                        key=lambda u: u["id"])
-        if design:
-            target, mode = design[0], "promote"
-        elif parked:
-            target, mode = parked[0], "rewrite"
-        else:
-            for u in roadmap.values():
-                if u.get("status") == "parked":
-                    u["status"] = "parked-final"
-                if u.get("status") == "design" and int(u.get("planner_retries", 0)) >= PLANNER_RETRIES:
-                    u["status"] = "design-blocked"
-            return False
-
-    uid = target["id"]
-    if not paid_allowed(state, target, "planner"):
-        return False
-    target["split_requested"] = False
-    model = planner_model(target)
-    design_text = ""
-    if mode == "promote":
-        design_text = planning_context(target)
-    prompt = planner_brief(target, mode, design_text)
-    prompt += ("\nExisting IDs are immutable and reserved: " + ", ".join(sorted(roadmap)) +
-               f"\nUse fresh IDs such as {uid}a and {uid}b. Never emit the parent ID. "
-               "New entries must have status todo, size S or M, no runtime counters, "
-               "no protected paths, and an acyclic dependency graph.\n")
-    (BRIEF_DIR / f"{uid}-planner.md").write_text(prompt)
-    event(state, f"{uid}: planner ({model}) {mode}")
-    role = "planner"
-    rc, out, usage = hermes_run("planner", model, prompt, "file", REPO,
-                                f"{uid}-planner", 900, unit=uid, role=role, state=state, budget_unit=target)
-    tokens = usage_tokens(usage)
-    add_tokens(state, target, tokens)
-    if usage.get("admission_denied") or control.provider_error(rc, out):
-        target["split_requested"] = mode == "split"
-        event(state, f"{uid}: planner deferred on provider/admission error")
-        return True
-    target["planner_retries"] = int(target.get("planner_retries", 0)) + 1
-    if rc == 0 and apply_planner_output(roadmap, state, target, out, old_id=uid, mode=mode):
-        if mode == "promote":
-            target["status"] = "promoted"
-        else:
-            target["status"] = "parked-final"
-        event(state, f"{uid}: planner produced replacement entries")
-        if mode == "split":
-            telemetry_event("split", uid,
-                            f"planner split the unit (retry {target['planner_retries']})")
-    else:
-        target["reason"] = (target.get("reason", "") + " | planner output rejected")[:400]
-        if target["planner_retries"] >= PLANNER_RETRIES:
-            if mode == "promote":
-                target["status"] = "design-blocked"
-            else:
-                # The split could not be produced: fall back to the retry ladder
-                # rather than silently dropping the unit. Clear split_requested,
-                # or select_ready would skip it forever while maybe_plan has no
-                # retries left to act on it - a deadlock.
-                target["status"] = "todo"
-                target["split_requested"] = False
-        elif mode == "split":
-            target["split_requested"] = True
-        event(state, f"{uid}: planner output rejected "
-                     f"({target['planner_retries']}/{PLANNER_RETRIES})")
-    return True
-
-
-# --------------------------------------------------------------------------
-# Cycle
-# --------------------------------------------------------------------------
+    for unit in roadmap.values():
+        if unit.get("split_requested") or (unit.get("status") == "design" and planning_eligible(unit)):
+            runtime_policy.planning_needed(unit, unit.get("reason") or "bounded subscription brief needed")
+            if unit.get("split_requested"):
+                unit["status"] = "parked"
+                unit["blocked_reason"] = "awaiting subscription-authored replacement brief"
+    return False
 
 def dispatch(roadmap: dict, state: dict) -> None:
     if not paid_allowed(state, None, "builder"):
@@ -3001,9 +2983,13 @@ def dispatch(roadmap: dict, state: dict) -> None:
     ready = select_ready(roadmap, state)
     if not ready:
         return
+    width = sandbox.admission_width(state, MAX_PARALLEL)
+    if not width:
+        event(state, "host resource pressure: dispatch deferred")
+        return
     batch, used = [], []
     for u in ready:
-        if len(batch) >= (1 if int(state.get("provider_errors", 0)) >= 3 else MAX_PARALLEL):
+        if len(batch) >= (1 if int(state.get("provider_errors", 0)) >= 3 else width):
             break
         if any(paths_overlap(u.get("paths"), p) for p in used):
             continue
@@ -3266,63 +3252,12 @@ def queue_nightly_fixes(roadmap: dict, state: dict) -> None:
 
 
 def maybe_plan_nightly_fix(roadmap: dict, state: dict) -> bool:
-    """Ask the planner to open a fix unit for the next failing route.
-
-    Returns True when it ran (whether or not the planner produced a unit).
-    """
-    if not paid_allowed(state, None, "planner"):
-        return False
-    queue = state.get("nightly_fix_queue") or []
-    if not queue:
-        return False
-    req = queue[0]
-    model = MODEL["deepseek"]
-    prompt = f"""PLAN-FIX {req['route']}
-
-The nightly integration check failed for this route:
-{req['reason']}
-
-Open one bounded fix unit that makes this route work again. Rules:
-- size S or M, never L;
-- list only the paths a fix to this route plausibly needs (max 8),
-  including docs/units/<id>.md;
-- use a fresh id of the form NF<n> (e.g. NF1) that collides with no existing
-  unit id;
-- output only the YAML block, starting with a top-level `units:` line.
-"""
-    (BRIEF_DIR / f"NFIX-{abs(hash(req['route'])) % 10000}.md").write_text(prompt)
-    event(state, f"nightly: planner ({model}) fix for {req['route']}")
-    rc, out, usage = hermes_run("planner", model, prompt, "file", REPO,
-                                f"nightly-fix-{abs(hash(req['route'])) % 10000}", 900,
-                                unit="", role="planner", state=state)
-    tokens = usage_tokens(usage)
-    add_tokens(state, {}, tokens)
-    if usage.get("admission_denied") or control.provider_error(rc, out):
-        event(state, "nightly planner deferred on provider/admission error")
-        return True
-    req["planner_retries"] = int(req.get("planner_retries", 0)) + 1
-    before = set(roadmap)
-    ok = False
-    if rc == 0:
-        ok = apply_planner_output(roadmap, state, req, out, old_id="", mode="fix")
-        if ok:
-            for uid in set(roadmap) - before:
-                roadmap[uid]["fixes_route"] = req["route"]
-    if ok:
-        state["nightly_fix_queue"] = queue[1:]
-        event(state, f"nightly: opened a fix unit for {req['route']}")
-    elif req["planner_retries"] >= PLANNER_RETRIES:
-        state["nightly_fix_queue"] = queue[1:]
-        event(state, f"nightly: could not open a fix unit for {req['route']} "
-                     f"after {req['planner_retries']} planner attempts")
-    else:
-        event(state, f"nightly: planner output rejected for {req['route']} "
-                     f"({req['planner_retries']}/{PLANNER_RETRIES})")
-    return True
-
-
-AUDIT_STATE = STATE_DIR / "audit.json"
-
+    for request in state.get("nightly_fix_queue") or []:
+        route = str(request.get("route", "unknown"))
+        uid = "NFIX" + __import__("hashlib").sha256(route.encode()).hexdigest()[:12]
+        runtime_policy.planning_needed({"id": uid}, "nightly route " + route + ": " + str(request.get("reason", "")))
+        request["status"] = "awaiting-subscription-brief"
+    return False
 
 def audit_bundle(roadmap: dict, limit: int = 10, char_cap: int = 60000) -> str:
     """A read-only text bundle of the last ``limit`` merged units.
@@ -3388,57 +3323,8 @@ def _paths_listing(paths, char_cap: int = 4000) -> str:
 
 
 def run_audit(roadmap: dict, state: dict) -> dict:
-    """Item 4: read-only weekly audit by gpt-6.1-sol; findings become units.
-
-    Never edits code: it only reads diffs and docs, and writes roadmap entries.
-    Capped at AUDIT_TOKEN_CAP tokens; a capped or failed run is recorded and
-    retried next week rather than retried immediately.
-    """
-    if not paid_allowed(state, None, "audit"):
-        return {"rc": 75, "tokens": 0, "findings": [], "admission_denied": True}
-    model = MODEL["sol"]
-    bundle = audit_bundle(roadmap)
-    prompt = (f"WEEKLY QUALITY AUDIT\n\nThe last merged units, read-only:\n\n{bundle}\n\n"
-              "Report findings as roadmap entries following your skill. One entry per "
-              "finding, most severe first. Output ONLY the YAML block: the first line "
-              "must be `units:` and nothing may precede or follow it. If there is "
-              "nothing worth changing, output exactly `units: []`.")
-    (BRIEF_DIR / "weekly-audit.md").write_text(prompt)
-    event(state, f"audit: weekly read-only audit ({model})")
-    rc, out, usage = hermes_run("auditor", model, prompt, "file", REPO, "weekly-audit", 1200,
-                                unit="", role="audit", state=state)
-    tokens = usage_tokens(usage)
-    # Keep the raw output: a rejected audit must be diagnosable, not just lost.
-    with_suppress(lambda: (LOG_DIR / "weekly-audit.out").write_text(
-        f"rc={rc} tokens={tokens}\n\n{out}"))
-    add_tokens(state, {}, tokens)
-    findings = []
-    capped = tokens >= AUDIT_TOKEN_CAP
-    if rc == 0 and not capped:
-        before = set(roadmap)
-        # mode="audit" allows `units: []` (nothing to fix) as a valid result.
-        if apply_planner_output(roadmap, state, {"id": "AUDIT"}, out, mode="audit"):
-            for uid in set(roadmap) - before:
-                roadmap[uid].setdefault("kind", "audit-fix")
-                findings.append(uid)
-        else:
-            event(state, "audit: output rejected (no YAML block); see "
-                         "logs/weekly-audit.out")
-    elif capped:
-        event(state, f"audit: hit the {AUDIT_TOKEN_CAP} token cap; findings not parsed")
-    else:
-        event(state, f"audit: agent run failed rc={rc}")
-    aud = read_json(AUDIT_STATE, {})
-    aud["last_run"] = now()
-    aud["tokens"] = tokens
-    aud["findings_open"] = _audit_open(roadmap)
-    aud["added"] = findings
-    aud["capped"] = capped
-    write_json(AUDIT_STATE, aud)
-    event(state, f"audit: done, {len(findings)} finding(s) turned into units "
-                 f"({tokens} tokens)")
-    return aud
-
+    runtime_policy.planning_needed({"id": "WEEKLYAUDIT"}, "Prepare the periodic audit in subscription Codex; no paid planner/auditor")
+    return {"rc": 75, "tokens": 0, "findings": [], "admission_denied": True}
 
 def _audit_open(roadmap: dict) -> int:
     """Audit findings still open: audit-fix units not yet merged."""
@@ -3462,20 +3348,9 @@ def audit_due(state: dict) -> bool:
 
 
 def maybe_audit(roadmap: dict, state: dict) -> bool:
-    """Run the audit if a week has passed and the board is not busy."""
-    if not audit_due(state):
-        return False
-    active = [u for u in roadmap.values()
-              if u.get("status") in ("building", "pr_open", "queued")]
-    if active:
-        return False
-    run_audit(roadmap, state)
-    return True
-
-
-# --------------------------------------------------------------------------
-# Item 5: a periodic consistency/refactor unit
-# --------------------------------------------------------------------------
+    if audit_due(state):
+        run_audit(roadmap, state)
+    return False
 
 def maybe_refactor_unit(roadmap: dict, state: dict) -> bool:
     """After every REFACTOR_EVERY merged units, add one refactor unit.
@@ -4223,10 +4098,12 @@ units:
     assert paths_overlap(["internal/home/**"], ["internal/home/home.go"])
     assert not paths_overlap(["internal/home/**"], ["internal/account/**"])
     assert reviewer_model_for(MODEL["luna"]) == MODEL["deepseek"]
-    assert reviewer_model_for(MODEL["deepseek"]) == MODEL["luna"]
+    assert reviewer_model_for(MODEL["deepseek"]) == MODEL["sol"]
+    assert MODEL["haiku"] not in automatic_review_models()
+    assert second_reviewer_model(MODEL["luna"], MODEL["deepseek"]) == ""
     assert model_for_attempt(1) == MODEL["luna"]
-    assert model_for_attempt(3) == MODEL["deepseek"]
-    assert model_for_attempt(4) == MODEL["sol"]
+    assert model_for_attempt(3) == MODEL["sol"]
+    assert model_for_attempt(4) == MODEL["deepseek"]
     # diff guard: protected paths and out-of-scope paths are rejected, the
     # unit's own listed paths (including its delivery note) are not.
     allowed = ["internal/registration", "docs/units/F25.md"]

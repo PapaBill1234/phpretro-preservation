@@ -1,0 +1,12 @@
+{
+  "schema": "phpretro.package-advisory-snapshot.v1",
+  "checked_at": "2026-10-09T00:41:09.872361+00:00",
+  "source": "https://api.osv.dev/v1/querybatch",
+  "lock_sha256": "544883135bd4ddfa05f8039c84835ebb80685b2861a348163c76f1b1498420fd",
+  "package_count": 138,
+  "findings": [],
+  "limitation": "Known PyPI advisories only; not a code audit or proof of absence of vulnerabilities.",
+  "documentation": "https://google.github.io/osv.dev/post-v1-querybatch/",
+  "pagination_complete": true,
+  "note": "Lock line endings normalized after the query; all 138 package/version pairs are unchanged."
+}

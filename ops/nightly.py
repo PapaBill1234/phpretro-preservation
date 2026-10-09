@@ -59,23 +59,12 @@ HERMES = shutil.which("hermes") or str(HOME / ".local" / "bin" / "hermes")
 GO_TOOLBIN = os.environ.get("PHPRETRO_TOOLBIN", str(HOME / ".local" / "go-bin"))
 
 def read_env_var(name: str) -> str:
-    """Read a variable from ``~/.hermes/.env`` (the documented ntfy setup)."""
-    val = os.environ.get(name, "").strip()
-    if val:
-        return val
-    env_file = HOME / ".hermes" / ".env"
-    try:
-        for ln in env_file.read_text().splitlines():
-            ln = ln.strip()
-            if ln.startswith(f"{name}=") and not ln.startswith("#"):
-                return ln.split("=", 1)[1].strip().strip('"').strip("'")
-    except Exception:
-        pass
-    return ""
+    """Dedicated service environment only; never load interactive credentials."""
+    return os.environ.get(name, "").strip()
 
 
 # Alert delivery. ntfy needs no account and no token on the public server; the
-# topic name is the only secret, set as NTFY_TOPIC in ~/.hermes/.env.
+# topic name is the only secret, set in the dedicated alert service environment.
 def alert_topic() -> str:
     return (read_env_var("PHPRETRO_ALERT_TOPIC")
             or os.environ.get("PHPRETRO_ALERT_TOPIC", "").strip()
@@ -250,6 +239,24 @@ def probe_routes(port: int) -> list:
 
 
 def integration_check() -> dict:
+    if os.environ.get("PHPRETRO_INSIDE_SANDBOX") == "1":
+        return _integration_check_host()
+    import sandbox
+    import integrity as control
+    box = sandbox.Sandbox(control.identity(), REPO, writable=True)
+    try:
+        box.prepare()
+        rc, output = box.execute("PHPRETRO_INSIDE_SANDBOX=1 PHPRETRO_REPO=/repo python3 -c 'import sys,json; sys.path.insert(0,\"ops\"); import nightly; print(json.dumps(nightly.integration_check()))'", 1800)
+        if rc:
+            raise RuntimeError("isolated nightly command failed")
+        return json.loads(output.splitlines()[-1])
+    except Exception as exc:
+        return {"name": "integration", "ok": False, "started": now(), "finished": now(), "error": type(exc).__name__, "routes": []}
+    finally:
+        box.close()
+
+
+def _integration_check_host() -> dict:
     started = now()
     tmp = Path(tempfile.mkdtemp(prefix="phpretro-nightly-"))
     proc = None

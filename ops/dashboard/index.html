@@ -1,0 +1,1624 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>PHP-Retro Pipeline</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b1220;
+        --panel: #121d2e;
+        --panel2: #18253a;
+        --text: #edf3fc;
+        --muted: #94a6be;
+        --line: #26364c;
+        --accent: #54d6bf;
+        --good: #54d6a0;
+        --warn: #f4c376;
+        --bad: #ff8993;
+      }
+      body.light {
+        color-scheme: light;
+        --bg: #f3f6fa;
+        --panel: #fff;
+        --panel2: #f6f8fc;
+        --text: #1e2c43;
+        --muted: #65758c;
+        --line: #e1e7ef;
+        --accent: #087f72;
+        --good: #17885b;
+        --warn: #a76a12;
+        --bad: #cf4356;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.5 system-ui,
+          -apple-system,
+          Segoe UI,
+          sans-serif;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+      button,
+      a,
+      input,
+      select {
+        outline-offset: 4px;
+      }
+      button:focus-visible,
+      a:focus-visible {
+        outline: 2px solid var(--accent);
+      }
+      button {
+        border: 1px solid var(--line);
+        background: var(--panel2);
+        color: var(--text);
+        border-radius: 10px;
+        padding: 9px 14px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      button:hover {
+        border-color: var(--accent);
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--bg);
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+      a {
+        color: var(--accent);
+      }
+      input,
+      select {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 11px 13px;
+        background: var(--bg);
+        color: var(--text);
+        max-width: 100%;
+      }
+      input:focus {
+        outline: 2px solid var(--accent);
+      }
+      .shell {
+        max-width: 1510px;
+        margin: auto;
+        padding: 0 34px;
+      }
+      .top {
+        position: sticky;
+        top: 0;
+        background: var(--bg);
+        border-bottom: 1px solid var(--line);
+        z-index: 10;
+      }
+      .topline {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        height: 88px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 13px;
+        text-decoration: none;
+        color: var(--text);
+      }
+      .brandmark {
+        width: 44px;
+        height: 44px;
+        background: var(--accent);
+        color: var(--bg);
+        display: grid;
+        place-items: center;
+        border-radius: 14px;
+        font-size: 24px;
+        font-weight: 800;
+      }
+      .brand strong {
+        font-size: 19px;
+        letter-spacing: -0.5px;
+        display: block;
+      }
+      .brand small {
+        display: block;
+        font-size: 11px;
+        letter-spacing: 1.6px;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .actions {
+        display: flex;
+        gap: 9px;
+        align-items: center;
+      }
+      .pill {
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        padding: 8px 12px;
+        border-radius: 100px;
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      nav {
+        display: flex;
+        gap: 6px;
+        overflow: auto;
+        scrollbar-width: none;
+      }
+      nav a {
+        color: var(--muted);
+        text-decoration: none;
+        white-space: nowrap;
+        padding: 15px 19px;
+        border-bottom: 3px solid transparent;
+        font-weight: 600;
+        font-size: 13px;
+      }
+      nav a:hover {
+        color: var(--text);
+      }
+      nav a.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+      }
+      main {
+        padding-top: 32px !important;
+        padding-bottom: 32px !important;
+      }
+      .pagehead {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 20px;
+        margin-bottom: 26px;
+      }
+      .eyebrow {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 1.8px;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 6px;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+      h1 {
+        font-size: 30px;
+        letter-spacing: -1px;
+        line-height: 1.3;
+      }
+      h2 {
+        font-size: 16px;
+        font-weight: 650;
+        letter-spacing: -0.2px;
+        margin-bottom: 17px;
+      }
+      h3 {
+        font-size: 13px;
+        margin-bottom: 9px;
+      }
+      .pagehead p {
+        color: var(--muted);
+        margin-top: 8px;
+      }
+      .page-date {
+        font-size: 12px;
+        color: var(--muted);
+        text-align: right;
+      }
+      .banner {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-left: 4px solid var(--good);
+        padding: 18px 22px;
+        border-radius: 14px;
+        margin-bottom: 20px;
+      }
+      .banner.amber {
+        border-left-color: var(--warn);
+      }
+      .banner.red {
+        border-left-color: var(--bad);
+      }
+      .banner strong {
+        font-size: 15px;
+        display: block;
+        margin-bottom: 3px;
+      }
+      .green {
+        color: var(--good);
+      }
+      .amber {
+        color: var(--warn);
+      }
+      .red,
+      .danger {
+        color: var(--bad);
+      }
+      .grid {
+        display: grid;
+        gap: 20px;
+        margin-bottom: 22px;
+      }
+      .kpis {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+      .twocol {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 23px;
+        box-shadow: 0 6px 24px #0000000a;
+        min-width: 0;
+      }
+      .kpi .label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 550;
+      }
+      .kpi .value {
+        font-size: 29px;
+        font-weight: 650;
+        letter-spacing: -0.7px;
+        line-height: 1.25;
+        margin-top: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .kpi small {
+        display: block;
+        color: var(--muted);
+        margin-top: 10px;
+        font-size: 11px;
+      }
+      .summary {
+        margin-bottom: 22px;
+        background: linear-gradient(110deg, var(--panel), var(--panel2));
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 23px;
+      }
+      .summary-content {
+        flex: 1;
+      }
+      .summary p {
+        font-size: 15px;
+      }
+      .summary-label {
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        margin-bottom: 7px;
+      }
+      .summary button {
+        white-space: nowrap;
+      }
+      .list {
+        display: grid;
+        gap: 8px;
+      }
+      .row {
+        border-bottom: 1px solid var(--line);
+        padding: 13px 0;
+        overflow-wrap: anywhere;
+      }
+      .row:last-child {
+        border: 0;
+      }
+      .row:first-child {
+        padding-top: 0;
+      }
+      .row b {
+        font-weight: 600;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .mono {
+        font-variant-numeric: tabular-nums;
+      }
+      .scroll {
+        max-height: 400px;
+        overflow: auto;
+        padding-right: 7px;
+        scrollbar-color: var(--line) transparent;
+        scrollbar-width: thin;
+      }
+      .columns {
+        grid-template-columns: repeat(6, minmax(210px, 1fr));
+        overflow: auto;
+        gap: 15px;
+        padding-bottom: 10px;
+      }
+      .unitcol {
+        min-width: 210px;
+        background: var(--bg);
+        padding: 13px;
+        border-radius: 13px;
+      }
+      .unitcol h3 {
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-size: 11px;
+        margin: 0 0 14px;
+      }
+      .unit {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        padding: 15px;
+        border-radius: 11px;
+        margin: 10px 0;
+        cursor: pointer;
+        transition:
+          transform 0.15s,
+          border-color 0.15s;
+      }
+      .unit:hover {
+        border-color: var(--accent);
+        transform: translateY(-2px);
+      }
+      .unit b {
+        display: block;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .unit small {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        margin-top: 7px;
+      }
+      .chart {
+        width: 100%;
+        height: 210px;
+        border-radius: 11px;
+        background: var(--panel2);
+        margin: 8px 0 12px;
+      }
+      .chart polyline {
+        fill: none;
+        stroke: var(--accent);
+        stroke-width: 2.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .chart line {
+        stroke: var(--line);
+      }
+      .chart text {
+        fill: var(--muted);
+        font-size: 10px;
+      }
+      .empty {
+        color: var(--muted);
+        padding: 30px 10px;
+        text-align: center;
+        font-size: 13px;
+      }
+      .drawer {
+        position: fixed;
+        inset: 0 0 0 auto;
+        width: min(510px, 100%);
+        background: var(--panel);
+        border-left: 1px solid var(--line);
+        padding: 28px;
+        transform: translateX(100%);
+        transition: 0.2s;
+        z-index: 30;
+        overflow: auto;
+        box-shadow: -20px 0 80px #0003;
+      }
+      .drawer.open {
+        transform: none;
+      }
+      .drawer header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 25px;
+      }
+      .drawer p {
+        margin: 13px 0;
+      }
+      .drawer pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: 12px;
+      }
+      .drawer ul {
+        padding-left: 20px;
+      }
+      .footer {
+        margin-top: 25px;
+        border-top: 1px solid var(--line);
+        padding: 18px 0;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .footer summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .footer p {
+        padding-top: 14px;
+        max-height: 180px;
+        overflow: auto;
+      }
+      .section-note {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 18px;
+      }
+      .settings label {
+        display: block;
+        font-weight: 600;
+        margin: 18px 0 8px;
+      }
+      .settings input {
+        width: 100%;
+      }
+      .settings p {
+        color: var(--muted);
+        margin: 10px 0;
+        line-height: 1.7;
+      }
+      .settings button {
+        margin-top: 20px;
+      }
+      .settings .feedback {
+        color: var(--accent);
+      }
+      .assistant-frame {
+        width: 100%;
+        height: calc(100vh - 260px);
+        min-height: 480px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--panel);
+      }
+      details summary {
+        cursor: pointer;
+        color: var(--muted);
+      }
+      details {
+        font-size: 12px;
+        margin-top: 5px;
+      }
+      hr {
+        border: 0;
+        border-top: 1px solid var(--line);
+        margin: 22px 0;
+      }
+      pre {
+        white-space: pre-wrap;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 11px;
+        color: var(--accent);
+        background: var(--panel2);
+        border: 1px solid var(--line);
+        padding: 3px 8px;
+        border-radius: 6px;
+      }
+      .parity-tools {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+      .parity-tools input {
+        flex: 1;
+      }
+      @media (max-width: 1100px) {
+        .shell {
+          padding: 0 22px;
+        }
+        .kpis {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        .twocol {
+          grid-template-columns: 1fr;
+        }
+        .columns {
+          grid-template-columns: repeat(6, 230px);
+        }
+        nav a {
+          padding: 13px 15px;
+        }
+        .pill {
+          display: none;
+        }
+      }
+      @media (max-width: 650px) {
+        .shell {
+          padding: 0 16px;
+        }
+        .topline {
+          height: 76px;
+        }
+        .brandmark {
+          width: 37px;
+          height: 37px;
+          border-radius: 11px;
+        }
+        .brand strong {
+          font-size: 17px;
+        }
+        .brand small {
+          font-size: 9px;
+        }
+        .actions button {
+          padding: 8px 10px;
+          font-size: 12px;
+        }
+        .topline {
+          gap: 10px;
+        }
+        .actions {
+          gap: 6px;
+        }
+        #logout {
+          font-size: 0;
+          padding: 8px;
+        }
+        #logout:after {
+          content: "Exit";
+          font-size: 11px;
+        }
+        main {
+          padding-top: 23px;
+        }
+        .page-date {
+          display: none;
+        }
+        h1 {
+          font-size: 25px;
+        }
+        .kpis {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px;
+        }
+        .card {
+          padding: 19px;
+          border-radius: 13px;
+        }
+        .kpi .value {
+          font-size: 24px;
+        }
+        .summary {
+          display: block;
+          padding: 20px;
+        }
+        .summary button {
+          margin-top: 16px;
+        }
+        .grid {
+          gap: 15px;
+        }
+        .parity-tools {
+          flex-direction: column;
+        }
+        .assistant-frame {
+          height: 70vh;
+        }
+      }
+      #theme:before {
+        content: "☀";
+        margin-right: 7px;
+      }
+      body.light #theme:before {
+        content: "☾";
+      }
+      @media (max-width: 650px) {
+        #theme:before {
+          display: none;
+        }
+      }
+      .unitcol h3 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .board-count { color: var(--accent); font-variant-numeric: tabular-nums; }
+      .pr-card a { display: inline-block; margin-top: 8px; font-size: 12px; color: var(--accent); }
+      .published-artifact { white-space: pre-wrap; overflow-wrap: anywhere; }
+      .empty.unavailable { color: var(--warning); }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <div class="shell">
+        <div class="topline">
+          <a class="brand" href="#overview"
+            ><span class="brandmark">R</span
+            ><span
+              ><strong>PHPRetro</strong><small>Control room</small></span
+            ></a
+          >
+          <div class="actions">
+            <span class="pill"
+              ><span class="dot"></span
+              ><span id="top-status">Connecting</span></span
+            ><button id="stop">STOP</button><button id="theme">Day mode</button
+            ><button id="logout">Sign out</button>
+          </div>
+        </div>
+        <nav aria-label="Main navigation">
+          <a href="#overview" data-page="overview">Overview</a
+          ><a href="#units" data-page="units">Units</a
+          ><a href="#parity" data-page="parity">Parity</a
+          ><a href="#analytics" data-page="analytics">Analytics</a
+          ><a href="#operations" data-page="operations">Operations</a
+          ><a href="#assistant" data-page="assistant">Assistant</a
+          ><a href="#settings" data-page="settings">Settings</a
+          ><a href="/hermes/" target="_blank" rel="noopener">Hermes ?</a>
+        </nav>
+      </div>
+    </header>
+    <main class="shell">
+      <div class="pagehead">
+        <div>
+          <div class="eyebrow">Autonomous coding pipeline</div>
+          <h1 id="page-title">Pipeline overview</h1>
+          <p id="page-description">
+            A clear picture of what is moving, what needs you, and what comes
+            next.
+          </p>
+        </div>
+        <div class="page-date" id="page-date"></div>
+      </div>
+      <section data-view="overview">
+        <div id="summary" class="summary"></div>
+        <div id="health"></div>
+        <div id="kpis" class="grid kpis"></div>
+        <div class="grid twocol">
+          <section class="card">
+            <h2>Live now</h2>
+            <div id="live" class="list"></div>
+          </section>
+          <section class="card">
+            <h2>Activity snapshot</h2>
+            <div id="overview-counts"></div>
+          </section>
+        </div>
+        <section class="card">
+          <h2>Live output</h2>
+          <div id="tails" class="scroll"></div>
+          <p class="section-note">
+            Raw output is withheld when secret redaction cannot be guaranteed.
+          </p>
+        </section>
+      </section>
+      <section data-view="units" hidden>
+        <section class="card">
+          <h2>Unit workflow</h2>
+          <p class="section-note">
+            Select a unit to inspect its acceptance criteria, dependencies,
+            evidence and PR.
+          </p>
+          <div id="board" class="grid columns"></div>
+        </section>
+      </section>
+      <section data-view="parity" hidden>
+        <section class="card">
+          <h2>Original site coverage</h2>
+          <p class="section-note">
+            Mappings require exact evidence citations. A merged unit does not
+            prove capture parity.
+          </p>
+          <div class="parity-tools">
+            <input
+              id="parity-search"
+              placeholder="Search routes or unit IDs"
+              aria-label="Search parity"
+            /><select id="parity-filter">
+              <option value="all">All routes</option>
+              <option>implemented</option>
+              <option>verified</option>
+              <option>in progress</option>
+              <option>scaffold</option>
+              <option>not assessed</option>
+              <option>unmapped</option>
+            </select>
+          </div>
+          <div id="parity"></div>
+        </section>
+      </section>
+      <section data-view="analytics" hidden>
+        <div class="grid twocol">
+          <section class="card">
+            <h2>Cumulative merged units</h2>
+            <div id="cum"></div>
+          </section>
+          <section class="card">
+            <h2>Merges per day</h2>
+            <div id="daily"></div>
+          </section>
+          <section class="card">
+            <h2>Tokens and cost by role/model</h2>
+            <div id="usage"></div>
+          </section>
+          <section class="card">
+            <h2>Tokens per merged unit</h2>
+            <div id="trend"></div>
+          </section>
+          <section class="card">
+            <h2>Sampled history</h2>
+            <div id="sampled"></div>
+          </section>
+          <section class="card">
+            <h2>Model scoreboard</h2>
+            <div id="models"></div>
+          </section>
+          <section class="card"><div id="waste"></div></section>
+          <section class="card"><div id="extras"></div></section>
+          <section class="card"><div id="runway"></div></section>
+        </div>
+      </section>
+      <section data-view="operations" hidden>
+        <div class="grid twocol">
+          <section class="card">
+            <h2>Needs attention</h2>
+            <div id="attention" class="scroll"></div>
+          </section>
+          <section class="card">
+            <h2>Pipeline health</h2>
+            <div id="pipeline" class="scroll"></div>
+          </section>
+          <section class="card">
+            <h2>Nightly checks · last 14 runs</h2>
+            <div id="nightly-history" class="scroll"></div>
+          </section>
+          <section class="card">
+            <h2>Quality</h2>
+            <div id="quality"></div>
+          </section>
+          <section class="card">
+            <h2>Optimizers</h2>
+            <div id="optimizers"></div>
+          </section>
+        </div>
+        <section class="card">
+          <h2>Event feed</h2>
+          <div id="events" class="scroll"></div>
+        </section>
+      </section>
+      <section data-view="assistant" hidden>
+        <div id="assistant-setup" class="banner amber">
+          <strong>Complete A6API setup before your first message</strong
+          ><span class="muted"
+            >Use the masked setup command in the server README, then return
+            here. <a href="#settings">Connection status</a></span
+          >
+        </div>
+        <p class="section-note">
+          Codex on this Ubuntu server · Sol / medium · A6API · changes require
+          your approval. Independent of Hermes.
+          <a href="/chat/" target="_blank" rel="noopener">Open full window</a>
+        </p>
+        <iframe
+          id="assistant-frame"
+          class="assistant-frame"
+          title="Codex server assistant"
+        ></iframe>
+      </section>
+      <section data-view="settings" hidden>
+        <div class="grid twocol settings">
+          <section class="card">
+            <h2>Assistant connection</h2>
+            <p id="provider-status">Loading connection status.</p>
+            <p>Server-side A6API provider with Sol and medium reasoning.</p>
+            <p>
+              Run the masked connection setup command from a Windows terminal:
+            </p>
+            <pre>ssh -t phpretro ~/phpretro-dashboard/configure-a6api.py</pre>
+          </section>
+          <section class="card">
+            <h2>Remote access</h2>
+            <p id="access-status"></p>
+            <p>
+              Both applications are protected by your login. The desktop remains
+              enabled.
+            </p>
+          </section>
+        </div>
+      </section>
+      <footer class="footer">
+        <details>
+          <summary>
+            Data freshness &amp; sources <span id="footer-time"></span>
+          </summary>
+          <p id="fresh"></p>
+        </details>
+      </footer>
+    </main>
+    <aside id="drawer" class="drawer">
+      <header>
+        <h2 id="dt"></h2>
+        <button id="close">Close</button>
+      </header>
+      <div id="db"></div>
+    </aside>
+    <script>
+      const TOKEN = "__TOKEN__";
+      let state = null;
+      const $ = (id) => document.getElementById(id),
+        esc = (x) =>
+          String(x ?? "n/a").replace(
+            /[&<>"']/g,
+            (c) =>
+              ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;",
+              })[c],
+          ),
+        missing = (source) =>
+          `<span title="Source needed: ${esc(source)}" tabindex="0">n/a</span>`,
+        fmt = (x) =>
+          x == null
+            ? missing(
+                "the structured record for this metric; see Data freshness & sources",
+              )
+            : typeof x === "number"
+              ? new Intl.NumberFormat().format(Math.round(x))
+              : esc(x),
+        money = (x) =>
+          x == null
+            ? missing("runs.jsonl with a known per-model rate in prices.yaml")
+            : "$" + Number(x).toFixed(2),
+        quoted = (x) => x == null ? missing("complete controller accounting") : Number(x).toFixed(4) + " gateway units",
+        age = (s) =>
+          s == null
+            ? missing("dispatch/completion timestamps in events.jsonl")
+            : s < 60
+              ? Math.round(s) + "s"
+              : s < 3600
+                ? Math.round(s / 60) + "m"
+                : Math.round(s / 3600) + "h";
+      function k(label, value, sub = "") {
+        const hint =
+          value === "n/a" || value === "n/a USD"
+            ? ` title="${esc(sub || "Required source data is not recorded.")}"`
+            : "";
+        return `<div class="card kpi"><div class="label">${label}</div><div class="value mono"${hint}>${value}</div><small>${sub}</small></div>`;
+      }
+      function item(u) {
+        return `<div class="unit" data-id="${esc(u.id)}" data-board-key="${esc(u.key || "")}"><b>${esc(u.id)} ${esc(u.title || "")}</b><small>depends: ${esc((u.depends_on || []).join(", ") || "none")}</small><small>attempts ${fmt(u.attempts)} · tokens ${fmt(u.accounted_tokens)} · ${esc(u.status)}</small>${u.board_source ? `<small>${esc(u.board_source)}</small>` : ""}</div>`;
+      }
+      function boardItem(entry) {
+        if (entry.kind !== "pr") return item(entry);
+        const linked = entry.unit_id ? ` data-id="${esc(entry.unit_id)}"` : "";
+        const url = /^https:\/\/github\.com\//.test(entry.pr_url || "") ? entry.pr_url : null;
+        return `<div class="unit pr-card"${linked} data-board-key="${esc(entry.key)}"><b>PR #${esc(entry.number)}${entry.unit_id ? ` · ${esc(entry.unit_id)}` : ""}</b><small>${esc(entry.title)}</small><small>${esc(entry.board_source)}</small>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Open pull request ↗</a>` : ""}</div>`;
+      }
+      function boardColumn(s, status) {
+        return s.unit_board?.columns?.[status] || {items: [], count: null, available: false, message: "Unit board data unavailable."};
+      }
+      function chart(values, label) {
+        if (!values.length) return '<div class="empty">n/a</div>';
+        let w = 640,
+          h = 180,
+          p = 22,
+          max = Math.max(...values.map((v) => v.v), 1),
+          pts = values
+            .map(
+              (v, i) =>
+                `${p + (i * (w - 2 * p)) / Math.max(values.length - 1, 1)},${h - p - (v.v / max) * (h - 2 * p)}`,
+            )
+            .join(" ");
+        return `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="${label}"><line x1="${p}" y1="${h - p}" x2="${w - p}" y2="${h - p}"/><polyline points="${pts}"/><text x="${p}" y="${h - 5}">${esc(values[0].x)}</text><text x="${w - p}" y="${h - 5}" text-anchor="end">${esc(values.at(-1).x)}</text><text x="${p + 4}" y="18">${fmt(max)}</text></svg>`;
+      }
+      function render(s) {
+        state = s;
+        let h = s.health || {};
+        $("top-status").textContent =
+          h.color === "green"
+            ? "Merging normally"
+            : h.color === "amber"
+              ? "Needs a glance"
+              : "Needs attention";
+        $("footer-time").textContent =
+          " - " + new Date(s.updated * 1000).toLocaleTimeString();
+        $("overview-counts").innerHTML = [
+          "building",
+          "pr_open",
+          "merged",
+          "parked",
+        ]
+          .map(
+            (st) =>
+              "<div class=row><b>" +
+              st.replace("_", " ") +
+              '</b><span style="float:right;color:var(--accent)">' +
+              (boardColumn(s, st).count == null ? "unavailable" : fmt(boardColumn(s, st).count)) +
+              "</span></div>",
+          )
+          .join("");
+        $("summary").innerHTML =
+          "<div class=summary-content><div class=summary-label>Your daily briefing</div><p>" +
+          esc(s.summary || "n/a") +
+          "</p></div><button onclick=copyReport()>Copy report</button><button onclick=copyHandoff()>Copy planning handoff</button>";
+        $("health").innerHTML =
+          `<div class="banner ${h.color}"><strong>${h.color === "green" ? "GREEN" : h.color === "amber" ? "AMBER" : "RED"} · ${esc(h.reason || "n/a")}</strong><span class="muted">Last data snapshot ${age(Date.now() / 1000 - s.updated)} ago</span></div>`;
+        let q = s.kpi || {};
+        $("kpis").innerHTML = [
+          k("Units merged", `${fmt(q.merged)} / ${fmt(q.total)}`),
+          k("Merged today", `${fmt(q.merged_today)} / ${fmt(q.merge_cap)}`),
+          k(
+            "Tokens today",
+            fmt(q.tokens_today),
+            "of " + fmt(q.token_cap) + " daily cap",
+          ),
+          k(
+            "Estimated cost today",
+            quoted(q.cost_today),
+            (q.cost_coverage?.priced_runs || 0) +
+              "/" +
+              (q.cost_coverage?.total_runs || 0) +
+              " runs priced; uncalibrated gateway units",
+          ),
+          k(
+            "Estimated cost total",
+            quoted(q.cost_total),
+            "price estimate; unpriced runs excluded: " +
+              (q.cost_coverage?.unknown_models || []).join(", "),
+          ),
+          k(
+            "Median tokens/unit",
+            fmt(q.median_tokens),
+            `sample ${fmt(q.median_sample)}`,
+          ),
+          k("Merges in 7 days", fmt(q.merges_7d), "observed merge records"),
+          k(
+            "Completion forecast",
+            esc(q.completion_estimate || "n/a"),
+            "awaiting accepted end-to-end throughput",
+          ),
+        ].join("");
+        $("live").innerHTML = s.live?.length
+          ? s.live
+              .map(
+                (x) =>
+                  `<div class="row"><b>${esc(x.id)} · ${esc(x.title)}</b><br><span class="muted">${esc(x.model || "n/a")} · age ${age(x.age)} · attempt ${fmt(x.attempts)} · ${fmt(x.tokens)} tokens · ${esc(x.hint)}</span></div>`,
+              )
+              .join("")
+          : '<div class="empty">No active OpenHands worker observed.</div>';
+        let statuses = [
+          "design",
+          "todo",
+          "building",
+          "pr_open",
+          "merged",
+          "parked",
+        ];
+        $("board").innerHTML = statuses.map((status) => {
+          const column = boardColumn(s, status);
+          const count = column.count == null ? "?" : fmt(column.count);
+          const hint = status === "pr_open" ? "Open pull requests reported by GitHub" : status === "building" ? "Live builders and recorded build state" : "Units in this stage";
+          return `<div class="unitcol" data-status="${status}"><h3>${status}<span class="board-count" title="${hint}">${count}</span></h3>${column.items.map(boardItem).join("")}${column.message ? `<div class="empty${column.available ? "" : " unavailable"}">${esc(column.message)}</div>` : ""}</div>`;
+        }).join("");
+        let days = Object.entries(s.charts?.daily || {});
+        $("cum").innerHTML = chart(
+          (s.history || []).length
+            ? (s.history || []).map((x) => ({
+                x: new Date(x.ts * 1000).toISOString().slice(5, 16),
+                v: x.kpi?.merged || 0,
+              }))
+            : (s.charts?.merges || []).map((m, i) => ({
+                x: String(m.ts).slice(5, 10),
+                v: i + 1,
+              })),
+          "Cumulative merged units",
+        );
+        $("daily").innerHTML = chart(
+          days.map(([x, v]) => ({ x: x.slice(5), v })),
+          "Merges per day",
+        );
+        let usage = s.charts?.usage || [];
+        let by = Object.entries(
+          usage.reduce(
+            (a, u) => ((a[u.day] = (a[u.day] || 0) + u.tokens), a),
+            {},
+          ),
+        );
+        $("usage").innerHTML =
+          chart(
+            by.map(([x, v]) => ({ x: x.slice(5), v })),
+            "Tokens per day",
+          ) +
+          '<p class="muted">Cost: ' +
+          quoted(q.cost_total) +
+          "</p>";
+        let groups = {};
+        usage.forEach((u) => {
+          let id = u.day + " / " + u.role + " / " + u.model;
+          let v =
+            groups[id] || (groups[id] = { tokens: 0, cost: 0, known: true });
+          v.tokens += u.tokens || 0;
+          if (u.cost == null) v.known = false;
+          else v.cost += u.cost;
+        });
+        const dailyCost = Object.entries(
+          usage.reduce((a, u) => {
+            if (u.cost != null) a[u.day] = (a[u.day] || 0) + u.cost;
+            return a;
+          }, {}),
+        );
+        $("usage").innerHTML += chart(
+          dailyCost.map(([x, v]) => ({ x: x.slice(5), v })),
+          "Gateway cost estimate per day (uncalibrated units)",
+        );
+        $("usage").innerHTML +=
+          "<div class=scroll>" +
+          Object.entries(groups)
+            .map(
+              ([id, v]) =>
+                "<div class=row>" +
+                esc(id) +
+                "<br>" +
+                fmt(v.tokens) +
+                " tokens; " +
+                quoted(v.known ? v.cost : null) +
+                "</div>",
+            )
+            .join("") +
+          "</div>";
+        let trend = (s.units || [])
+          .filter((u) => u.status === "merged" && u.accounted_tokens)
+          .map((u) => ({ x: u.id, v: u.accounted_tokens }));
+        $("trend").innerHTML =
+          chart(trend, "Tokens per merged unit") +
+          '<p class="muted">Baseline: ' +
+          esc(s.charts?.baseline?.label || "n/a") +
+          "</p>";
+        $("attention").innerHTML = s.attention?.length
+          ? s.attention
+              .map(
+                (x) =>
+                  `<div class="row"><b>${esc(x.title)}</b><br><span class="muted">${esc(x.detail)}</span></div>`,
+              )
+              .join("")
+          : '<div class="empty">None observed.</div>';
+        let p = s.pipeline || {};
+        $("pipeline").innerHTML = [
+          [
+            "orchestrator",
+            p.service?.ActiveState + " / " + p.service?.SubState,
+          ],
+          ["timer", p.timer?.ActiveState],
+          ["last timer run", p.timer?.LastTriggerUSec],
+          [
+            "merge lock",
+            p.merge_lock == null ? "n/a" : p.merge_lock ? "held" : "free",
+          ],
+          ["open PRs", p.prs == null ? "n/a" : p.prs.length],
+          [
+            "disk",
+            p.disk_used && p.disk_total
+              ? `${(p.disk_used / 1e9).toFixed(1)} / ${(p.disk_total / 1e9).toFixed(1)} GB`
+              : "n/a",
+          ],
+          [
+            "nightly",
+            p.nightly_status?.result == null
+              ? "n/a"
+              : p.nightly_status.result.toUpperCase() +
+                " · " +
+                age(p.nightly_status.age),
+          ],
+          [
+            "local gates",
+            p.gates?.length
+              ? p.gates
+                  .slice(0, 5)
+                  .map((x) => x.result)
+                  .join(", ")
+              : "n/a",
+          ],
+        ]
+          .map(
+            (x) =>
+              `<div class="row"><b>${esc(x[0])}</b><br><span class="muted">${esc(x[1])}</span></div>`,
+          )
+          .join("");
+        $("nightly-history").innerHTML =
+          (p.nightly_runs || [])
+            .map(
+              (x) =>
+                "<div class=row><b>" +
+                esc(x.name || "check") +
+                "</b> · " +
+                (x.pass ? "PASS" : "FAIL") +
+                "<br><span class=muted>" +
+                esc(x.finished || "n/a") +
+                " · " +
+                age(x.age) +
+                " ago · " +
+                esc(x.detail || "") +
+                "</span></div>",
+            )
+            .join("") ||
+          "<div class=empty>n/a · needs nightly-history.jsonl</div>";
+        $("quality").innerHTML = [
+          [
+            "coverage",
+            Object.entries(s.quality?.coverage || {}).map(([id, values]) => id + ": " + values.join("%, ") + "%").join(" · ") || "No coverage measurements recorded",
+            "Recorded per-check percentages from quality.json; not overall project coverage",
+          ],
+          [
+            "fidelity: guessed",
+            fmt(s.quality?.guessed_count),
+            "docs/units/Fxx.md fidelity field",
+          ],
+          [
+            "audit findings open",
+            fmt(s.quality?.audit_open),
+            "structured audit findings report",
+          ],
+          [
+            "failed quality gates",
+            (s.quality?.failed_units || []).join(", ") || "none",
+          ],
+        ]
+          .map(
+            (x) =>
+              `<div class="row"><b>${esc(x[0])}</b><br><span class="muted" title="${esc(x[2] || "source record for this gate")}">${esc(x[1])}</span></div>`,
+          )
+          .join("");
+        let o = s.optimizers || {};
+        $("optimizers").innerHTML = [
+          ["Jev decisions", fmt(o.jev_count), "jev.jsonl decision records"],
+          ["Jev spend", o.jev_spend == null ? "No spend record" : "$" + Number(o.jev_spend).toFixed(6), "jev.jsonl recorded costs"],
+          [
+            "changed a decision",
+            fmt(o.jev_changed),
+            "jev.jsonl recorded changed decisions",
+          ],
+          ["enabled parts", o.jev_parts || "n/a", "jev.json recorded enabled parts"],
+          [
+            "Token Terminator",
+            o.token_terminator || "n/a",
+            "tt.json recorded sample status; not live engine configuration",
+          ],
+          [
+            "savings guard",
+            o.savings_guard || "n/a",
+            "tt.json recorded savings guard",
+          ],
+          ["ladder escalations", fmt(o.ladder_escalations)],
+          ["timeouts", fmt(o.timeouts)],
+        ]
+          .map(
+            (x) =>
+              `<div class="row"><b>${esc(x[0])}</b><br><span class="muted" title="${esc(x[2] || "events.jsonl source")}">${esc(x[1])}</span></div>`,
+          )
+          .join("");
+        $("parity").innerHTML =
+          "<p>Implemented " +
+          fmt(s.parity?.implemented_percent) +
+          "%; verified " +
+          fmt(s.parity?.verified_percent) +
+          "%</p><p class=muted>" +
+          esc(s.parity?.note) +
+          "</p><div class=scroll>" +
+          (s.parity?.routes || [])
+            .map(
+              (x) =>
+                "<div class=row><b>" +
+                esc(x.route) +
+                "</b> · " +
+                esc(x.status) +
+                "<br>" +
+                esc(x.units.join(", ") || "unmapped") +
+                "<details><summary>Evidence</summary>" +
+                esc(JSON.stringify(x.citations)) +
+                "</details></div>",
+            )
+            .join("") +
+          "</div>" +
+          publishedParityHtml(s.parity);
+        $("models").innerHTML =
+          (s.models || [])
+            .map(
+              (x) =>
+                `<div class="row"><b>${esc(x.model)}</b><br><span class=muted>attempts ${fmt(x.attempts)}; merged ${fmt(x.merged_units)}; avg tokens ${fmt(x.average_tokens)}; first success ${x.first_attempt_success_rate == null ? "no first-attempt sample" : fmt(x.first_attempt_success_rate) + "%"}; avg time ${age(x.average_time)}; escalations in/out ${fmt(x.escalations_in)}/${fmt(x.escalations_out)}</span></div>`,
+            )
+            .join("") || "<div class=empty>n/a</div>";
+        $("sampled").innerHTML =
+          "<p class=muted>5-minute samples, 90 days retention; observations start when this dashboard was installed.</p>" +
+          chart(
+            (s.history || []).map((x) => ({
+              x: new Date(x.ts * 1000).toISOString().slice(5, 16),
+              v: x.kpi?.tokens_today || 0,
+            })),
+            "Sampled tokens today",
+          ) +
+          chart(
+            dailyCost.map(([x, v]) => ({ x: x.slice(5), v })),
+            "Controller cost estimates; incomplete runs remain unknown",
+          );
+        $("waste").innerHTML =
+          "<h3>Waste meter</h3><p>Merged association " +
+          fmt(s.waste?.merged_share) +
+          "%; failed/interrupted " +
+          fmt(s.waste?.failed_share) +
+          "%; unclassified " +
+          fmt(s.waste?.unclassified_tokens) +
+          " tokens</p><p class=muted>" +
+          esc(s.waste?.note) +
+          "</p>" +
+          chart(
+            (s.history || [])
+              .filter((x) => x.waste?.merged_share != null)
+              .map((x) => ({
+                x: new Date(x.ts * 1000).toISOString().slice(5, 16),
+                v: x.waste.merged_share,
+              })),
+            "Merged attempt token share",
+          );
+        $("extras").innerHTML =
+          "<h3>Rework and lead time</h3><p>Fix units per merged unit: " +
+          (s.rework?.rate == null ? "n/a" : Number(s.rework.rate).toFixed(3)) +
+          "; lead time median " +
+          age(s.lead_time?.median) +
+          ", p90 " +
+          age(s.lead_time?.p90) +
+          " (sample " +
+          fmt(s.lead_time?.sample) +
+          ")</p>" +
+          chart(
+            (s.history || [])
+              .filter((x) => x.rework?.rate != null)
+              .map((x) => ({
+                x: new Date(x.ts * 1000).toISOString().slice(5, 16),
+                v: x.rework.rate,
+              })),
+            "Fix units per merged unit",
+          );
+        if (!$("runway").contains(document.activeElement))
+          $("runway").innerHTML =
+            '<hr><b>Balance runway</b><br><input id=bal type=number min=0 step=0.01 placeholder="A6API USD"><button onclick=saveBalance()>Save</button><div class=muted>24h ' +
+            (s.runway?.days_24h == null
+              ? "Needs account balance"
+              : Number(s.runway.days_24h).toFixed(1)) +
+            " days; 7d " +
+            (s.runway?.days_7d == null
+              ? "Needs account balance"
+              : Number(s.runway.days_7d).toFixed(1)) +
+            " days (" +
+            esc(s.runway?.unit) +
+            ")</div><p class=muted>Calibration: " +
+            (s.runway?.calibration
+              ? Number(s.runway.calibration.factor).toFixed(3) + "×"
+              : "uncalibrated · save two balances") +
+            "</p><p class=muted>" +
+            esc(s.runway?.assumptions) +
+            "</p>";
+        $("tails").innerHTML =
+          (s.live || [])
+            .map(
+              (x) =>
+                `<div class=row><b>${esc(x.id)}</b><pre>${esc((x.tail || []).join("\n") || x.tail_reason || "n/a")}</pre></div>`,
+            )
+            .join("") || "<div class=empty>No active builders.</div>";
+        $("events").innerHTML =
+          (s.events || [])
+            .map(
+              (e) =>
+                `<div class="row"><span class="muted">${esc(e.ts)}</span><br>${esc(e.msg)}</div>`,
+            )
+            .join("") || '<div class="empty">n/a</div>';
+        let source = s.sources || {};
+        $("fresh").textContent =
+          "Data freshness: " +
+            Object.entries(source)
+              .map(
+                ([x, v]) =>
+                  `${x} ${v.sampled ? age(Date.now() / 1000 - v.sampled) : "n/a"}`,
+              )
+              .join(" · ") || "Data freshness: n/a";
+        document
+          .querySelectorAll(".unit[data-id]")
+          .forEach((x) => (x.onclick = () => drawer(x.dataset.id, x.dataset.boardKey)));
+        $("stop").textContent = s.stop ? "RESUME" : "STOP";
+        $("stop").className = s.stop ? "danger" : "";
+      }
+      function drawer(id, boardKey) {
+        let u = (state.units || []).find((x) => x.id === id);
+        if (!u) return;
+        const observation = Object.values(state.unit_board?.columns || {}).flatMap(column => column.items).find(entry => entry.key === boardKey);
+        u = {...u, pr_url: observation?.pr_url || u.pr_url};
+        $("dt").textContent = `${u.id} · ${u.title || "n/a"}`;
+        $("db").innerHTML =
+          `<p><b>Recorded status:</b> ${esc(u.status)}</p>${observation ? `<p><b>Observed stage:</b> ${esc(observation.status)} · ${esc(observation.board_source)}</p>` : ""}<p><b>Depends:</b> ${esc((u.depends_on || []).join(", ") || "none")}</p><p><b>Paths:</b> ${esc((u.paths || []).join(", ") || "No paths recorded")}</p><p><b>PR:</b> ${u.pr_url ? `<a href="${esc(u.pr_url)}" target="_blank" rel="noreferrer">${esc(u.pr_url)}</a>` : "n/a"}</p>${(u.pr_links || []).length > 1 ? `<p><b>Recorded merged PRs:</b> ${(u.pr_links || []).map(p => `<a href="${esc(p.url)}" target="_blank" rel="noreferrer">#${esc(p.number)}</a>`).join(", ")}</p>` : ""}<p><b>Recorded check coverage:</b> ${u.coverage?.length ? esc(u.coverage.join("%, ") + "%") + " · " + esc(u.coverage_updated || "date not recorded") : "No measurements recorded"}</p><p><b>Attempts/tokens:</b> ${fmt(u.attempts)} / ${fmt(u.accounted_tokens)}</p><p><b>Failure:</b> ${esc(u.reason || "No failure reason recorded")}</p><p><b>Acceptance</b></p><ul>${(u.acceptance || []).map((x) => `<li>${esc(x)}</li>`).join("") || "<li>n/a</li>"}</ul><p><b>Unit doc · ${esc(u.unit_doc_status || "unknown")}</b></p><pre>${esc(u.unit_doc || "No document on disk")}</pre>`;
+        $("drawer").classList.add("open");
+      }
+      async function copyHandoff() {
+        const handoff = {schema:"phpretro.subscription-handoff.v1", prepared:new Date().toISOString(), planning_queue:state.planning_queue || [], blocked_units:(state.units || []).filter(x=>String(x.status).startsWith("parked") || x.reason).map(x=>({id:x.id,status:x.status,reason:x.reason,paths:x.paths,attempts:x.attempts,tokens:x.accounted_tokens}))};
+        await navigator.clipboard.writeText(JSON.stringify(handoff,null,2));
+      }
+      function copyReport() {
+        let q = state.kpi || {};
+        let lines = [
+          "PHPRetro status",
+          "Health: " +
+            (state.health?.color || "n/a") +
+            " " +
+            (state.health?.reason || "n/a"),
+          "KPIs: " +
+            q.merged +
+            "/" +
+            q.total +
+            " merged; " +
+            q.merged_today +
+            " today; " +
+            q.tokens_today +
+            " tokens; cost " +
+            quoted(q.cost_today),
+          "Running:",
+        ];
+        (state.live || [])
+          .slice(0, 8)
+          .forEach((x) =>
+            lines.push(x.id + " " + x.model + " age " + age(x.age)),
+          );
+        lines.push("Parked:");
+        (state.units || [])
+          .filter((x) => String(x.status).startsWith("parked"))
+          .slice(0, 15)
+          .forEach((x) =>
+            lines.push(x.id + ": " + (x.reason || x.feedback || "n/a")),
+          );
+        lines.push("Last 10 events:");
+        (state.events || [])
+          .slice(0, 10)
+          .forEach((x) => lines.push(x.ts + " " + x.msg));
+        lines.push("Guards: " + JSON.stringify(state.pipeline?.guards || {}));
+        let t = lines
+          .slice(0, 55)
+          .map((x) =>
+            String(x)
+              .replace(/[\r\n]+/g, " ")
+              .slice(0, 500),
+          )
+          .join("\n");
+        navigator.clipboard.writeText(t).catch(() => {
+          let a = document.createElement("textarea");
+          a.value = t;
+          document.body.append(a);
+          a.select();
+          document.execCommand("copy");
+          a.remove();
+        });
+      }
+      async function saveBalance() {
+        const input = document.getElementById("bal");
+        if (input.value.trim() === "") {
+          input.setCustomValidity("Enter the current A6API balance.");
+          input.reportValidity();
+          return;
+        }
+        input.setCustomValidity("");
+        let v = Number(input.value);
+        if (!Number.isFinite(v) || v < 0) return;
+        const response = await fetch("/api/balance", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Dashboard-Token": TOKEN,
+          },
+          body: JSON.stringify({ balance: v }),
+        });
+        if (!response.ok) return;
+        load();
+      }
+      $("close").onclick = () => $("drawer").classList.remove("open");
+      $("theme").onclick = () => {
+        document.body.classList.toggle("light");
+        let light = document.body.classList.contains("light");
+        localStorage.setItem("theme", light ? "light" : "dark");
+        $("theme").textContent = light ? "Night mode" : "Day mode";
+      };
+      $("stop").onclick = async () => {
+        if (
+          !confirm(state.stop ? "Resume the pipeline?" : "Stop new dispatches?")
+        )
+          return;
+        let r = await fetch("/api/stop", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Dashboard-Token": TOKEN,
+          },
+          body: JSON.stringify({ stop: !state.stop }),
+        });
+        if (r.ok) load();
+      };
+      async function load() {
+        try {
+          let r = await fetch("/api/state", { cache: "no-store" });
+          if (r.status === 401) {
+            location.replace("/login");
+            return;
+          }
+          render(await r.json());
+          renderParity();
+        } catch (e) {
+          $("health").innerHTML =
+            '<div class="banner red"><strong>RED · dashboard data unavailable</strong></div>';
+        }
+      }
+      load();
+      setInterval(load, 5000);
+      const pages = {
+        overview: [
+          "Pipeline overview",
+          "A clear picture of what is moving, what needs you, and what comes next.",
+        ],
+        units: [
+          "Units & workflow",
+          "From the first design to the final merge.",
+        ],
+        parity: [
+          "Original site parity",
+          "Source-backed coverage, with every mapping traceable to evidence.",
+        ],
+        analytics: [
+          "Pipeline analytics",
+          "Throughput, token efficiency, model outcomes and your runway.",
+        ],
+        operations: [
+          "Operations & quality",
+          "Gates, guards and the events that need your attention.",
+        ],
+        assistant: [
+          "Your server assistant",
+          "Ask Codex to inspect, plan and work directly on this Ubuntu server.",
+        ],
+        settings: [
+          "Settings & access",
+          "Your connection, account and remote workspace.",
+        ],
+      };
+      function navigate() {
+        let page = location.hash.slice(1).split("?")[0];
+        if (!pages[page]) page = "overview";
+        document
+          .querySelectorAll("[data-view]")
+          .forEach((el) => (el.hidden = el.dataset.view !== page));
+        document.querySelectorAll("[data-page]").forEach((el) => {
+          el.classList.toggle("active", el.dataset.page === page);
+          if (el.dataset.page === page) el.setAttribute("aria-current", "page");
+          else el.removeAttribute("aria-current");
+        });
+        $("page-title").textContent = pages[page][0];
+        $("page-description").textContent = pages[page][1];
+        if (page === "assistant" && !$("assistant-frame").getAttribute("src"))
+          $("assistant-frame").src = "/chat/";
+        if (page === "settings" || page === "assistant") accessStatus();
+        window.scrollTo(0, 0);
+      }
+      function publishedParityHtml(parity) {
+        return (parity?.published_sources || []).map(source =>
+          `<h3>${esc(source.label)}</h3>${source.available ? source.documents.map(doc => `<p class=muted>${esc(doc.file)}</p><pre class=published-artifact>${esc(doc.text)}</pre>`).join("") : `<p class=muted>${esc(source.message)}</p>`}`
+        ).join("");
+      }
+      function renderParity() {
+        if (!state) return;
+        let p = state.parity || {},
+          text = $("parity-search").value.toLowerCase(),
+          filter = $("parity-filter").value,
+          rows = (p.routes || []).filter(
+            (x) =>
+              (filter === "all" || x.status === filter) &&
+              (x.route + " " + x.units.join(" ")).toLowerCase().includes(text),
+          );
+        $("parity").innerHTML =
+          '<div class=grid style="grid-template-columns:repeat(3,1fr)">' +
+          k("Implemented", fmt(p.implemented_percent) + "%") +
+          k("Capture verified", fmt(p.verified_percent) + "%") +
+          k(
+            "Mapped routes",
+            fmt((p.routes || []).filter((x) => x.units.length).length) +
+              " / " +
+              fmt(p.routes?.length),
+          ) +
+          "</div><p class=section-note>" +
+          esc(p.note) +
+          '</p><div class=scroll style="max-height:65vh">' +
+          rows
+            .map(
+              (x) =>
+                "<div class=row><b>" +
+                esc(x.route) +
+                "</b> <span class=tag>" +
+                esc(x.status) +
+                "</span><br><span class=muted>" +
+                esc(x.units.join(", ") || "unmapped") +
+                "</span><details><summary>Evidence citations</summary>" +
+                Object.entries(x.citations || {})
+                  .map(([k, v]) => esc(k + ": " + v))
+                  .join("<br>") +
+                "</details></div>",
+            )
+            .join("") +
+          "</div>" + publishedParityHtml(p);
+      }
+      async function accessStatus() {
+        try {
+          let r = await fetch("/api/access/status");
+          if (!r.ok) {
+            $("provider-status").textContent =
+              "Open the authenticated gateway for connection status.";
+            return;
+          }
+          let s = await r.json();
+          $("assistant-setup").hidden = s.credential_configured;
+          $("provider-status").textContent = s.credential_configured
+            ? "A6API credential saved. Open Assistant to chat."
+            : "A6API setup required before sending a message. See server README.";
+          $("access-status").textContent =
+            "Remote address: " + (s.public_url || "Starting HTTPS tunnel");
+        } catch {}
+      }
+      $("parity-search").oninput = renderParity;
+      $("parity-filter").onchange = renderParity;
+      $("logout").onclick = async () => {
+        await fetch("/auth/logout", { method: "POST" });
+        location.replace("/login");
+      };
+      if (localStorage.getItem("theme") === "light") {
+        document.body.classList.add("light");
+        $("theme").textContent = "Night mode";
+      }
+      $("page-date").textContent = new Date().toLocaleDateString(undefined, {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+      });
+      window.addEventListener("hashchange", navigate);
+      navigate();
+    </script>
+  </body>
+</html>

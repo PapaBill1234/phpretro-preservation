@@ -1,0 +1,10 @@
+[Unit]
+Description=PHPRetro credential-free build containers
+
+[Slice]
+CPUAccounting=yes
+CPUQuota=150%
+MemoryAccounting=yes
+MemoryHigh=2200M
+MemoryMax=2800M
+TasksMax=384

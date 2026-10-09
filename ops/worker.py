@@ -51,7 +51,8 @@ def launch_child(path):
     if not alive(manifest.get("worker_pid"), manifest.get("worker_identity")):
         return 130
     os.chdir(manifest["cwd"])
-    os.environ["HERMES_HOME"] = manifest["profile_home"]
+    if manifest.get("runtime") != "openhands":
+        os.environ["HERMES_HOME"] = manifest["profile_home"]
     command = manifest["command"]
     if manifest.get("unit_name"):
         name = checked_unit(manifest["unit_name"], manifest["run_id"])
@@ -59,13 +60,15 @@ def launch_child(path):
             "--service-type=exec", "--unit=" + name,
             "--working-directory=" + manifest["cwd"],
             "--property=KillMode=control-group",
+            "--property=Slice=phpretro-inference.slice",
+            "--property=MemoryMax=512M",
+            "--property=TasksMax=96",
             # The supervisor owns timeout provenance; this is a crash backstop.
             "--property=RuntimeMaxSec=" + str(manifest["timeout"] + manifest["grace"] + 5),
             "--property=TimeoutStopSec=" + str(manifest["grace"]),
-            "--setenv=HERMES_HOME=" + manifest["profile_home"],
             "--setenv=HOME=" + str(Path.home()),
             "--setenv=PATH=" + os.environ.get("PATH", "/usr/bin:/bin"),
-            "--setenv=HERMES_ACCEPT_HOOKS=1", "--", sys.executable,
+            "--", sys.executable,
             str(Path(__file__).resolve()), "--exec", str(path.resolve())]
         os.environ.update(bus_env())
     os.execvpe(command[0], command, os.environ)
@@ -102,7 +105,8 @@ def exec_service(path):
             or not alive(manifest.get("worker_pid"), manifest.get("worker_identity"))):
         return 130
     os.chdir(manifest["cwd"])
-    os.environ["HERMES_HOME"] = manifest["profile_home"]
+    if manifest.get("runtime") != "openhands":
+        os.environ["HERMES_HOME"] = manifest["profile_home"]
     command = manifest["command"]
     os.execvpe(command[0], command, os.environ)
 
@@ -151,7 +155,7 @@ def alive(pid, identity):
     return bool(identity and process_identity(pid) == identity)
 
 
-def usage_snapshot(path, db, marker):
+def usage_snapshot(path, db, marker, runtime="hermes"):
     """Final sidecar preferred; otherwise a short, read-only WAL-aware query.
 
     Hermes canonical input excludes cache buckets; reasoning is inside output
@@ -164,6 +168,8 @@ def usage_snapshot(path, db, marker):
             if not isinstance(raw, dict):
                 raise ValueError("invalid usage")
             data = {k: raw[k] for k in COUNTERS if k in raw}
+            if "conservative_tokens" in raw:
+                data["conservative_tokens"] = control.nonnegative(raw["conservative_tokens"], "conservative tokens")
             for k, v in data.items():
                 control.nonnegative(v, k)
             aux = raw.get("total_including_auxiliary")
@@ -179,19 +185,24 @@ def usage_snapshot(path, db, marker):
                 v = raw.get(k)
                 if isinstance(v, (int, float)) and not isinstance(v, bool) and __import__("math").isfinite(v) and v >= 0:
                     data[k] = v
-            for k in ("cost_status", "model", "provider", "session_id"):
+            for k in ("cost_status", "model", "provider", "session_id", "runtime"):
                 v = raw.get(k)
                 if isinstance(v, str) and __import__("re").fullmatch(r"[A-Za-z0-9_.:/-]{1,120}", v):
                     data[k] = v
-            data.update(accounting_source="usage-file", usage_complete=True, input_includes_cache=False)
+            data.update(accounting_source="openhands-usage" if runtime == "openhands" else "usage-file",
+                        usage_complete=raw.get("usage_complete") is True if runtime == "openhands" else True,
+                        input_includes_cache=False)
+            if runtime == "openhands":
+                data["runtime"] = "openhands"
             # Missing totals/parts are not evidence of a zero-spend run.
             if "total_tokens" not in data and not all(k in data for k in ("input_tokens", "output_tokens")):
                 raise ValueError("incomplete usage")
             return data
     except (OSError, ValueError, KeyError, control.IntegrityError):
         pass
-    if not db.is_file() or not marker:
-        return {"accounting_source": "unknown", "usage_complete": False}
+    if runtime == "openhands" or not db.is_file() or not marker:
+        return {"accounting_source": "unknown", "usage_complete": False,
+                **({"runtime": "openhands"} if runtime == "openhands" else {})}
     con = None
     try:
         # immutable=1 hides WAL updates and must not be used on the live DB.
@@ -330,7 +341,7 @@ def supervise(path):
         data = {}
         while proc.poll() is None:
             if time.monotonic() >= checkpoint_at:
-                data = usage_snapshot(Path(manifest["usage_path"]), Path(manifest["profile_home"]) / "state.db", marker)
+                data = usage_snapshot(Path(manifest["usage_path"]), Path(manifest["profile_home"]) / "state.db", marker, manifest.get("runtime", "hermes"))
                 manifest["usage"] = data
                 control.atomic_json(path, manifest)
                 checkpoint_at = time.monotonic() + 5
@@ -348,11 +359,14 @@ def supervise(path):
         stop(proc, manifest["grace"])
         if manifest.get("unit_name"):
             stop_unit(checked_unit(manifest["unit_name"], manifest["run_id"]))
+        if manifest.get("runtime") == "openhands":
+            import sandbox
+            sandbox.cleanup(manifest["run_id"])
         if rc is None and proc.returncode != 0 and time.monotonic() >= deadline:
             rc = 124
         manifest.update(status="complete", rc=proc.returncode if rc is None else rc,
                         usage=usage_snapshot(Path(manifest["usage_path"]),
-                            Path(manifest["profile_home"]) / "state.db", marker), completed_at=time.time())
+                            Path(manifest["profile_home"]) / "state.db", marker, manifest.get("runtime", "hermes")), completed_at=time.time())
         manifest.pop("command", None)
         control.atomic_json(path, manifest)
         lease.close()

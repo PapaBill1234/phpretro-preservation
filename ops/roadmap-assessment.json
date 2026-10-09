@@ -24,12 +24,12 @@
         {
           "path": "go.mod",
           "line": 1,
-          "fingerprint": "1d0f03fab3fedb55"
+          "fingerprint": "8bd7f247a67fa28d"
         },
         {
           "path": "cmd/phpretro/main.go",
           "line": 1,
-          "fingerprint": "d68cb8e380bdb78e"
+          "fingerprint": "1d9c60f6e3b821d0"
         }
       ],
       "assessed_prs": [
@@ -39,7 +39,15 @@
         "scripts/check.sh (historical green main gate)"
       ],
       "production_wiring": "CLI and CI invoke the foundation utility.",
-      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature.",
+      "reassessment": {
+        "date": "2026-10-09",
+        "scope": "Reviewed patched Go 1.26.9 toolchain and the limited security edits; classifications unchanged. No durable storage or HTTP identity integration added.",
+        "paths": [
+          "cmd/phpretro/main.go",
+          "go.mod"
+        ]
+      }
     },
     {
       "id": "F1",
@@ -361,7 +369,7 @@
         {
           "path": "internal/session/session.go",
           "line": 1,
-          "fingerprint": "446e6363afde9846"
+          "fingerprint": "ea14168e194b5c5f"
         },
         {
           "path": "internal/server/server.go",
@@ -377,7 +385,14 @@
         "internal/account/account_test.go"
       ],
       "production_wiring": "n/a: incomplete product integration",
-      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature.",
+      "reassessment": {
+        "date": "2026-10-09",
+        "scope": "Reviewed HTTPS-only cookie construction and numeric logging; classifications unchanged. Durable storage and HTTP identity integration remain incomplete.",
+        "paths": [
+          "internal/session/session.go"
+        ]
+      }
     },
     {
       "id": "F20",
@@ -539,12 +554,12 @@
         {
           "path": "internal/session/session.go",
           "line": 1,
-          "fingerprint": "446e6363afde9846"
+          "fingerprint": "ea14168e194b5c5f"
         },
         {
           "path": "internal/session/session_test.go",
           "line": 1,
-          "fingerprint": "fb03c19f7ec676b7"
+          "fingerprint": "9b0985be2a2e24e8"
         },
         {
           "path": "internal/server/server.go",
@@ -559,7 +574,15 @@
         "internal/session/session_test.go"
       ],
       "production_wiring": "n/a: incomplete product integration",
-      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature.",
+      "reassessment": {
+        "date": "2026-10-09",
+        "scope": "Reviewed HTTPS-only cookie construction and numeric logging; classifications unchanged. Durable storage and HTTP identity integration remain incomplete.",
+        "paths": [
+          "internal/session/session.go",
+          "internal/session/session_test.go"
+        ]
+      }
     },
     {
       "id": "F24",
@@ -1186,7 +1209,7 @@
         {
           "path": "internal/session/session.go",
           "line": 1,
-          "fingerprint": "446e6363afde9846"
+          "fingerprint": "ea14168e194b5c5f"
         },
         {
           "path": "internal/session/stepup_test.go",
@@ -1202,7 +1225,14 @@
         "internal/session/stepup_test.go"
       ],
       "production_wiring": "n/a: incomplete product integration",
-      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature.",
+      "reassessment": {
+        "date": "2026-10-09",
+        "scope": "Reviewed HTTPS-only cookie construction and numeric logging; classifications unchanged. Durable storage and HTTP identity integration remain incomplete.",
+        "paths": [
+          "internal/session/session.go"
+        ]
+      }
     },
     {
       "id": "F38",
@@ -2513,7 +2543,7 @@
         {
           "path": "go.mod",
           "line": 1,
-          "fingerprint": "1d0f03fab3fedb55"
+          "fingerprint": "8bd7f247a67fa28d"
         },
         {
           "path": "go.sum",
@@ -2533,7 +2563,14 @@
         "tests/staff/totp_test.go"
       ],
       "production_wiring": "n/a: incomplete product integration",
-      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature."
+      "verification": "n/a: no independent acceptance-source comparison recorded for an integrated feature.",
+      "reassessment": {
+        "date": "2026-10-09",
+        "paths": [
+          "go.mod"
+        ],
+        "scope": "Reviewed patched Go 1.26.9 toolchain and the limited security edits; classifications unchanged. No durable storage or HTTP identity integration added."
+      }
     },
     {
       "id": "QA3",
@@ -2772,14 +2809,21 @@
         {
           "path": "cmd/phpretro/main.go",
           "line": 1,
-          "fingerprint": "d68cb8e380bdb78e"
+          "fingerprint": "1d9c60f6e3b821d0"
         },
         {
           "path": "AGENTS.md",
           "line": 1,
           "fingerprint": "09e6d9eab8089a23"
         }
-      ]
+      ],
+      "reassessment": {
+        "date": "2026-10-09",
+        "scope": "Reviewed HTTPS-only cookie construction and numeric logging; classifications unchanged. Durable storage and HTTP identity integration remain incomplete.",
+        "paths": [
+          "cmd/phpretro/main.go"
+        ]
+      }
     },
     {
       "area": "React frontend",
