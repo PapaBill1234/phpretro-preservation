@@ -72,10 +72,15 @@ def main():
     user_units = Path.home() / ".config/systemd/user"
     user_units.mkdir(parents=True, exist_ok=True)
     shutil.copy2(ROOT / "ops/systemd/phpretro-inference.slice", user_units / "phpretro-inference.slice")
+    for name in ('phpretro-billing.service', 'phpretro-billing.timer'):
+        text = (ROOT / 'ops/systemd' / name).read_text().replace('/home/ubuntu/phpretro-preservation', str(ROOT))
+        (user_units / name).write_text(text)
     for name in ("server.py", "gateway.py", "index.html"):
         shutil.copy2(ROOT / "ops/dashboard" / name, dashboard / name)
     subprocess.run(["sudo", "-n", "systemctl", "daemon-reload"], check=True)
     subprocess.run(["systemctl", "--user", "daemon-reload"], env=worker.bus_env(), check=True)
+    if (Path.home() / 'phpretro-openhands/secrets/a6api-billing.json').is_file():
+        subprocess.run(['systemctl', '--user', 'enable', '--now', 'phpretro-billing.timer'], env=worker.bus_env(), check=True)
     subprocess.run(["sudo", "-n", "systemctl", "start", "phpretro-build.slice"], check=True)
     control.atomic_json(OPS / "state" / "openhands-install.json", {"source": str(ROOT), "backup": str(backup), "paused": True})
     print("Installed paused; no timers or workers started. Backup: " + str(backup))

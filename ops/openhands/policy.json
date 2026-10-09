@@ -17,6 +17,7 @@
   "pressure_after_seconds": 20,
   "estimated_daily_cost_ceiling": 5.0,
   "prices_calibrated": false,
+  "portdan_cost_check": "user-disabled",
   "max_iterations": 80,
   "models": {
     "gpt-6-luna": {
