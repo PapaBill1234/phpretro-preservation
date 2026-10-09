@@ -783,6 +783,11 @@
       <section data-view="builders" hidden>
         <div id="builders-status" class="activity-hero"></div>
         <section class="card">
+          <h2>Subscription supervisor</h2>
+          <div id="subscription-supervisor"></div>
+          <p class="section-note">Ubuntu health checks every 30 minutes once enabled. Healthy checks use no model tokens. Sol selects bounded operational repairs; quotas, STOP and unit allowances stay enforced.</p>
+        </section>
+        <section class="card">
           <div class="builders-intro"><h2>Active workers <span id="worker-count" class="board-count">0</span></h2><span id="builders-freshness" class="muted">Waiting for data</span></div>
           <div id="worker-cards" class="worker-grid"></div>
           <p class="section-note">Includes builders and reviewers. Token counts update as calls report usage; unfinished calls may not appear yet.</p>
@@ -1041,6 +1046,10 @@
       }
       function render(s) {
         renderBuilders(s);
+        const supervisor = s.subscription_supervisor || {};
+        const supervisionReasons = {disabled:"Disabled until the autonomy run finishes",pipeline_paused:"Coding is intentionally paused",pipeline_inactive:"The pipeline is not running",healthy:"No operational faults detected",quota_margin:"Waiting for subscription quota headroom",quota_unavailable:"Subscription quota unavailable",not_authenticated:"ChatGPT sign-in required",model_unavailable:"Sol 6.1 unavailable",cooldown:"Repair cooldown",daily_limit:"Daily repair limit reached",repair_complete:"Operational repair verified",repair_failed:"Repair failed; no further action taken",repair_in_progress:"A bounded repair is in progress",no_safe_repair:"No supported automatic repair",cli_changed:"CLI version changed; validation required",unavailable:"Status unavailable"};
+        const windowText = q => q ? `${q.used_percent}% used · resets ${new Date(q.resets_at * 1000).toLocaleString()}` : "Not available";
+        $("subscription-supervisor").innerHTML = `<div class="row"><b>${esc(supervisor.mode || "disabled")}</b><span style="float:right">${supervisor.authenticated ? "Signed in with ChatGPT" : "Sign-in not recorded"}</span></div><p>${esc(supervisionReasons[supervisor.reason] || "Status unavailable")}</p><p>Five-hour window: ${esc(windowText(supervisor.primary))}<br>Weekly window: ${esc(windowText(supervisor.secondary))}</p><p class="muted">Last check: ${supervisor.checked_at ? esc(new Date(supervisor.checked_at * 1000).toLocaleString()) : "Not checked yet"}. ${supervisor.enabled ? "Scheduled every 30 minutes" : "Timer disabled"}.</p>` + (supervisor.history?.length ? `<table><thead><tr><th>Time</th><th>Action</th><th>Result</th><th>Input / cached / output</th></tr></thead><tbody>${supervisor.history.map(r => `<tr><td>${esc(new Date(r.at * 1000).toLocaleString())}</td><td>${esc(r.action.replaceAll("_"," "))}</td><td>${esc(r.mode)}</td><td>${r.input_tokens === undefined ? "Unknown" : fmt(r.input_tokens)} / ${r.cached_input_tokens === undefined ? "Unknown" : fmt(r.cached_input_tokens)} / ${r.output_tokens === undefined ? "Unknown" : fmt(r.output_tokens)}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No automatic repair jobs yet.</div>`);
         const bill = s.provider_billing;
         $("provider-billing").textContent = (bill?.available ?
           `A6API: $${Number(bill.account_day_billed_usd).toFixed(4)} billed today; $${Number(bill.account_balance_usd).toFixed(4)} balance. ${bill.fresh ? "Current" : "Stale"} observation from ${new Date(bill.collected_at * 1000).toISOString()}. ` :
