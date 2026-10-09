@@ -29,8 +29,12 @@ def main():
                         and 0 <= time.time() - evidence.get("completed_at", 0) <= 86400)
     policy = runtime_policy.load()
     models = evidence.get("models", {})
-    checks = {"provider": runtime_policy.review_families_available() and provider_current and all(models.get(m, {}).get("tool_calls") is True and models.get(m, {}).get("usage") is True
-                               for m, v in policy["models"].items() if v.get("automatic"))}
+    provider_models = evidence.get("provider_models", {})
+    models = {m: {"tool_calls": bool(runtime_policy.verified_providers(m, evidence)),
+                  "usage": bool(runtime_policy.verified_providers(m, evidence))}
+              for m, v in policy["models"].items() if v.get("automatic")}
+    checks = {"provider": runtime_policy.review_families_available() and provider_current
+              and all(row["tool_calls"] and row["usage"] for row in models.values())}
     logdir = OPS / "logs" / "openhands-validation"
     logdir.mkdir(parents=True, exist_ok=True)
     run = subprocess.run(["bash", "ops/tests/run_all.sh"], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -72,7 +76,7 @@ def main():
         raise control.IntegrityError("source changed during validation")
     image = sandbox.docker("image", "inspect", "--format={{.Id}}", policy["image"]).decode().strip()
     result = {"schema": "phpretro.validation.v1", "implementation_sha256": fingerprint,
-              "validated_at": time.time(), "image_id": image, "models": models,
+              "validated_at": time.time(), "image_id": image, "models": models, "provider_models": provider_models,
               "provider_evidence_current": provider_current,
               "vulnerability_snapshot_at": snapshot_at,
               "checks": checks, "passed": all(checks.values())}

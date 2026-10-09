@@ -980,9 +980,10 @@ def accounted_usage(data):
     if "usage_complete" in data and not isinstance(data["usage_complete"], bool):
         raise control.IntegrityError("receipt completeness flag is invalid")
     tokens = usage_tokens(data)
+    conservative = control.nonnegative(data.get("conservative_tokens", 0), "conservative tokens")
     explicit_zero = data.get("api_calls") == 0 and data.get("total_tokens") == 0
     if data.get("usage_complete") is False or (tokens <= 0 and not explicit_zero):
-        tokens = max(tokens, TIMEOUT_FALLBACK_TOKENS)
+        tokens = max(tokens, TIMEOUT_FALLBACK_TOKENS, conservative)
         data["accounting_source"] = "pessimistic-estimate" if not data.get("total_tokens") else "partial-with-conservative-floor"
         data["usage_complete"] = False
     else:
@@ -1187,7 +1188,7 @@ def log_model_run(role: str, model: str, unit: str, attempt, rc, outcome: str,
     rec = mod.build_run(
         ts_start=ts_start or now(), ts_end=ts_end or now(), role=role, model=model,
         unit=unit or "", attempt=attempt, rc=rc, outcome=outcome, usage=usage or {},
-        provider=provider_override or PROVIDER,
+        provider=provider_override or (usage or {}).get("provider") or PROVIDER,
         flags={"runtime": "openhands", "context_engine": "sdk", "plugins": {"active": False}, "toolsets": "docker-exec"}
               if (usage or {}).get("runtime") == "openhands" else mod.default_flags(profile, toolsets,
                     session=str((usage or {}).get("session_id") or "")))

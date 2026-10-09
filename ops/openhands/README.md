@@ -65,7 +65,16 @@ to reduce concurrency.
 Every paid run has a UUID receipt, reservation, cancellation marker and systemd
 unit. The supervisor/recovery drain that unit and its UUID-labelled container
 before settlement. Usage is checkpointed after each inference/tool event;
-automatic SDK retries and model fallbacks are disabled. Model identity and
+automatic SDK retries and model substitutions are disabled. Each model uses
+A6API first and Portdan second among fresh verified routes. A typed transport,
+auth, rate-limit or server failure suppresses that provider for the rest of the
+session; integrity failures and cancellation never trigger paid fallback. Both
+routes preserve the same model and tool API. Each request stays inside the
+original receipt deadline and reservation. Each unreported call keeps its own
+conservative 1M-token allowance. Provider labels distinguish A6API, Portdan and
+mixed sessions. Portdan Luna/DeepSeek costs stay unknown until its prices are
+verified; Sol uses the supplied merchant quote. Unknown charges still block later
+cash-spend admission. Model identity and
 provider usage must be present. Cache buckets are normalized once and reasoning
 is not double-counted. Partial/unknown usage keeps the existing conservative
 1M-token floor and blocks cash-spend admission until reconciled. Original 3M/unit
@@ -84,7 +93,8 @@ unknown. No raw model/tool output is exposed as a live tail.
 Keep `/home/ubuntu/phpretro-ops/STOP` present and all three system timers disabled.
 The existing secret is loaded by trusted SDK code only; its owner must be ubuntu
 and its mode 600. Supported JSON provisioning keys are `a6api_api_key`,
-`A6API_API_KEY`, or `a6api.api_key`/`a6api.key`. Never copy or print credentials.
+`A6API_API_KEY`, or `a6api.api_key`/`a6api.key`. Portdan keys are private `portdan.openai` and `portdan.deepseek` fields in the
+same owned mode-600 file. Never print credentials or put them in the repository.
 The SDK environment is pinned by `requirements.lock`; no agent-server or remote
 DockerWorkspace is used.
 
@@ -97,7 +107,11 @@ DockerWorkspace is used.
    Run image building with bounded resources; never mount secrets in its context.
 3. Run the explicit small paid probes with the existing SDK Python:
    `/home/ubuntu/phpretro-openhands/venv/bin/python ops/openhands/probe_models.py --paid-probes`.
-   They use durable supervised receipts, record actual usage in the controller
+   Use `--provider a6api|portdan` and optional repeated `--model` selectors to check
+   only changed routes. Without selectors, all three models and both providers
+   are checked independently. At least one fresh passing route per model is
+   required for migration readiness; unverified routes are skipped. They use
+   durable supervised receipts, record actual usage in the controller
    ledger and preserve reservations on interruption. A failed model is not
    declared capable. Explicit paid probes now include the configured Sol route.
 4. Run `python3 ops/openhands/validate.py --provider-evidence

@@ -32,6 +32,12 @@ def load():
         raise control.IntegrityError("review requires two or three independent families")
     if families == 2 and data.get("review_policy") != "temporary-two-family-user-override":
         raise control.IntegrityError("two-family review requires the explicit temporary policy")
+    if data.get("providers") != {"a6api": {"base_url": "https://api.a6api.com/v1"},
+                                 "portdan": {"base_url": "https://portdan.com/v1"}}:
+        raise control.IntegrityError("unexpected provider endpoint")
+    for settings in data["models"].values():
+        if settings.get("automatic") and settings.get("provider_order") != ["a6api", "portdan"]:
+            raise control.IntegrityError("provider order must be A6API then Portdan")
     return data
 
 
@@ -57,8 +63,9 @@ def fingerprint():
 
 def capability_fingerprint():
     digest = hashlib.sha256()
-    for name in ("runner.py", "probe_models.py", "requirements.lock"):
+    for name in ("runner.py", "probe_models.py", "routing.py", "requirements.lock"):
         digest.update((ROOT / "openhands" / name).read_bytes())
+    digest.update(Path(__file__).read_bytes())
     digest.update(POLICY.read_bytes())
     return digest.hexdigest()
 
@@ -93,7 +100,25 @@ def ready(model=None):
         capability = checked.get("models", {}).get(model, {})
         if capability.get("tool_calls") is not True or capability.get("usage") is not True:
             return False
+        if not verified_providers(model, checked):
+            return False
     return True
+
+
+def route_passed(row):
+    return (row.get("tool_calls") is True and row.get("usage") is True
+            and 0 <= time.time() - row.get("checked_at", 0) <= 86400)
+
+
+def verified_providers(model, checked=None):
+    if checked is None:
+        try:
+            checked = json.loads((OPS / "state" / "openhands-validation.json").read_text())
+        except (OSError, ValueError):
+            return []
+    evidence = checked.get("provider_models", {})
+    return [p for p in model_settings(model)["provider_order"]
+            if route_passed(evidence.get(p, {}).get(model, {}))]
 
 
 def model_settings(model):

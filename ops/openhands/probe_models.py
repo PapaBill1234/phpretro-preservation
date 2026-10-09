@@ -14,13 +14,15 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import integrity as control
 import runtime_policy
+import routing
 
 
 def run_probe(path):
     rec = json.loads(path.read_text())
+    provider = rec["provider"]
     # No inference can occur before the measured request barrier below.
     control.atomic_json(Path(rec["usage_path"]), {"runtime":"openhands","model":rec["model"],
-                        "provider":"custom:a6api","session_id":rec["run_id"],"api_calls":0,
+                        "provider":"custom:" + provider,"session_id":rec["run_id"],"api_calls":0,
                         "input_tokens":0,"output_tokens":0,"cache_read_tokens":0,"cache_write_tokens":0,
                         "total_tokens":0,"usage_complete":True,"accounting_source":"not-launched"})
     private = path.parent / (rec["run_id"] + "-sdk")
@@ -35,11 +37,8 @@ def run_probe(path):
     from runner import provider_credentials, normalized_usage
     policy = runtime_policy.load()
     credentials = provider_credentials(Path(policy["providers_file"]))
-    nested = credentials.get("a6api", {})
-    key = credentials.get("a6api_api_key") or credentials.get("A6API_API_KEY") or (nested.get("api_key") or nested.get("key") if isinstance(nested, dict) else nested)
-    if not isinstance(key, str) or not key:
-        return 1
     model = rec["model"]
+    key = routing.credential(credentials, provider, model)
     settings = runtime_policy.model_settings(model)
     observed = {"started": 0, "finished": 0, "tool": False, "final": False, "identity": True}
     error = {}
@@ -64,16 +63,19 @@ def run_probe(path):
             observed["finished"] += 1
             checkpoint(False)
             return result
-    llm = ProbeLLM(model="openai/" + model, api_key=SecretStr(key), base_url="https://api.a6api.com/v1",
-                   api_mode=settings["api_mode"], max_input_tokens=65536, max_output_tokens=512,
-                   num_retries=0, caching_prompt=False, log_completions=False)
+    llm = ProbeLLM(model="openai/" + model, api_key=SecretStr(key), base_url=policy["providers"][provider]["base_url"],
+                   api_mode=settings["api_mode"], max_input_tokens=65536, max_output_tokens=4096,
+                   reasoning_effort="low", timeout=120, num_retries=0, caching_prompt=False, log_completions=False)
     def checkpoint(complete):
         usage = normalized_usage(llm.metrics, settings, started=observed["started"], finished=observed["finished"], complete=complete)
         usage["api_calls"] = observed["started"]
         if complete and observed["started"] == 0:
             usage.update(input_tokens=0,output_tokens=0,cache_read_tokens=0,cache_write_tokens=0,
                          total_tokens=0,usage_complete=True,accounting_source="not-launched")
-        usage.update(model=model, provider="custom:a6api", session_id=rec["run_id"])
+        usage.update(model=model, provider="custom:" + provider, session_id=rec["run_id"],
+                     conservative_tokens=usage.get("total_tokens", 0) + (observed["started"] - observed["finished"]) * 1000000)
+        if provider == "portdan" and model != "gpt-6.1-sol":
+            usage["cost_status"] = "unknown-price"
         control.atomic_json(Path(rec["usage_path"]), usage)
     class MarkerAction(Action):
         pass
@@ -123,6 +125,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--paid-probes", action="store_true")
     ap.add_argument("--run", type=Path)
+    ap.add_argument("--provider", choices=("a6api", "portdan"))
+    ap.add_argument("--model", action="append", choices=tuple(m for m, v in runtime_policy.load()["models"].items() if v.get("automatic")))
     args = ap.parse_args()
     if args.run:
         return run_probe(args.run)
@@ -132,15 +136,19 @@ def main():
     if not o.STOP_FILE.is_file():
         raise control.IntegrityError("probes require STOP")
     o.ensure_dirs()
-    models = {}
+    fingerprint = runtime_policy.capability_fingerprint()
+    evidence_path = o.STATE_DIR / "openhands-provider-evidence.json"
+    previous = o.read_json(evidence_path, {})
+    provider_models = previous.get("provider_models", {}) if previous.get("capability_sha256") == fingerprint else {}
+    probes = [(model, provider) for model, settings in runtime_policy.load()["models"].items()
+              if settings.get("automatic") and (not args.model or model in args.model)
+              for provider in settings["provider_order"] if not args.provider or provider == args.provider]
     with (o.LOCK_DIR / "orchestrator.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         state = o.load_state()
         if state.get("reservations"):
             raise control.IntegrityError("settle previous runs before probing")
-        for model, settings in runtime_policy.load()["models"].items():
-            if not settings.get("automatic"):
-                continue
+        for model, provider in probes:
             if state.get("tokens_today", 0) + 1000000 > o.DAILY_TOKEN_CAP:
                 raise control.IntegrityError("probe allowance exceeds daily cap")
             rid = control.identity()
@@ -150,8 +158,8 @@ def main():
             control.atomic_json(o.STATE_JSON, state)
             receipt = o.STATE_DIR / "receipts" / (rid + ".json")
             usage = o.LOG_DIR / ("probe-" + rid + ".usage.json")
-            record = dict(reservation, runtime="openhands", model=model, profile="probe", profile_home=str(receipt.parent / (rid + "-sdk")),
-                          status="prepared", cwd=str(o.REPO), usage_path=str(usage), timeout=120, grace=o.TERM_GRACE,
+            record = dict(reservation, runtime="openhands", model=model, provider=provider, profile="probe", profile_home=str(receipt.parent / (rid + "-sdk")),
+                          status="prepared", cwd=str(o.REPO), usage_path=str(usage), timeout=300, grace=o.TERM_GRACE,
                           unit_name="phpretro-run-" + rid + ".service", prepared_at=time.time(),
                           command=[runtime_policy.load()["sdk_python"], str(Path(__file__).resolve()), "--run", str(receipt)])
             control.atomic_json(receipt, record)
@@ -164,10 +172,20 @@ def main():
             state["tokens_today"] += normalized["accounted_tokens"]
             control.atomic_json(o.STATE_JSON, state)
             result = o.read_json(receipt.with_suffix(".capability.json"), {})
-            models[model] = {"tool_calls": done["rc"] == 0 and result.get("tool_calls") is True, "usage": result.get("usage") is True}
-    control.atomic_json(o.STATE_DIR / "openhands-provider-evidence.json", {"capability_sha256": runtime_policy.capability_fingerprint(), "completed_at": time.time(), "models": models})
-    print(json.dumps(models))
-    return 0 if runtime_policy.review_families_available() and all(all(row.values()) for row in models.values()) else 1
+            provider_models.setdefault(provider, {})[model] = {"tool_calls": done["rc"] == 0 and result.get("tool_calls") is True,
+                                                               "usage": result.get("usage") is True, "checked_at": time.time()}
+            # Preserve each settled result if a later probe/controller is interrupted.
+            control.atomic_json(evidence_path, {"capability_sha256": fingerprint,
+                                "completed_at": time.time(), "provider_models": provider_models})
+    models = {m: {"tool_calls": any(runtime_policy.route_passed(provider_models.get(p, {}).get(m, {})) for p in v["provider_order"]),
+                  "usage": any(runtime_policy.route_passed(provider_models.get(p, {}).get(m, {})) for p in v["provider_order"])}
+              for m, v in runtime_policy.load()["models"].items() if v.get("automatic")}
+    if fingerprint != runtime_policy.capability_fingerprint():
+        raise control.IntegrityError("source changed during provider probes")
+    control.atomic_json(evidence_path, {"capability_sha256": fingerprint, "completed_at": time.time(),
+                                       "models": models, "provider_models": provider_models})
+    print(json.dumps({"models": models, "provider_models": provider_models}))
+    return 0 if all(runtime_policy.route_passed(provider_models.get(p, {}).get(m, {})) for m, p in probes) else 1
 
 
 if __name__ == "__main__":

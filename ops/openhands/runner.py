@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import integrity as control
 import runtime_policy
 import sandbox
+import routing
 
 os.environ["OPENHANDS_SUPPRESS_BANNER"] = "1"
 os.environ["OTEL_SDK_DISABLED"] = "true"
@@ -65,7 +66,7 @@ def main(receipt_path):
     logging.disable(logging.CRITICAL)
     private = receipt_path.parent / (rid + "-sdk")
     private.mkdir(mode=0o700)
-    for name in ("OPENAI_API_KEY", "A6API_API_KEY", "OPENROUTER_API_KEY"):
+    for name in ("OPENAI_API_KEY", "A6API_API_KEY", "PORTDAN_API_KEY", "OPENROUTER_API_KEY"):
         os.environ.pop(name, None)
     # Prevent auto-loading host SOUL/MCP/hooks/skills from an interactive home.
     os.environ["OPENHANDS_PERSISTENCE_DIR"] = str(private)
@@ -76,17 +77,12 @@ def main(receipt_path):
     from openhands.sdk.security.confirmation_policy import NeverConfirm
     from openhands.sdk.tool import Action, Observation, Tool, ToolDefinition, ToolExecutor, register_tool
     credentials = provider_credentials(Path(policy["providers_file"]))
-    # Provisioning formats are handled explicitly, without printing values.
-    key = credentials.get("a6api_api_key") or credentials.get("A6API_API_KEY")
-    nested = credentials.get("a6api")
-    if isinstance(nested, dict):
-        key = key or nested.get("api_key") or nested.get("key")
-    elif isinstance(nested, str):
-        key = key or nested
-    if not isinstance(key, str) or not key:
-        raise control.IntegrityError("A6API credential unavailable")
+    routes = runtime_policy.verified_providers(model)
+    if not routes:
+        raise control.IntegrityError("model has no verified provider route")
     usage_path = Path(manifest["usage_path"])
-    state = {"started": 0, "finished": 0, "depth": 0, "complete": False}
+    state = {"started": 0, "finished": 0, "depth": 0, "complete": False,
+             "unknown_calls": 0, "providers": [], "failed": set()}
     box = sandbox.Sandbox(rid, manifest["cwd"], writable=manifest["role"] == "builder",
                           paths=manifest.get("allowed_paths", []))
     conversation = None
@@ -96,23 +92,30 @@ def main(receipt_path):
         _observer = PrivateAttr(default=None)
 
         def completion(self, *args, **kwargs):
-            with call_budget(args, kwargs):
-                result = super().completion(*args, **kwargs)
-                verify_provider_response(result)
-                return result
+            return routed_call(self, "completion", args, kwargs)
 
         def responses(self, *args, **kwargs):
-            with call_budget(args, kwargs):
-                result = super().responses(*args, **kwargs)
-                verify_provider_response(result)
-                return result
+            return routed_call(self, "responses", args, kwargs)
 
-    llm = BoundedLLM(model="openai/" + model, api_key=SecretStr(key),
-                     base_url="https://api.a6api.com/v1", api_mode=settings["api_mode"],
+    options = dict(model="openai/" + model, api_mode=settings["api_mode"],
                      usage_id="agent", max_input_tokens=65536, max_output_tokens=4096,
-                     num_retries=0, caching_prompt=False, log_completions=False,
+                     num_retries=0, timeout=120, reasoning_effort="low", caching_prompt=False, log_completions=False,
                      input_cost_per_token=settings["input"] / 1e6,
                      output_cost_per_token=settings["output"] / 1e6)
+    clients = {p: LLM(**options, api_key=SecretStr(routing.credential(credentials, p, model)),
+                      base_url=policy["providers"][p]["base_url"]) for p in routes}
+    llm = BoundedLLM(**options, api_key=SecretStr(routing.credential(credentials, routes[0], model)),
+                     base_url=policy["providers"][routes[0]]["base_url"])
+
+    def routed_call(owner, method, args, kwargs):
+        def invoke(provider):
+            client = clients[provider]
+            client.restore_metrics(owner.metrics)
+            with call_budget(args, kwargs, provider):
+                result = getattr(client, method)(*args, **kwargs)
+                verify_provider_response(result)
+                return result
+        return routing.call(routes, invoke, state["failed"])
 
     def verify_provider_response(result):
         raw = result.raw_response
@@ -127,12 +130,18 @@ def main(receipt_path):
         if complete and state["started"] == 0:
             data.update(input_tokens=0, output_tokens=0, cache_read_tokens=0, cache_write_tokens=0,
                         total_tokens=0, usage_complete=True, accounting_source="not-launched")
-        data.update(model=model, provider="custom:a6api", session_id=rid)
+        used = set(state["providers"])
+        provider = "mixed:a6api-portdan" if len(used) > 1 else "custom:" + next(iter(used), routes[0])
+        data.update(model=model, provider=provider, session_id=rid,
+                    conservative_tokens=data.get("total_tokens", 0) + (state["started"] - state["finished"]) * 1000000)
+        # Portdan Luna/DeepSeek prices have not been verified. Do not reuse A6 rates.
+        if "portdan" in used and model != "gpt-6.1-sol":
+            data["cost_status"] = "unknown-price"
         control.atomic_json(usage_path, data)
         return data
 
     @contextlib.contextmanager
-    def call_budget(args, kwargs):
+    def call_budget(args, kwargs, provider):
         outer = state["depth"] == 0
         if outer:
             messages = args[0] if args else kwargs.get("messages", [])
@@ -141,17 +150,22 @@ def main(receipt_path):
                 raise control.IntegrityError("context exceeds the reserved next-call ceiling")
             usage = checkpoint(False)
             # Reserve maximum next-call context/output before starting it.
-            if usage.get("total_tokens", 0) + 65536 + 4096 > manifest["reserved_tokens"]:
+            if usage.get("conservative_tokens", 0) + 65536 + 4096 > manifest["reserved_tokens"]:
                 raise control.IntegrityError("next inference would exceed the reserved allowance")
             if receipt_path.with_suffix(".cancel.json").exists():
                 raise InterruptedError("run cancelled")
             state["started"] += 1
+            state["providers"].append(provider)
             checkpoint(False)  # Durable before the provider request can start.
         state["depth"] += 1
         try:
             yield
             if outer:
                 state["finished"] += 1
+        except Exception:
+            if outer:
+                state["unknown_calls"] += 1
+            raise
         finally:
             state["depth"] -= 1
             if outer:
@@ -210,7 +224,8 @@ def main(receipt_path):
         rc = 130
     except Exception as exc:
         # Only a typed error is emitted; SDK exception strings may contain secrets.
-        print(json.dumps({"status": "failed", "error_type": type(exc).__name__}), flush=True)
+        print(json.dumps({"status": "provider unavailable" if routing.retryable(exc) else "failed",
+                          "error_type": type(exc).__name__}), flush=True)
         rc = 1
     finally:
         try:

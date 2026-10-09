@@ -17,6 +17,7 @@ import sandbox
 import sys
 sys.path.insert(0, str(Path(o.__file__).parent / "openhands"))
 from runner import normalized_usage
+import routing
 
 
 class PolicyTests(unittest.TestCase):
@@ -70,7 +71,8 @@ class PolicyTests(unittest.TestCase):
         data = {"implementation_sha256": runtime_policy.fingerprint(), "passed": True,
                 "validated_at": o.time.time(), "vulnerability_snapshot_at":o.time.time(), "image_id": "image-a",
                 "checks": {k:True for k in ("foundation","ops","frontend","isolation","lifecycle","resources","provider")},
-                "models":{"gpt-6-luna":{"tool_calls":True,"usage":True}}}
+                "models":{"gpt-6-luna":{"tool_calls":True,"usage":True}},
+                "provider_models":{"a6api":{"gpt-6-luna":{"tool_calls":True,"usage":True,"checked_at":o.time.time()}}}}
         control.atomic_json(stamp, data)
         with patch.object(runtime_policy, "OPS", root), patch.object(runtime_policy.subprocess, "check_output", return_value="image-a\n"):
             self.assertTrue(runtime_policy.ready("gpt-6-luna"))
@@ -229,6 +231,67 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(self.sample(state,100,available=1024*1024),0)
         self.assertEqual(self.sample(state,101),1)
         self.assertEqual(self.sample(state,402),2)
+
+
+class ProviderRoutingTests(unittest.TestCase):
+    def test_primary_first_and_failed_primary_suppressed_for_session(self):
+        class GatewayError(Exception): status_code = 502
+        calls, failed = [], set()
+        def invoke(provider):
+            calls.append(provider)
+            if provider == "a6api": raise GatewayError()
+            return "marker"
+        self.assertEqual(routing.call(["a6api", "portdan"], invoke, failed), "marker")
+        self.assertEqual(routing.call(["a6api", "portdan"], invoke, failed), "marker")
+        self.assertEqual(calls, ["a6api", "portdan", "portdan"])
+
+    def test_successful_primary_does_not_call_fallback(self):
+        calls = []
+        self.assertEqual(routing.call(["a6api", "portdan"], lambda p: calls.append(p) or p, set()), "a6api")
+        self.assertEqual(calls, ["a6api"])
+
+    def test_integrity_and_cancellation_never_trigger_paid_fallback(self):
+        for exc in (control.IntegrityError("identity"), InterruptedError(), ValueError("bug")):
+            calls = []
+            def invoke(p):
+                calls.append(p)
+                raise exc
+            with self.assertRaises(type(exc)): routing.call(["a6api", "portdan"], invoke, set())
+            self.assertEqual(calls, ["a6api"])
+
+    def test_both_provider_failures_are_bounded(self):
+        calls, failed = [], set()
+        def invoke(p):
+            calls.append(p)
+            raise TimeoutError()
+        with self.assertRaises(TimeoutError): routing.call(["a6api", "portdan"], invoke, failed)
+        with self.assertRaises(control.IntegrityError): routing.call(["a6api", "portdan"], invoke, failed)
+        self.assertEqual(calls, ["a6api", "portdan"])
+
+    def test_ready_route_must_match_provider_model_and_fresh_usage(self):
+        row = {"tool_calls":True,"usage":True,"checked_at":o.time.time()}
+        evidence = {"provider_models":{"portdan":{"gpt-6.1-sol":row}}}
+        self.assertEqual(runtime_policy.verified_providers("gpt-6.1-sol",evidence), ["portdan"])
+        self.assertEqual(runtime_policy.verified_providers("gpt-6-luna",evidence), [])
+        evidence["provider_models"]["a6api"] = {"gpt-6.1-sol":dict(row)}
+        self.assertEqual(runtime_policy.verified_providers("gpt-6.1-sol",evidence), ["a6api","portdan"])
+        evidence["provider_models"]["a6api"]["gpt-6.1-sol"]["usage"] = False
+        self.assertEqual(runtime_policy.verified_providers("gpt-6.1-sol",evidence), ["portdan"])
+        row["checked_at"] = 0
+        self.assertEqual(runtime_policy.verified_providers("gpt-6.1-sol",evidence), [])
+
+    def test_each_unknown_provider_call_retains_its_charge(self):
+        usage = o.accounted_usage({"runtime":"openhands","api_calls":3,"total_tokens":500,
+                                  "usage_complete":False,"conservative_tokens":2000500})
+        self.assertEqual(usage["accounted_tokens"],2000500)
+        with self.assertRaises(control.IntegrityError): o.accounted_usage({"conservative_tokens":-1})
+
+    def test_portdan_unverified_price_does_not_inherit_a6_rate(self):
+        record = telemetry.build_run(ts_start=o.now(),ts_end=o.now(),role="other",model="gpt-6-luna",
+                    provider="custom:portdan",usage={"runtime":"openhands","api_calls":1,"input_tokens":100,
+                    "output_tokens":20,"total_tokens":120,"usage_complete":True,"cost_status":"unknown-price"})
+        self.assertIsNone(record["cost_estimate"])
+        self.assertEqual(record["provider"],"custom:portdan")
 
 
 if __name__ == "__main__": unittest.main()

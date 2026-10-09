@@ -486,7 +486,7 @@ def build_run(*, ts_start: str, ts_end: str, role: str, model: str,
         prices = runtime_policy.load()["models"]
     est = norm.get("provider_cost_estimate") if norm.get("usage_complete") is not False else None
     cost_source = "usage-file" if est is not None else "none"
-    if est is None:
+    if est is None and usage.get("cost_status") != "unknown-price":
         estimate_usage = dict(usage)
         if model and not estimate_usage.get("model"):
             estimate_usage["model"] = model

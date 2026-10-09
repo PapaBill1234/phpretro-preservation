@@ -168,6 +168,8 @@ def usage_snapshot(path, db, marker, runtime="hermes"):
             if not isinstance(raw, dict):
                 raise ValueError("invalid usage")
             data = {k: raw[k] for k in COUNTERS if k in raw}
+            if "conservative_tokens" in raw:
+                data["conservative_tokens"] = control.nonnegative(raw["conservative_tokens"], "conservative tokens")
             for k, v in data.items():
                 control.nonnegative(v, k)
             aux = raw.get("total_including_auxiliary")
