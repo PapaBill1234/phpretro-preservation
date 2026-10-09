@@ -19,6 +19,7 @@ import sandbox
 import routing
 import request_accounting as requests
 import context_usage
+import session_journal
 
 os.environ["OPENHANDS_SUPPRESS_BANNER"] = "1"
 os.environ["OTEL_SDK_DISABLED"] = "true"
@@ -87,6 +88,8 @@ def main(receipt_path):
     state = {"started": 0, "finished": 0, "depth": 0, "complete": False,
              "unknown_calls": 0, "providers": [], "failed": set(), "recoverable": set()}
     context = context_usage.Recorder(receipt_path.with_suffix('.context.json'))
+    journal = session_journal.Journal(receipt_path.with_suffix('.session.json'),
+        [routing.credential(credentials,p,model) for p in routes])
     box = sandbox.Sandbox(rid, manifest["cwd"], writable=manifest["role"] == "builder",
                           paths=manifest.get("allowed_paths", []))
     conversation = None
@@ -173,15 +176,17 @@ def main(receipt_path):
                 raise InterruptedError("run cancelled")
             state["started"] += 1
             state["providers"].append(provider)
+            journal.add('provider_request','Request admitted',provider=provider,request=state['started'])
             checkpoint(False)  # Durable before the provider request can start.
         state["depth"] += 1
         try:
             yield
             if outer:
                 state["finished"] += 1
-        except Exception:
+        except Exception as exc:
             if outer:
                 state["unknown_calls"] += 1
+                journal.add('provider_error',type(exc).__name__,provider=provider,request=state['started'])
             raise
         finally:
             state["depth"] -= 1
@@ -201,6 +206,7 @@ def main(receipt_path):
             rc, output = box.execute(action.command, action.timeout)
             context.data['tool_errors']+=int(rc!=0)
             context.save()
+            journal.add('tool',action.command+'\n\n'+output,rc=rc)
             checkpoint(False)
             return ExecuteObservation.from_text("exit=" + str(rc) + "\n" + output, is_error=rc != 0)
 
@@ -217,6 +223,7 @@ def main(receipt_path):
         context.save()
         if isinstance(event, MessageEvent) and event.source == "agent":
             final[:] = ["".join(getattr(item, "text", "") for item in event.llm_message.content)]
+            journal.add('assistant',final[-1])
         checkpoint(False)
 
     def interrupted(*args):
@@ -239,6 +246,7 @@ def main(receipt_path):
         if role == "reviewer":
             brief += "\nReturn exactly one JSON verdict: {\"verdict\":\"pass|fix|block\",\"findings\":[{\"severity\":\"blocker|minor\",\"file\":\"\",\"line\":0,\"issue\":\"\"}]}. Tools are read-only; do not run tests."
         conversation.send_message(brief + "\nTools see only /repo; use ExecuteTool for file reads and edits. Provider secrets, host files and publication tools are unavailable.")
+        journal.add('brief',brief)
         conversation.run()
         if not final:
             raise control.IntegrityError("agent did not provide a final response")
@@ -256,6 +264,8 @@ def main(receipt_path):
         rc = 1
     finally:
         context.finish(state['complete'])
+        journal.add('result','Completed' if state['complete'] else 'Interrupted' if rc==130 else 'Failed',rc=rc)
+        journal.finish(state['complete'])
         try:
             if conversation is not None:
                 conversation.close()

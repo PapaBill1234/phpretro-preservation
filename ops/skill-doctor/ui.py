@@ -20,6 +20,8 @@ command=['docker','run','--rm','--init','--name','phpretro-skill-doctor-ui','--u
 for name in ('sessions','archived_sessions'):
     source=Path.home()/'phpretro-codex/private'/name
     if source.is_dir():command+=['--mount',f'type=bind,src={source},dst={base}/audit-home/.codex/{name},readonly']
+native_work=Path.home()/'phpretro-codex/work'
+if native_work.is_dir():command+=['--mount',f'type=bind,src={native_work},dst={native_work},readonly']
 command += [image,'node',str(repo/'ops/skill-doctor/container.js'),str(repo)]
 process=subprocess.Popen(command,env=env,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True)
 try:

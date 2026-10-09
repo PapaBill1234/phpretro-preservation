@@ -1,9 +1,9 @@
 [Unit]
-Description=Refresh PHPRetro context audit every four hours
+Description=Refresh local PHPRetro context evidence every five minutes
 
 [Timer]
 OnActiveSec=1min
-OnUnitActiveSec=4h
+OnUnitActiveSec=5min
 Persistent=false
 
 [Install]

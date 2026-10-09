@@ -80,6 +80,11 @@ def main(model):
                                       "role": "builder", "cwd": td, "allowed_paths": [], "reserved_tokens": 300000,
                                       "prompt_path": str(prompt), "usage_path": str(usage)}))
         assert runner.main(receipt) == 0, "actual SDK conversation failed"
+        journal=json.loads(receipt.with_suffix('.session.json').read_text())
+        assert journal['schema']=='phpretro.session-journal.v1'
+        assert any(e['kind']=='tool' for e in journal['events']), 'tool timeline missing'
+        assert any(e['kind']=='provider_error' for e in journal['events']), 'fallback failure timeline missing'
+        assert all('synthetic-only' not in e['text'] for e in journal['events']), 'known credential was not redacted'
         recorded = json.loads(usage.read_text())
         assert calls == ["https://api.a6api.com/v1", "https://api.a6api.com/v1", "https://portdan.com/v1", "https://api.a6api.com/v1"], calls
         assert recorded["api_calls"] == 4 and recorded["total_tokens"] == 240, recorded

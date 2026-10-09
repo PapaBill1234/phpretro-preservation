@@ -4,7 +4,7 @@ from pathlib import Path
 base=Path.home()/'phpretro-skill-doctor';here=Path(__file__).parent
 pin='fe1f942cf715a47faa67def0fa5f07882f3a84dc'
 def digest(p):return hashlib.sha256(p.read_bytes()).hexdigest()
-inputs={n:digest(here/n) for n in ('patch_upstream.py','OpenHandsSessions.tsx','OpenHandsSessions.test.tsx','build_extension.py')}
+inputs={n:digest(here/n) for n in ('patch_upstream.py','OpenHandsSessions.tsx','OpenHandsSessions.test.tsx','RuntimeDashboard.tsx','RuntimeDashboard.test.tsx','runtimeDashboard.css','build_extension.py')}
 source=base/'extension-build'/str(int(time.time()));source.parent.mkdir(mode=0o700,parents=True,exist_ok=True)
 def run(*args,cwd=None):subprocess.run(args,cwd=cwd,check=True)
 run('git','clone','--quiet','https://github.com/evilstar2016/skill-doctor.git',str(source))

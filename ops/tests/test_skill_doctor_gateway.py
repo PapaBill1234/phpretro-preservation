@@ -1,8 +1,15 @@
-import importlib.util,unittest
+import importlib.util,tempfile,unittest
 from pathlib import Path
 spec=importlib.util.spec_from_file_location('doctor_gateway',Path(__file__).resolve().parents[1]/'dashboard/gateway.py')
 g=importlib.util.module_from_spec(spec);spec.loader.exec_module(g)
 class DoctorGatewayTests(unittest.TestCase):
+    def test_workshop_detection_does_not_reuse_other_project_agents(self):
+        with tempfile.TemporaryDirectory() as root:
+            home=Path(root);(home/'phpretro-skill-doctor/agents/.openhands/skills').mkdir(parents=True)
+            payload={'snapshot':{},'detectedAgents':[{'platform':'codex','projectDetected':True,'globalDetected':False,'recommended':True}]}
+            result=g.doctor_bootstrap(payload,True,home)
+            self.assertEqual([a['platform'] for a in result['detectedAgents']],['openhands'])
+            self.assertTrue(result['detectedAgents'][0]['recommended']);self.assertIsNone(result['snapshot'])
     def test_prefixed_routes_preserve_query(self):
         self.assertEqual(g.backend_route('/skill-doctor/api/bootstrap?x=1'),(38123,'/api/bootstrap?x=1',False))
         self.assertNotEqual(g.backend_route('/skill-doctor-evil/')[0],38123)

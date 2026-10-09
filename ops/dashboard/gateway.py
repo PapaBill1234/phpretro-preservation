@@ -3,7 +3,7 @@
 import base64,hashlib,http.client,http.server,json,os,re,secrets,select,socket,sqlite3,subprocess,threading,time
 from pathlib import Path
 from http.cookies import SimpleCookie
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit,parse_qs
 ROOT=Path.home()/'phpretro-dashboard'; DB=ROOT/'access.sqlite3'; RATE={}; RATE_LOCK=threading.Lock()
 OPENHANDS_PORT=38082
 SKILL_DOCTOR_PORT=38123
@@ -58,6 +58,20 @@ def skill_doctor_asset(data,prefix=b'/skill-doctor'):
   script=b'''<script>localStorage.setItem('skill-doctor-analysis-mode','standard');try{const p=JSON.parse(localStorage.getItem('skill-doctor-project-preferences')||'{}');for(const k of Object.keys(p)){Object.assign(p[k],{useAiAudit:false,analyzeConflicts:false,discoverMcpTools:false,conflictStrategy:'token'});}localStorage.setItem('skill-doctor-project-preferences',JSON.stringify(p));}catch(e){}</script>'''
   data=data.replace(b'</head>',script+b'</head>',1)
  return data
+
+def doctor_bootstrap(payload,agent_view,home=None):
+ home=Path(home or Path.home())
+ if agent_view:
+  project=home/'phpretro-skill-doctor/agents';payload['projectDir']=str(project)
+  # The upstream server was launched for the preservation checkout. Its project
+  # detections cannot be reused for the separate agent audit workshop.
+  agents=[{**a,'projectDetected':False,'recommended':False} for a in payload.get('detectedAgents',[]) if a.get('globalDetected') and a.get('platform')!='openhands']
+  if (project/'.openhands/skills').is_dir():agents.append({'platform':'openhands','displayName':'OpenHands','projectDetected':True,'globalDetected':True,'recommended':True})
+  if (home/'phpretro-codex/cli/node_modules/.bin/codex').exists() and not any(a['platform']=='codex' for a in agents):
+   agents.append({'platform':'codex','displayName':'Codex','projectDetected':False,'globalDetected':True,'recommended':False})
+  payload['detectedAgents']=agents
+ payload['snapshot']=None
+ return payload
 def db():
  c=sqlite3.connect(DB,timeout=1); c.execute('CREATE TABLE IF NOT EXISTS account(id INTEGER PRIMARY KEY CHECK(id=1),salt TEXT,hash TEXT)'); c.execute('CREATE TABLE IF NOT EXISTS sessions(hash TEXT PRIMARY KEY,expires REAL)'); c.commit(); return c
 def configured():
@@ -116,12 +130,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
   if path=='/api/access/status':
    self.send(200,{'public_url':public_url(),'provider':'A6API','endpoint':'https://api.a6api.com/v1','credential_configured':(ROOT/'secrets/a6api.env').exists(),'workspace':str(ROOT),'desktop':'enabled'}); return
   if path=='/login': self.send(303,b'',headers={'Location':'/'}); return
-  if path in ('/skill-doctor/api/openhands-sessions','/agent-doctor/api/openhands-sessions'):
+  if path in ('/skill-doctor/api/openhands-sessions','/agent-doctor/api/openhands-sessions','/skill-doctor/api/runtime-journal','/agent-doctor/api/runtime-journal'):
    import sys
    module_dir=str(Path.home()/'phpretro-preservation/ops')
    if module_dir not in sys.path:sys.path.insert(0,module_dir)
-   from doctor_sessions import sessions
-   self.send(200,sessions()); return
+   from doctor_sessions import sessions,journal
+   if path.endswith('/runtime-journal'):
+    data=journal(parse_qs(urlsplit(self.path).query).get('id',[''])[0])
+    self.send(200 if data is not None else 404,data if data is not None else {'error':'No retained timeline for this session'}); return
+   from doctor_canvas import collect
+   self.send(200,sessions(canvas=collect())); return
   self.proxy()
  def do_POST(self):
   if not self.allowed_host() or not self.same_origin(): self.send(403,{'error':'Origin/Host rejected'}); return
@@ -208,10 +226,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     if port==SKILL_DOCTOR_PORT and resp.getheader('Content-Type','').startswith(('text/html','text/javascript')):
      data=skill_doctor_asset(data,b'/agent-doctor' if self.path.startswith('/agent-doctor') else b'/skill-doctor')
     if port==SKILL_DOCTOR_PORT and upstream_path.startswith('/api/bootstrap') and resp.status==200:
-     payload=json.loads(data)
-     if self.path.startswith('/agent-doctor'):
-      payload['projectDir']=str(Path.home()/'phpretro-skill-doctor/agents')
-     payload['snapshot']=None # Each view starts with a fresh local scan, never saved Deep mode.
+     payload=doctor_bootstrap(json.loads(data),self.path.startswith('/agent-doctor'))
      data=json.dumps(payload).encode()
     self.send_header('Content-Length',str(len(data))); self.end_headers(); self.wfile.write(data)
    con.close()
