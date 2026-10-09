@@ -2057,7 +2057,7 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
             return False
         control.append_record(STATE_DIR / "runs.jsonl", {"record_type": "delivery", "pr": pr,
             "unit": unit["id"], "head": head, "merged_at": now(), "count_merge": True})
-        unit.update(status="merged", updated=now(), delivery_commit=head)
+        unit.update(status="merged", reason="", updated=now(), delivery_commit=head)
         state["merged_today"] = int(state.get("merged_today", 0)) + 1
         event(state, f"{unit['id']}: MERGED PR #{pr} (head {head[:12]}, gate=check.sh)")
         telemetry_event("merged", unit["id"], f"PR #{pr} merged", pr=pr, head=head[:12], tokens=unit.get("tokens", 0))

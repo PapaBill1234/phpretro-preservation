@@ -21,7 +21,7 @@ class StopGuardTest(Isolated):
              patch.object(o,'sh',return_value=(0,'')) as merge:
             self.assertFalse(o.merge_queue(u,self.repo,st));self.assertEqual(u['status'],'pr_open');merge.assert_not_called()
             self.assertTrue(o.merge_queue(u,self.repo,st));self.assertEqual(u['status'],'merged')
-        self.assertEqual(u['attempts'],2);self.assertEqual(u['tokens'],100)
+        self.assertEqual(u['attempts'],2);self.assertEqual(u['tokens'],100);self.assertEqual(u['reason'],'')
 
     def test_guard_disabled_denies_paid_work(self):
         with patch.object(o, "GUARD_DISABLED", True):
