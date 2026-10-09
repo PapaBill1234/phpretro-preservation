@@ -16,10 +16,10 @@ VERSION='0.7.0'
 def number(value):
     return type(value) is int and 0<=value<=100000000
 
-def cost(path, label):
+def cost(path, label, platform='codex'):
     env={k:os.environ[k] for k in ('PATH','LANG') if k in os.environ}
     env.update(HOME=str(BASE/'audit-home'),NO_COLOR='1')
-    args=[str(CLI),'cost',str(path),'--platform','codex','--scope','project',
+    args=[str(CLI),'cost',str(path),'--platform',platform,'--scope','project',
           '--source','skill','--tokenizer','approx','--json']
     result=subprocess.run(args,env=env,capture_output=True,text=True,timeout=60,check=True)
     if len(result.stdout)>2*1024*1024:raise ValueError('oversized audit')
@@ -39,7 +39,6 @@ def collect():
     env={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'HOME':str(BASE/'audit-home')}
     assert subprocess.check_output([str(CLI),'--version'],env=env,text=True,timeout=10).strip()==VERSION
     state=json.loads((OPS/'state/units.state.json').read_text())
-    if state.get('reservations'):return # Avoid mixing active runs with settled snapshots.
     audits=[cost(REPO,'project'),cost(HOME/'phpretro-codex/work','supervisor')]
     latest={}
     agent_latest={}
@@ -47,22 +46,29 @@ def collect():
         if path.name.count('.')!=1 or path.stat().st_size>1024*1024:continue
         row=json.loads(path.read_text())
         role=row.get('role')
-        if row.get('runtime')!='openhands' or row.get('status')!='complete' or role not in ('builder','reviewer'):continue
-        if row.get('completed_at',0)>latest.get(role,{}).get('completed_at',0):latest[role]=row
+        if row.get('runtime')!='openhands' or row.get('status') not in ('running','complete') or role not in ('builder','reviewer'):continue
+        at=row.get('prepared_at',0)
+        if at>latest.get(role,{}).get('prepared_at',0):latest[role]=row
         model=row.get('model')
         if model in ('gpt-6-luna','gpt-6.1-sol','deepseek-v4.1-flash'):
             key=role+'-'+model
-            if row.get('completed_at',0)>agent_latest.get(key,{}).get('completed_at',0):agent_latest[key]=row
+            if at>agent_latest.get(key,{}).get('prepared_at',0):agent_latest[key]=row
     # Audit workshop is separate from the real runtime's enabled skills.
     workshop=BASE/'agents'
     for key,row in agent_latest.items():
         prompt=Path(row['prompt_path']).resolve()
         if not prompt.is_relative_to(OPS.resolve()) or not prompt.is_file() or prompt.stat().st_size>1024*1024:continue
-        target=workshop/'.agents/skills'/key
-        target.mkdir(mode=0o700,parents=True,exist_ok=True)
-        control.atomic_text(target/'SKILL.md','---\nname: '+key+'\ndescription: Retained OpenHands role brief for audit only\n---\n\n'+prompt.read_text())
+        text='---\nname: '+key+'\ndescription: Retained OpenHands role brief for audit only\n---\n\nAudit source: '+str(row['run_id'])+' / '+str(row.get('unit',''))+' / '+row['status']+'. This is an observation, not an enabled skill.\n\n'+prompt.read_text()
+        for skills in (workshop/'.openhands/skills',BASE/'audit-home/.openhands/skills'):
+            target=skills/key;target.mkdir(mode=0o700,parents=True,exist_ok=True)
+            control.atomic_text(target/'SKILL.md',text)
+        previous=workshop/'.agents/skills'/key/'SKILL.md'
+        if previous.is_file() and previous.read_text().startswith('---\nname: '+key+'\ndescription: Retained OpenHands role brief for audit only\n'):
+            previous.unlink()
+            if not list(previous.parent.iterdir()):previous.parent.rmdir()
     workshop.mkdir(mode=0o700,exist_ok=True)
-    control.atomic_text(workshop/'AGENTS.md','This workshop contains audit snapshots of completed OpenHands builder and reviewer briefs, grouped by role and model. They are not Codex-injected skills. Run Deep Scan manually. Treat findings as proposals; preserve required safeguards. Actual tool-use metadata is shown on the PHPRetro Builders page.\n')
+    control.atomic_text(workshop/'AGENTS.md','This workshop contains the most recent retained OpenHands builder and reviewer brief for each current model, including running runs. Snapshots state their source run identity and status. They are observations, not enabled skills. Deep Scan is manual. Runtime sessions and live issues use separate receipts and observers. Prompt changes require reviewed source changes.\n')
+    audits.append(cost(workshop,'openhands-agents','openhands'))
     for role,row in latest.items():
         prompt=Path(row['prompt_path']).resolve()
         if not prompt.is_relative_to(OPS.resolve()) or not prompt.is_file() or prompt.stat().st_size>1024*1024:continue
@@ -70,7 +76,7 @@ def collect():
         view.mkdir(mode=0o700,exist_ok=True)
         control.atomic_text(view/'AGENTS.md',prompt.read_text())
         item=cost(view,'openhands-'+role)
-        item.update(basis='retained-role-brief',source_completed_at=row['completed_at'])
+        item.update(basis='retained-role-brief',source_completed_at=row.get('completed_at'))
         receipt_id=row.get('run_id','')
         if isinstance(receipt_id,str) and len(receipt_id)==36 and all(c in '0123456789abcdef-' for c in receipt_id):
             history=OPS/'state/receipts'/(receipt_id+'.context.json')
@@ -92,7 +98,7 @@ def public_summary(ops=OPS):
         audits=[]
         for item in data['audits'][:10]:
             if not isinstance(item,dict):continue
-            if item.get('id') not in ('project','supervisor','openhands-builder','openhands-reviewer'):continue
+            if item.get('id') not in ('project','supervisor','openhands-builder','openhands-reviewer','openhands-agents'):continue
             if not number(item.get('estimated_tokens')) or not number(item.get('items')):continue
             safe={k:item[k] for k in ('id','estimated_tokens','items')}
             history=item.get('history')

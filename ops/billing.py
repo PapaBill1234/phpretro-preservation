@@ -86,8 +86,7 @@ def collect(auth, now=None, fetch=request):
     # Whole-account total is conservative for pipeline admission and includes UI use.
     query = {'type': 2, 'start_timestamp': start, 'end_timestamp': now}
     stats = fetch('/api/log/self/stat?' + urllib.parse.urlencode(query), auth)
-    query['token_name'] = 'coding'
-    rows, seen = [], set()
+    rows, account_rows, seen = [], [], set()
     total = None
     for page in range(1, 21):
         data = fetch('/api/log/self?' + urllib.parse.urlencode({**query, 'p': page, 'page_size': 100}), auth)
@@ -97,24 +96,26 @@ def collect(auth, now=None, fetch=request):
         if total != current_total or data.get('page') != page or data.get('page_size') != 100:
             raise ValueError('billing pagination changed during collection')
         for raw in data['items']:
-            if raw.get('type') != 2 or raw.get('token_name') != 'coding':
+            if raw.get('type') != 2:
                 raise ValueError('billing filter mismatch')
             row = normalize(raw, factor)
             if not start <= row['created_at'] <= now or not row['request_id'] or row['request_id'] in seen:
                 raise ValueError('billing window or request identity mismatch')
-            seen.add(row['request_id']); rows.append(row)
-        if len(rows) >= total:
+            seen.add(row['request_id']); account_rows.append(row)
+            if raw.get('token_name') == 'coding':rows.append(row)
+        if len(account_rows) >= total:
             break
         if not data['items']:
             raise ValueError('billing pagination incomplete')
-    if len(rows) != total:
+    if len(account_rows) != total:
         raise ValueError('billing collection page bound exceeded')
     return {'schema': 'phpretro.a6api-billing.v1', 'collected_at': time.time(),
             'window_start': start, 'window_end': now, 'day': dt.datetime.fromtimestamp(now, dt.timezone.utc).date().isoformat(),
             'currency': 'USD', 'quota_per_usd': factor, 'account_balance_usd': number(user['quota']) / factor,
             'account_day_billed_usd': number(stats['quota']) / factor,
             'coding_day_billed_usd': sum(r['billed_usd'] for r in rows), 'coding_requests': len(rows),
-            'rows': rows, 'source': 'https://a6api.com/api/log/self',
+            'rows': rows, 'account_rows': account_rows, 'account_rows_scope': 'All account inference keys, current UTC day, maximum 2000 calls',
+            'source': 'https://a6api.com/api/log/self',
             'usage_complete': False, 'note': 'Provider billing observation; does not settle missing SDK responses.'}
 
 

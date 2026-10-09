@@ -4,8 +4,9 @@ globalThis.fetch=async function(input,options={}) {
   if(String(input)!=='https://api.a6api.com/v1/chat/completions')return original(input,options);
   let body;try{body=JSON.parse(options.body);}catch{return original(input,options);}
   if(body.model!=='gpt-6.1-sol')return original(input,options);
-  const request={model:body.model,input:body.messages,reasoning:{effort:'high'},
-    max_output_tokens:Math.max(16,Math.min(4096,body.max_tokens||4096))};
+  const connectionTest=body.max_tokens && body.max_tokens<=512;
+  const request={model:body.model,input:body.messages,reasoning:{effort:connectionTest?'none':'high'},
+    max_output_tokens:connectionTest?512:8192};
   if(body.response_format?.type==='json_object')request.text={format:{type:'json_object'}};
   const result=await original('https://api.a6api.com/v1/responses',{...options,body:JSON.stringify(request)});
   if(!result.ok)return result;
