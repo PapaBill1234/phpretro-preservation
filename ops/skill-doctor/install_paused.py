@@ -16,10 +16,13 @@ assert subprocess.check_output([str(cli),'--version'],text=True).strip()=='0.7.0
 BASE.chmod(0o700)
 for name in ('reports','snapshots','audit-home'):
     path=BASE/name; path.mkdir(mode=0o700,exist_ok=True); path.chmod(0o700)
-(BASE/'audit-home/.codex').mkdir(mode=0o700,exist_ok=True)
+for name in ('sessions','archived_sessions'):
+    (BASE/'audit-home/.codex'/name).mkdir(mode=0o700,parents=True,exist_ok=True)
 binary=HOME/'.local/bin/skill-doctor';binary.parent.mkdir(parents=True,exist_ok=True)
 launcher='#!/bin/sh\nexport HOME=/home/ubuntu/phpretro-skill-doctor/audit-home\nexec /home/ubuntu/phpretro-skill-doctor/runtime/node_modules/.bin/skill-doctor "$@"\n'
-assert not binary.exists() or binary.read_text()==launcher, 'Existing launcher is not owned by this installer'
+previous_launcher=launcher
+launcher=launcher.replace('exec /home','export NODE_OPTIONS="--require /home/ubuntu/phpretro-preservation/ops/skill-doctor/deep-mode.cjs"\nexec /home')
+assert not binary.exists() or binary.read_text() in (previous_launcher,launcher), 'Existing launcher is not owned by this installer'
 binary.write_text(launcher);binary.chmod(0o700)
 units=HOME/'.config/systemd/user'; units.mkdir(parents=True,exist_ok=True)
 for name in ('phpretro-skill-doctor.service','phpretro-skill-doctor.timer','phpretro-skill-doctor-ui.service'):
@@ -30,5 +33,6 @@ systemctl('daemon-reload')
 systemctl('start','phpretro-skill-doctor.service')
 systemctl('enable','--now','phpretro-skill-doctor.timer')
 systemctl('enable','--now','phpretro-skill-doctor-ui.service')
+systemctl('restart','phpretro-skill-doctor-ui.service')
 assert (OPS/'STOP').exists()
 print('Read-only Skill Doctor audit installed; coding remains paused.')

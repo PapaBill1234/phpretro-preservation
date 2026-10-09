@@ -42,12 +42,27 @@ def collect():
     if state.get('reservations'):return # Avoid mixing active runs with settled snapshots.
     audits=[cost(REPO,'project'),cost(HOME/'phpretro-codex/work','supervisor')]
     latest={}
+    agent_latest={}
     for path in (OPS/'state/receipts').glob('*.json'):
         if path.name.count('.')!=1 or path.stat().st_size>1024*1024:continue
         row=json.loads(path.read_text())
         role=row.get('role')
         if row.get('runtime')!='openhands' or row.get('status')!='complete' or role not in ('builder','reviewer'):continue
         if row.get('completed_at',0)>latest.get(role,{}).get('completed_at',0):latest[role]=row
+        model=row.get('model')
+        if model in ('gpt-6-luna','gpt-6.1-sol','deepseek-v4.1-flash'):
+            key=role+'-'+model
+            if row.get('completed_at',0)>agent_latest.get(key,{}).get('completed_at',0):agent_latest[key]=row
+    # Audit workshop is separate from the real runtime's enabled skills.
+    workshop=BASE/'agents'
+    for key,row in agent_latest.items():
+        prompt=Path(row['prompt_path']).resolve()
+        if not prompt.is_relative_to(OPS.resolve()) or not prompt.is_file() or prompt.stat().st_size>1024*1024:continue
+        target=workshop/'.agents/skills'/key
+        target.mkdir(mode=0o700,parents=True,exist_ok=True)
+        control.atomic_text(target/'SKILL.md','---\nname: '+key+'\ndescription: Retained OpenHands role brief for audit only\n---\n\n'+prompt.read_text())
+    workshop.mkdir(mode=0o700,exist_ok=True)
+    control.atomic_text(workshop/'AGENTS.md','This workshop contains audit snapshots of completed OpenHands builder and reviewer briefs, grouped by role and model. They are not Codex-injected skills. Run Deep Scan manually. Treat findings as proposals; preserve required safeguards. Actual tool-use metadata is shown on the PHPRetro Builders page.\n')
     for role,row in latest.items():
         prompt=Path(row['prompt_path']).resolve()
         if not prompt.is_relative_to(OPS.resolve()) or not prompt.is_file() or prompt.stat().st_size>1024*1024:continue

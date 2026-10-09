@@ -10,6 +10,9 @@ SKILL_DOCTOR_PORT=38123
 
 def backend_route(raw_path):
  path=urlsplit(raw_path).path
+ if path=='/agent-doctor' or path.startswith('/agent-doctor/'):
+  suffix=raw_path[len('/agent-doctor'):]
+  return SKILL_DOCTOR_PORT,('/'+suffix if not suffix.startswith('/') else suffix),False
  if path=='/skill-doctor' or path.startswith('/skill-doctor/'):
   suffix=raw_path[len('/skill-doctor'):]
   return SKILL_DOCTOR_PORT,('/'+suffix if not suffix.startswith('/') else suffix),False
@@ -46,11 +49,14 @@ def openhands_html(data):
 })();</script>'''
  return data.replace(b'</head>',script+b'</head>',1)
 
-def skill_doctor_asset(data):
+def skill_doctor_asset(data,prefix=b'/skill-doctor'):
  # Upstream serves at /; scope its same-origin API/assets to our authenticated prefix.
- for prefix in (b'"',b"'",b'`'):
+ for quote in (b'"',b"'",b'`'):
   for route in (b'/api/',b'/assets/'):
-   data=data.replace(prefix+route,prefix+b'/skill-doctor'+route)
+   data=data.replace(quote+route,quote+prefix+route)
+ if b'</head>' in data:
+  script=b'''<script>localStorage.setItem('skill-doctor-analysis-mode','standard');try{const p=JSON.parse(localStorage.getItem('skill-doctor-project-preferences')||'{}');for(const k of Object.keys(p)){Object.assign(p[k],{useAiAudit:false,analyzeConflicts:false,discoverMcpTools:false,conflictStrategy:'token'});}localStorage.setItem('skill-doctor-project-preferences',JSON.stringify(p));}catch(e){}</script>'''
+  data=data.replace(b'</head>',script+b'</head>',1)
  return data
 def db():
  c=sqlite3.connect(DB,timeout=1); c.execute('CREATE TABLE IF NOT EXISTS account(id INTEGER PRIMARY KEY CHECK(id=1),salt TEXT,hash TEXT)'); c.execute('CREATE TABLE IF NOT EXISTS sessions(hash TEXT PRIMARY KEY,expires REAL)'); c.commit(); return c
@@ -194,7 +200,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
     if openhands and resp.getheader('Content-Type','').startswith('text/html'):
      data=openhands_html(data)
     if port==SKILL_DOCTOR_PORT and resp.getheader('Content-Type','').startswith(('text/html','text/javascript')):
-     data=skill_doctor_asset(data)
+     data=skill_doctor_asset(data,b'/agent-doctor' if self.path.startswith('/agent-doctor') else b'/skill-doctor')
+    if port==SKILL_DOCTOR_PORT and upstream_path.startswith('/api/bootstrap') and resp.status==200:
+     payload=json.loads(data)
+     if self.path.startswith('/agent-doctor'):
+      payload['projectDir']=str(Path.home()/'phpretro-skill-doctor/agents')
+     payload['snapshot']=None # Each view starts with a fresh local scan, never saved Deep mode.
+     data=json.dumps(payload).encode()
     self.send_header('Content-Length',str(len(data))); self.end_headers(); self.wfile.write(data)
    con.close()
   except (OSError,ValueError,http.client.HTTPException):
