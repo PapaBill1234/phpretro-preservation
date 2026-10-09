@@ -86,7 +86,7 @@ def main(receipt_path):
         raise control.IntegrityError("model has no verified provider route")
     usage_path = Path(manifest["usage_path"])
     state = {"started": 0, "finished": 0, "depth": 0, "complete": False,
-             "unknown_calls": 0, "providers": [], "failed": set(), "recoverable": set()}
+             "unknown_calls": 0, "pending": {}, "providers": [], "failed": set(), "recoverable": set()}
     context = context_usage.Recorder(receipt_path.with_suffix('.context.json'))
     journal = session_journal.Journal(receipt_path.with_suffix('.session.json'),
         [routing.credential(credentials,p,model) for p in routes])
@@ -151,7 +151,8 @@ def main(receipt_path):
                     usage_schema=requests.SCHEMA, request_token_ceiling=requests.CALL_CEILING,
                     completed_api_calls=state["finished"], unknown_api_calls=state["started"] - state["finished"],
                     usage_known_calls=len(llm.metrics.token_usages),
-                    conservative_tokens=data.get("total_tokens", 0) + (state["started"] - state["finished"]) * requests.CALL_CEILING)
+                    unknown_request_ceilings=list(state["pending"].values()),
+                    conservative_tokens=data.get("total_tokens", 0) + sum(state["pending"].values()))
         # Portdan Luna/DeepSeek prices have not been verified. Do not reuse A6 rates.
         if "portdan" in used and model != "gpt-6.1-sol":
             data["cost_status"] = "unknown-price"
@@ -164,17 +165,25 @@ def main(receipt_path):
         if outer:
             messages = args[0] if args else kwargs.get("messages", [])
             tools = args[1] if len(args) > 1 else kwargs.get("tools")
-            if llm.get_token_count(messages, tools) > requests.MAX_INPUT:
+            usage = checkpoint(False)
+            remaining = manifest["reserved_tokens"] - usage.get("conservative_tokens", 0)
+            ceiling = requests.next_ceiling(max(0, remaining))
+            if not ceiling:
+                journal.add('result','Inference admission denied: remaining allowance cannot cover output')
+                raise control.IntegrityError("next inference would exceed the reserved allowance")
+            input_limit = ceiling - requests.MAX_OUTPUT
+            if llm.get_token_count(messages, tools) > input_limit:
+                journal.add('result','Inference admission denied: context exceeds remaining request allowance')
                 raise control.IntegrityError("context exceeds the reserved next-call ceiling")
+            # The real SDK enforces this same input bound before transport.
+            # Narrowing it cannot raise the original job reservation.
+            clients[provider].max_input_tokens = input_limit
             system = [m for m in messages if getattr(m,'role',None)=='system' or isinstance(m,dict) and m.get('role')=='system']
             context.request(llm.get_token_count(messages,tools),llm.get_token_count(messages,None),llm.get_token_count(system,None))
-            usage = checkpoint(False)
-            # Reserve maximum next-call context/output before starting it.
-            if usage.get("conservative_tokens", 0) + requests.CALL_CEILING > manifest["reserved_tokens"]:
-                raise control.IntegrityError("next inference would exceed the reserved allowance")
             if receipt_path.with_suffix(".cancel.json").exists():
                 raise InterruptedError("run cancelled")
             state["started"] += 1
+            state["pending"][state["started"]] = ceiling
             state["providers"].append(provider)
             journal.add('provider_request','Request admitted',provider=provider,request=state['started'])
             checkpoint(False)  # Durable before the provider request can start.
@@ -183,6 +192,7 @@ def main(receipt_path):
             yield
             if outer:
                 state["finished"] += 1
+                state["pending"].pop(state["started"])
         except Exception as exc:
             if outer:
                 state["unknown_calls"] += 1

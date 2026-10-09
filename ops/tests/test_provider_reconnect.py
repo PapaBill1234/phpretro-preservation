@@ -71,6 +71,7 @@ class BoundedUsageTests(unittest.TestCase):
                 "request_token_ceiling":requests.CALL_CEILING,
                 "api_calls":3, "completed_api_calls":2, "unknown_api_calls":1,
                 "usage_known_calls":2, "total_tokens":240, "usage_complete":False,
+                "unknown_request_ceilings":[requests.CALL_CEILING],
                 "conservative_tokens":240 + requests.CALL_CEILING}
 
     def test_partial_checkpoint_roundtrip_retains_unknown_charge(self):
@@ -93,6 +94,23 @@ class BoundedUsageTests(unittest.TestCase):
         self.assertEqual(requests.MAX_INPUT, 60000)
         self.assertEqual(requests.CALL_CEILING, 64096)
         self.assertLess(requests.CALL_CEILING, 69455)
+
+    def test_small_remaining_allowance_still_admits_a_bounded_request(self):
+        self.assertEqual(requests.next_ceiling(69455),64096)
+        self.assertEqual(requests.next_ceiling(59667),59667)
+        self.assertEqual(requests.next_ceiling(4096),0)
+        data=self.usage();data.update(unknown_request_ceilings=[59667],conservative_tokens=59907)
+        self.assertEqual(o.accounted_usage(data)['accounted_tokens'],59907)
+        root=tmpdir('narrowed-usage-');path=root/'usage.json';control.atomic_json(path,data)
+        recorded=worker.usage_snapshot(path,root/'unused.db','','openhands')
+        self.assertEqual(o.accounted_usage(recorded)['accounted_tokens'],59907)
+        data['usage_schema']='phpretro.bounded-usage.v2'
+        with self.assertRaises(control.IntegrityError):o.accounted_usage(data)
+
+    def test_variable_unknown_ceilings_cannot_be_tampered_with(self):
+        for value in (None,[],[True],[4096],[64097],[64096,1]):
+            data=self.usage();data['unknown_request_ceilings']=value
+            with self.subTest(value=value),self.assertRaises(control.IntegrityError):o.accounted_usage(data)
 
     def test_legacy_unknown_usage_keeps_million_token_floor(self):
         data = self.usage(); data.pop("usage_schema")

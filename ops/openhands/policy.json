@@ -31,6 +31,9 @@
       "provider_order": [
         "a6api",
         "portdan"
+      ],
+      "reported_model_aliases": [
+        "cb/gpt-6-luna"
       ]
     },
     "deepseek-v4.1-flash": {
