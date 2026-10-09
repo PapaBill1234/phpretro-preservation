@@ -116,6 +116,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
   if path=='/api/access/status':
    self.send(200,{'public_url':public_url(),'provider':'A6API','endpoint':'https://api.a6api.com/v1','credential_configured':(ROOT/'secrets/a6api.env').exists(),'workspace':str(ROOT),'desktop':'enabled'}); return
   if path=='/login': self.send(303,b'',headers={'Location':'/'}); return
+  if path in ('/skill-doctor/api/openhands-sessions','/agent-doctor/api/openhands-sessions'):
+   import sys
+   module_dir=str(Path.home()/'phpretro-preservation/ops')
+   if module_dir not in sys.path:sys.path.insert(0,module_dir)
+   from doctor_sessions import sessions
+   self.send(200,sessions()); return
   self.proxy()
  def do_POST(self):
   if not self.allowed_host() or not self.same_origin(): self.send(403,{'error':'Origin/Host rejected'}); return

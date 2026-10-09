@@ -1,6 +1,8 @@
 # Skill Doctor audit
 
-Pinned upstream: https://github.com/evilstar2016/skill-doctor (MIT), npm version 0.7.0.
+Pinned upstream: https://github.com/evilstar2016/skill-doctor (MIT), version 0.7.0, source fe1f942cf715a47faa67def0fa5f07882f3a84dc. PHPRetro maintains a source extension for OpenHands discovery and receipt-backed sessions. Run `python3 ops/skill-doctor/build_extension.py` before the paused installer; it verifies/builds original source plus the maintained extension, records source hashes and package hash, and does not activate it. The installer requires this matching artifact and reviewed main.
+
+OpenHands is selectable in scan settings and detected agents. Its optimization view reads real role receipts and context counters, including failed runs. Conversation transcripts were not retained by the SDK; older missing tool evidence stays unknown. A6API account calls are a separate billing view covering all inference keys in the current UTC day, bounded at 2000 calls. Session token counters and provider costs are not summed twice. Deep Scan remains manual; upstream null AI responses now generate a visible warning. Sol analysis uses high reasoning with an 8192 output-token ceiling; the small connection test uses no reasoning and 512 tokens. Embeddings remain enabled.
 
 Install the runtime as Ubuntu's unprivileged account:
 

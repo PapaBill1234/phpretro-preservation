@@ -58,9 +58,14 @@ def collect():
     for key,row in agent_latest.items():
         prompt=Path(row['prompt_path']).resolve()
         if not prompt.is_relative_to(OPS.resolve()) or not prompt.is_file() or prompt.stat().st_size>1024*1024:continue
-        target=workshop/'.agents/skills'/key
-        target.mkdir(mode=0o700,parents=True,exist_ok=True)
-        control.atomic_text(target/'SKILL.md','---\nname: '+key+'\ndescription: Retained OpenHands role brief for audit only\n---\n\n'+prompt.read_text())
+        text='---\nname: '+key+'\ndescription: Retained OpenHands role brief for audit only\n---\n\n'+prompt.read_text()
+        for skills in (workshop/'.openhands/skills',BASE/'audit-home/.openhands/skills'):
+            target=skills/key;target.mkdir(mode=0o700,parents=True,exist_ok=True)
+            control.atomic_text(target/'SKILL.md',text)
+        previous=workshop/'.agents/skills'/key/'SKILL.md'
+        if previous.is_file() and previous.read_text().startswith('---\nname: '+key+'\ndescription: Retained OpenHands role brief for audit only\n'):
+            previous.unlink()
+            if not list(previous.parent.iterdir()):previous.parent.rmdir()
     workshop.mkdir(mode=0o700,exist_ok=True)
     control.atomic_text(workshop/'AGENTS.md','This workshop contains audit snapshots of completed OpenHands builder and reviewer briefs, grouped by role and model. They are not Codex-injected skills. Run Deep Scan manually. Treat findings as proposals; preserve required safeguards. Actual tool-use metadata is shown on the PHPRetro Builders page.\n')
     for role,row in latest.items():

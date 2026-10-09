@@ -97,3 +97,18 @@ class BillingTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+class AccountCallCoverageTest(unittest.TestCase):
+    def test_other_keys_visible_without_changing_coding_total(self):
+        now=100;queries=[]
+        def fetch(path,auth=None):
+            queries.append(path)
+            if path=='/api/status':return {'quota_per_unit':500000,'quota_display_type':'USD'}
+            if path=='/api/user/self':return {'id':1,'quota':500000}
+            if '/stat?' in path:return {'quota':1000}
+            return {'total':2,'page':1,'page_size':100,'items':[{'type':2,'token_name':name,'request_id':name,'created_at':50,'model_name':'sol','prompt_tokens':100,'completion_tokens':10,'quota':500} for name in ('coding','manual')]}
+        result=billing.collect({'user_id':1},now,fetch)
+        self.assertEqual(len(result['account_rows']),2)
+        self.assertEqual(result['coding_requests'],1)
+        self.assertEqual(result['coding_day_billed_usd'],.001)
+        self.assertTrue(all('token_name=' not in q for q in queries))

@@ -11,6 +11,14 @@ assert not json.loads((OPS/'state/units.state.json').read_text()).get('reservati
 def git(*args):return subprocess.check_output(['git','-C',str(ROOT),*args],text=True).strip()
 assert not git('status','--porcelain'), 'Clean checkout required'
 assert git('rev-parse','HEAD')==git('rev-parse','origin/main'), 'Reviewed main required'
+import hashlib
+extension=json.loads((BASE/'extension-manifest.json').read_text())
+assert extension['pin']=='fe1f942cf715a47faa67def0fa5f07882f3a84dc'
+for name,digest in extension['inputs'].items():
+    assert hashlib.sha256((ROOT/'ops/skill-doctor'/name).read_bytes()).hexdigest()==digest,'Build source mismatch'
+package=Path(extension['package']).resolve()
+assert package.is_relative_to(BASE.resolve()) and hashlib.sha256(package.read_bytes()).hexdigest()==extension['sha256']
+subprocess.run(['npm','install','--prefix',str(BASE/'runtime'),str(package),'--ignore-scripts','--no-audit','--no-fund'],check=True)
 cli=BASE/'runtime/node_modules/.bin/skill-doctor'
 assert subprocess.check_output([str(cli),'--version'],text=True).strip()=='0.7.0'
 BASE.chmod(0o700)
