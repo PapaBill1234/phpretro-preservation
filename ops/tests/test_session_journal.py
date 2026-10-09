@@ -3,8 +3,19 @@ from pathlib import Path
 import session_journal as j
 import doctor_sessions as d
 import doctor_canvas as canvas
+from unittest.mock import patch
 
 class JournalTest(unittest.TestCase):
+ def test_native_running_job_is_not_a_failed_or_complete_session(self):
+  with tempfile.TemporaryDirectory() as root:
+   home=Path(root);job=home/'phpretro-codex/jobs'/str(uuid.uuid4());job.mkdir(parents=True)
+   (job/'schema.json').write_text('{}');(job/'events.jsonl').write_text(json.dumps({'type':'turn.completed','usage':{'input_tokens':10,'output_tokens':4}})+'\n')
+   (job/'status.json').write_text(json.dumps({'status':'running','pid':123,'process_identity':'fixture'}))
+   with patch('worker.alive',return_value=True):row=d.native_sessions(home)[0]
+   self.assertEqual(row['status'],'running');self.assertFalse(row['complete'])
+   (job/'decision.json').write_text(json.dumps({'action':'restart_billing'}))
+   (job/'status.json').write_text(json.dumps({'status':'complete','rc':0}))
+   row=d.native_sessions(home)[0];self.assertEqual(row['status'],'complete');self.assertTrue(row['complete'])
  def test_secrets_are_removed_and_private_timeline_stays_bounded(self):
   with tempfile.TemporaryDirectory() as root:
    path=Path(root)/'timeline.json';journal=j.Journal(path,['actual-private-key'])

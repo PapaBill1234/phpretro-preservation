@@ -21,6 +21,7 @@ export const openhandsAdapter: PlatformAdapter = {
 """)
 replace('web/src/App.tsx',"'openclaw','hermes','workbuddy'","'openclaw','hermes','openhands','workbuddy'")
 replace('web/src/components/ui.tsx',"hermes: 'Hermes',","hermes: 'Hermes', openhands: 'OpenHands',")
+replace('web/src/components/ui.tsx','<span className="platform-icon" style={style}>','<span aria-hidden="true" className="platform-icon" style={style}>')
 replace('web/src/pages/ContextOptimizationPage.tsx',"import './contextOptimizationPage.css';","import './contextOptimizationPage.css';\nimport { OpenHandsSessions } from './OpenHandsSessions';")
 replace('web/src/pages/ContextOptimizationPage.tsx',"  if (platform === 'codex')", "  if (platform === 'openhands') return active ? <OpenHandsSessions /> : null;\n\n  if (platform === 'codex')")
 replace('web/src/pages/ContextOptimizationPage.tsx',"import { OpenHandsSessions } from './OpenHandsSessions';", "import { OpenHandsSessions } from './OpenHandsSessions';\nimport type { RuntimeReport } from './RuntimeDashboard';")
@@ -41,6 +42,26 @@ replace('web/src/App.tsx','        <div className="page-container">',"""        
           {['overview','resources','history'].includes(route)&&<RuntimeCoverage {...runtime}/>}
           {route==='issues'&&<p>Live runtime findings refresh every 15 seconds. Session coverage gaps appear under Info; click a runtime issue for evidence.</p>}""")
 replace('web/src/App.tsx','<ContextOptimizationPageView active=', '<ContextOptimizationPageView runtime={runtime} active=')
+replace('web/src/App.tsx','<select value={options.platform}',"<select aria-label={t('settings.platform')} value={options.platform}")
+replace('web/src/App.tsx','<select value={props.analysisMode}',"<select aria-label={t('topbar.analysis')} value={props.analysisMode}")
+replace('web/src/App.tsx',"{route === 'scan-paths' && <ScanPathsPageView", "{route === 'scan-paths' && <ScanPathsPageView projectDir={scanOptions.projectDir}")
+replace('web/src/pages/ScanPathsPage.tsx','{ platforms, preferredPlatform, setToast, onSaved }','{ platforms, preferredPlatform, setToast, onSaved, projectDir }')
+replace('web/src/pages/ScanPathsPage.tsx','{ platforms: Platform[];', '{ projectDir?:string; platforms: Platform[];')
+replace('web/src/pages/ScanPathsPage.tsx','void getScanSources()', 'void getScanSources(projectDir)')
+replace('web/src/pages/ScanPathsPage.tsx','  }, []);','  }, [projectDir]);')
+replace('web/src/pages/ScanPathsPage.tsx','await saveScanSources(config)', 'await saveScanSources(config,projectDir)')
+replace('web/src/pages/ScanPathsPage.tsx','await resetScanSources(active)', 'await resetScanSources(active,projectDir)')
+replace('web/src/api.ts','getScanSources():','getScanSources(projectDir?:string):')
+replace('web/src/api.ts',"return request('/api/scan-sources');", "return request('/api/scan-sources'+(projectDir?'?projectDir='+encodeURIComponent(projectDir):''));")
+replace('web/src/api.ts','saveScanSources(scanSources: Record<string, AgentScanSourcesUserConfig>)', 'saveScanSources(scanSources: Record<string, AgentScanSourcesUserConfig>,projectDir?:string)')
+replace('web/src/api.ts',"method: 'PUT', body: JSON.stringify({ scanSources }),", "method: 'PUT', body: JSON.stringify({ scanSources,projectDir }),")
+replace('web/src/api.ts','resetScanSources(platform: Platform)', 'resetScanSources(platform: Platform,projectDir?:string)')
+replace('web/src/api.ts',"method: 'POST', body: JSON.stringify({ platform }),", "method: 'POST', body: JSON.stringify({ platform,projectDir }),")
+replace('src/ui-server/configHandlers.ts',"  if (request.method === 'GET' && url.pathname === '/api/scan-sources') {", "  if (request.method === 'GET' && url.pathname === '/api/scan-sources') {\n    const projectDir=url.searchParams.get('projectDir')||context.projectDir;")
+replace('src/ui-server/configHandlers.ts','      sources: context.getScanSources(),','      sources: context.getScanSources(projectDir),')
+replace('src/ui-server/configHandlers.ts',"    const projectDir=url.searchParams.get('projectDir')||context.projectDir;\n    sendJson(response, 200, {\n      projectDir: context.projectDir,", "    const projectDir=url.searchParams.get('projectDir')||context.projectDir;\n    sendJson(response, 200, {\n      projectDir,")
+replace('src/ui-server/configHandlers.ts','saved: true, sources: context.getScanSources()','saved: true, sources: context.getScanSources(typeof body.projectDir===\'string\'?body.projectDir:undefined)')
+replace('src/ui-server/configHandlers.ts','reset: true, sources: context.getScanSources()','reset: true, sources: context.getScanSources(typeof body.projectDir===\'string\'?body.projectDir:undefined)')
 replace('web/src/App.tsx','try { setResourceDetail(await getResourceDetail(resource.id)); }',"try { const detail=await getResourceDetail(resource.id);setResourceDetail({...detail,issues:[...detail.issues,...(snapshot?.issues.filter(i=>i.id.startsWith('runtime:')&&i.resourceIds.includes(resource.id))||[])]}); }")
 replace('web/src/pages/ManagePage.tsx','  return <section className="skill-library-page">',"  return <section className=\"skill-library-page\">{selectedAgent==='openhands'&&<div className=\"panel\"><h3>OpenHands audit resources</h3><p>The skill library can store audit resources. SDK instructions are compiled into controller-owned briefs; changing an active builder requires a reviewed source change. Audit snapshots are not deployment targets.</p></div>}")
 replace('web/src/App.tsx','      {selectedIssue && <IssueDrawer',"""      {selectedIssue?.id.startsWith('runtime:')&&selectedIssue.evidence.find(e=>e.label==='Session')&&<div className="toast"><button className="button" onClick={()=>{
@@ -48,6 +69,26 @@ replace('web/src/App.tsx','      {selectedIssue && <IssueDrawer',"""      {selec
         setScanOptions(current=>({...current,platform:'all'}));setContextView('evidence');setRoute('context');window.location.hash='/context?view=evidence&session='+encodeURIComponent(identity);
       }}>View this agent session</button></div>}
       {selectedIssue && <IssueDrawer""")
+# Upstream's model settings were hard-coded in Chinese, even in English mode.
+app=root/'web/src/App.tsx';text=app.read_text();before,fragment=text.split('function ModelServiceSettings',1)
+fragment,after=fragment.split('function emptyModelServiceForm',1)
+fragment=fragment.replace("  const [config, setConfig]", "  const {locale}=useTranslation();const label=(zh:string,en:string)=>locale==='zh-CN'?zh:en;\n  const [config, setConfig]",1)
+fragment=fragment.replace("  const update = (next:", "  const {locale}=useTranslation();const label=(zh:string,en:string)=>locale==='zh-CN'?zh:en;\n  const update = (next:",1)
+literal={
+ '模型服务已保存。分析模型用于 AI 审计，嵌入模型用于语义冲突分析。':'Model services saved. Analysis supports AI auditing; embeddings support semantic conflict analysis.',
+ '（已保存；留空则保留）':'(saved; leave empty to retain)', '（可选）':'(optional)',
+ '输入新 Key 以替换':'Enter a new key to replace', '本地服务可留空':'Optional for a local service'}
+for zh,en in literal.items():fragment=fragment.replace("'"+zh+"'",'label('+json.dumps(zh,ensure_ascii=False)+','+json.dumps(en)+')')
+for zh,en in {'模型服务':'Model services','分析模型（/chat/completions）':'Analysis model (Sol uses Responses)','嵌入模型（/embeddings）':'Embedding model (/embeddings)'}.items():
+ fragment=fragment.replace('title="'+zh+'"','title={label('+json.dumps(zh,ensure_ascii=False)+','+json.dumps(en)+')}')
+for zh,en in {
+ '模型服务':'Model services','使用 OpenAI-compatible API。云端模型与已运行的本地/局域网模型服务都填写 endpoint；本应用不会下载模型或启动推理引擎。':'Use an OpenAI-compatible endpoint. These settings apply to manual Doctor analysis, separate from builder routing.',
+ '测试分析模型':'Test analysis model','测试嵌入模型':'Test embedding model','保存模型服务':'Save model services','模型名称':'Model name',
+ '清除保存的 API Key':'Clear saved API key','保存后将不再发送 Authorization 请求头。':'Saving this removes the authorization header.',
+ '请求超时（毫秒，可选）':'Request timeout (milliseconds, optional)'}.items():
+ fragment=fragment.replace('>'+zh+'<','>{label('+json.dumps(zh,ensure_ascii=False)+','+json.dumps(en)+')}<')
+app.write_text(before+'function ModelServiceSettings'+fragment+'function emptyModelServiceForm'+after)
+replace('web/src/App.tsx','}保存模型服务</button>',"}{label('保存模型服务','Save model services')}</button>")
 # Connection tests request five output tokens: high reasoning cannot fit inside
 # that ceiling. Keep the real analysis path high; the tiny test uses no reasoning.
 replace('src/models/testOpenAiCompatible.ts',"max_tokens: 5", "max_tokens: 512")
@@ -58,6 +99,7 @@ shutil.copyfile(here/'RuntimeDashboard.tsx',root/'web/src/pages/RuntimeDashboard
 shutil.copyfile(here/'runtimeDashboard.css',root/'web/src/pages/runtimeDashboard.css')
 shutil.copyfile(here/'RuntimeDashboard.test.tsx',root/'tests/ui/RuntimeDashboard.test.tsx')
 replace('tests/ui/App.test.tsx',"import { beforeEach, describe, expect, it, vi } from 'vitest';", "import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';\nafterEach(()=>{cleanup();vi.unstubAllGlobals();});")
+replace('tests/ui/App.test.tsx',"expect(mocks.resetScanSources).toHaveBeenCalledWith('codex')", "expect(mocks.resetScanSources).toHaveBeenCalledWith('codex','/tmp/project')")
 replace('tests/ui/App.test.tsx',"    vi.clearAllMocks();\n    mocks.loadOptimization", "    vi.clearAllMocks();\n    vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({sessions:[],provider_calls:[],issues:[],runtimes:[]})}));\n    mocks.loadOptimization")
 replace('tests/ui/App.test.tsx',"  it('keeps the fixed style controls independent of legacy theme preferences',", """  it('wires live OpenHands issues, resources, sessions and all context tabs into real pages',async()=>{
     localStorage.setItem('skill-doctor-locale','en-US');
@@ -129,6 +171,23 @@ it('discovers OpenHands snapshots without Codex ownership or deployment writes',
   expect(rows.filter(r=>r.platform==='codex')).toHaveLength(0);
   expect(normalizePlatformName('openhands')).toBe('openhands');
   expect(getPlatformAdapter('openhands')?.installTargets).toEqual([]);
+ } finally {rmSync(root,{recursive:true,force:true});}
+});
+""")
+(root/'tests/ui-server/openhandsScope.test.ts').write_text("""import {mkdtempSync,mkdirSync,rmSync} from 'node:fs';
+import {join} from 'node:path';import {tmpdir} from 'node:os';import {it,expect} from 'vitest';
+import type {IncomingMessage,ServerResponse} from 'node:http';
+import {handleConfigRoute} from '../../src/ui-server/configHandlers';
+import {createApiRequestContext,type ApiServerContext} from '../../src/ui-server/apiContext';
+it('resolves scan paths against the selected OpenHands workshop, not the server checkout',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'openhands-scope-')),home=join(root,'home'),controller=join(root,'controller'),workshop=join(root,'agents');
+ try {mkdirSync(home,{recursive:true});mkdirSync(controller);mkdirSync(join(workshop,'.openhands/skills'),{recursive:true});
+  const context=createApiRequestContext({projectDir:controller,homeDir:home,scans:{},benefits:{}} as unknown as ApiServerContext);
+  let payload='';const response={setHeader:()=>{},writeHead:()=>{},end:(text:string)=>{payload=text;}} as unknown as ServerResponse;
+  await handleConfigRoute({method:'GET'} as IncomingMessage,response,new URL('http://localhost/api/scan-sources?projectDir='+encodeURIComponent(workshop)),context);
+  const data=JSON.parse(payload);expect(data.projectDir).toBe(workshop);
+  const source=data.sources.find((s:{platform:string;scope:string})=>s.platform==='openhands'&&s.scope==='project');
+  expect(source.status).toBe('exists');expect(source.resolvedPath).toBe(join(workshop,'.openhands/skills'));
  } finally {rmSync(root,{recursive:true,force:true});}
 });
 """)
