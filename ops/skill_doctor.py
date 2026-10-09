@@ -75,7 +75,9 @@ def collect():
         view=BASE/'snapshots'/role
         view.mkdir(mode=0o700,exist_ok=True)
         control.atomic_text(view/'AGENTS.md',prompt.read_text())
-        item=cost(view,'openhands-'+role)
+        skill=view/'.openhands/skills'/role;skill.mkdir(mode=0o700,parents=True,exist_ok=True)
+        control.atomic_text(skill/'SKILL.md','---\nname: '+role+'\ndescription: Retained OpenHands role brief for audit only\n---\n\n'+prompt.read_text())
+        item=cost(view,'openhands-'+role,'openhands')
         item.update(basis='retained-role-brief',source_completed_at=row.get('completed_at'))
         receipt_id=row.get('run_id','')
         if isinstance(receipt_id,str) and len(receipt_id)==36 and all(c in '0123456789abcdef-' for c in receipt_id):

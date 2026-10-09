@@ -2,6 +2,14 @@ import json,tempfile,unittest
 from pathlib import Path
 import doctor_sessions as d
 class SessionsTest(unittest.TestCase):
+ def test_iso_receipt_start_dates_are_readable(self):
+  self.assertEqual(d.timestamp('2026-10-09T00:00:00Z'),1791504000)
+  self.assertEqual(d.timestamp(123),123);self.assertIsNone(d.timestamp('invalid'))
+ def test_failures_after_a_unit_merges_are_historical_evidence(self):
+  row={'id':'run','runtime':'openhands','unit':'F1','unit_state':'merged','role':'reviewer','model':'sol','rc':1,'context':{},'context_complete':False}
+  issues=d.findings([row],{}, {},None)
+  failure=next(i for i in issues if 'failure' in i['title'])
+  self.assertEqual(failure['severity'],'info');self.assertIn('subsequently merged',failure['summary'])
  def test_receipts_are_not_codex_sessions_or_transcripts(self):
   with tempfile.TemporaryDirectory() as directory:
    home=Path(directory);state=home/'phpretro-ops/state';(state/'receipts').mkdir(parents=True)

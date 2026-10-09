@@ -15,6 +15,11 @@ it('merges live findings into issue counts and linked resources without mutating
  expect(merged.summary.low).toBe(1);expect(merged.issues[0].resourceIds).toEqual(['resource']);expect(merged.resources[0].issueIds).toEqual([issue.id]);
  expect(snapshot.issues).toEqual([]);expect(snapshot.resources[0].status).toBe('healthy');expect(mergeRuntimeSnapshot(snapshot,report,'codex')!.issues).toEqual([]);
 });
+it('keeps live failures visible before a static scan is available',()=>{
+ const merged=mergeRuntimeSnapshot(null,report,'openhands')!;
+ expect(merged.issues[0].id).toBe(issue.id);expect(merged.status).toBe('partial');
+ expect(merged.resources).toEqual([]);expect(merged.warnings[0].code).toBe('static-scan-pending');
+});
 it('shows runtime coverage and a redacted timeline with working filters and recommendations',async()=>{
  vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({complete:false,truncated:true,events:[{kind:'tool',at:1,text:'synthetic output [redacted]',rc:1}]})}));
  const reload=vi.fn();render(<><RuntimeCoverage report={report} error="" reload={reload}/><OpenHandsSessions report={report} reload={reload} view="recommendations"/></>);

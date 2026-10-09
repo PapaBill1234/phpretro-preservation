@@ -1,5 +1,5 @@
 """Read-only, scoped runtime sessions, live findings and billing evidence."""
-import json,time,uuid
+import datetime,json,time,uuid,yaml
 from pathlib import Path
 import context_usage
 import session_journal
@@ -12,6 +12,16 @@ def read(path, default=None):
 
 def number(value):
     return value if type(value) in (int,float) and 0 <= value < 1e15 else None
+
+def timestamp(value):
+    numeric=number(value)
+    if numeric is not None:return numeric
+    if isinstance(value,str):
+        try:
+            date=datetime.datetime.fromisoformat(value.replace('Z','+00:00'))
+            return date.replace(tzinfo=date.tzinfo or datetime.timezone.utc).timestamp()
+        except ValueError:pass
+    return None
 
 def ordered_files(path,pattern):
     rows=[]
@@ -27,25 +37,32 @@ def native_sessions(home):
         folder=path.parent
         try:str(uuid.UUID(folder.name))
         except ValueError:continue
-        usage={};events=0
+        usage={};events=0;failed=False;parse_complete=True
         log=folder/'events.jsonl'
         try:
             if log.is_symlink() or log.stat().st_size>4_000_000:raise ValueError()
             for line in log.read_text().splitlines():
                 event=json.loads(line);events+=1
+                if event.get('type')=='turn.failed':failed=True
                 if event.get('type')=='turn.completed':
                     raw=event.get('usage',{})
                     for key in ('input_tokens','cached_input_tokens','output_tokens'):
                         value=number(raw.get(key))
                         if value is not None:usage[key]=usage.get(key,0)+value
-        except (OSError,ValueError,AttributeError):pass
+        except (OSError,ValueError,AttributeError):parse_complete=False
         decision=read(folder/'decision.json',{})
         finished=isinstance(decision,dict) and decision.get('action') in ('restart_billing','restart_dashboard','start_controller','reconcile_receipts','defer')
+        status=read(folder/'status.json',{});status=status if isinstance(status,dict) else {}
+        running=False
+        if status.get('status')=='running':
+            import worker
+            running=worker.alive(status.get('pid'),status.get('process_identity'))
+        failed=failed or status.get('rc') not in (None,0)
         rows.append({'id':folder.name,'runtime':'codex','unit':'Operations','role':'supervisor','model':'gpt-6.1-sol',
-          'provider':'ChatGPT subscription','status':'complete' if finished else 'incomplete',
-          'started':path.stat().st_mtime,'tokens':usage.get('input_tokens',0)+usage.get('output_tokens',0) if usage else None,
+          'provider':'ChatGPT subscription','status':'running' if running else 'failed' if failed else 'complete' if finished else 'incomplete',
+          'rc':status.get('rc'),'started':number(status.get('started_at')) or path.stat().st_mtime,'tokens':usage.get('input_tokens',0)+usage.get('output_tokens',0) if usage else None,
           'input':usage.get('input_tokens'),'output':usage.get('output_tokens'),'cached':usage.get('cached_input_tokens'),
-          'complete':bool(usage and finished),'context_complete':False,'context':{'events':events},'context_requests':[],
+          'complete':bool(usage and finished and parse_complete and not running and status.get('rc')==0),'context_complete':False,'context':{'events':events},'context_requests':[],
           'unused_tools':[],'journal_available':False,'action':decision.get('action') if finished else None})
     return rows
 
@@ -79,8 +96,9 @@ def findings(rows,state,billing,canvas):
         key=(row.get('runtime'),row.get('unit'),row.get('role'),row.get('model'))
         if key not in latest:latest[key]=row
     for row in latest.values():
-        if row.get('rc') not in (None,0) or row.get('status') in ('error','stuck','incomplete'):
-            add('failed','med','Agent run needs review',f"{row.get('unit')} · {row.get('role')} · {row.get('model')} ended with {row.get('status')} / exit {row.get('rc','unknown')}.",row,
+        if row.get('rc') not in (None,0) or row.get('status') in ('error','stuck','incomplete','failed'):
+            historical=row.get('unit_state')=='merged'
+            add('failed','info' if historical else 'med','Historical agent failure' if historical else 'Agent run needs review',f"{row.get('unit')} · {row.get('role')} · {row.get('model')} ended with {row.get('status')} / exit {row.get('rc','unknown')}."+(' The unit subsequently merged.' if historical else ''),row,
                 'Check provider errors and the run allowance. Continue the same work only through the controller; retain charges and exact-head review requirements.')
         if row.get('context',{}).get('tool_errors',0):add('tool-errors','low','Tool executions returned errors',f"{row['context']['tool_errors']} recorded tool errors.",row)
         if row.get('context',{}).get('repeated_commands',0):add('repeats','low','Repeated commands consumed context',f"{row['context']['repeated_commands']} repeated commands recorded.",row,'Inspect the timeline for avoidable repetition. Repeated test or inspection commands may be necessary; savings are not yet measured.')
@@ -100,6 +118,14 @@ def sessions(home=None,canvas=None):
     home=Path(home or Path.home()); state=home/'phpretro-ops/state'
     rows=[]
     units=read(state/'units.state.json',{});units=units if isinstance(units,dict) else {}
+    unit_states={}
+    try:
+        path=state/'units.live.yaml'
+        if path.is_symlink() or path.stat().st_size>2_000_000:raise ValueError()
+        roadmap=yaml.safe_load(path.read_text())
+        if isinstance(roadmap,dict) and isinstance(roadmap.get('units'),list):
+            unit_states={r['id']:r.get('status') for r in roadmap['units'][:2000] if isinstance(r,dict) and isinstance(r.get('id'),str) and isinstance(r.get('status'),str)}
+    except (OSError,ValueError,yaml.YAMLError):pass
     reservations=units.get('reservations',{});reservations=reservations if isinstance(reservations,dict) else {}
     files=ordered_files(state/'receipts','*.json')
     for p in files:
@@ -107,6 +133,7 @@ def sessions(home=None,canvas=None):
         d=read(p,{})
         if not isinstance(d,dict):continue
         if d.get('runtime')!='openhands' or not isinstance(d.get('run_id'),str) or not 0<len(d['run_id'])<=80:continue
+        if any(d.get(k) is not None and not isinstance(d[k],str) for k in ('unit','role','model')):continue
         usage=d.get('usage') or {}; context=read(p.with_suffix('.context.json'),{})
         running=d['run_id'] in reservations
         if running:
@@ -120,9 +147,9 @@ def sessions(home=None,canvas=None):
         context_requests=[]
         if observed:
             context_requests=[{k:r[k] for k in ('estimated_context_tokens','estimated_tool_schema_tokens','estimated_system_tokens')} for r in context['requests']]
-        rows.append({'id':d['run_id'],'runtime':'openhands','unit':d.get('unit'),'role':d.get('role'),'model':d.get('model'),
+        rows.append({'id':d['run_id'],'runtime':'openhands','unit':d.get('unit') or 'Unknown','unit_state':unit_states.get(d.get('unit'),'unknown'),'role':d.get('role') or 'Unknown','model':d.get('model') or 'Unknown',
           'provider':usage.get('provider'),'status':'running' if running else d.get('status'),'rc':d.get('rc'),
-          'started':number(d.get('ts_start') or d.get('prepared_at')),
+          'started':timestamp(d.get('ts_start')) or timestamp(d.get('prepared_at')),
           'ended':number(d.get('completed_at')),'tokens':number(usage.get('total_tokens')),
           'input':number(usage.get('input_tokens')),'output':number(usage.get('output_tokens')),
           'cached':number(usage.get('cache_read_tokens')),'requests':number(usage.get('api_calls')),

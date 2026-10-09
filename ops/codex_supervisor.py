@@ -170,11 +170,13 @@ def decide(before, data, persist):
         '-o',str(private/'decision.json'),prompt]
     data['attempts']=[at for at in data.get('attempts',[]) if numeric(at) and time.time()-at<86400]+[time.time()]
     data.update(mode='running',reason='repair_in_progress',job={'id':identity,'status':'prepared','started_at':time.time()})
+    control.atomic_json(private/'status.json',data['job'])
     persist()
     fd=os.open(private/'events.jsonl',os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
     with os.fdopen(fd,'w') as output:
         proc=subprocess.Popen(command,env=account.environment(),stdout=output,stderr=output,start_new_session=True,umask=0o077)
         data['job'].update(pid=proc.pid,process_identity=worker.process_identity(proc.pid),status='running'); persist()
+        control.atomic_json(private/'status.json',data['job'])
         deadline=time.monotonic()+600; quota_at=0
         try:
             while proc.poll() is None:
@@ -187,6 +189,7 @@ def decide(before, data, persist):
         finally:
             stop_process(proc)
             data['job']['status']='complete'; data['job']['rc']=proc.returncode; persist()
+            control.atomic_json(private/'status.json',data['job'])
     if proc.returncode!=0: raise RuntimeError('repair decision failed')
     result=load(private/'decision.json',limit=4096)
     if set(result)!={'action','reason'} or result.get('action') not in ACTIONS or result.get('reason') not in REASONS:
