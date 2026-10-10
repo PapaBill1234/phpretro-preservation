@@ -64,7 +64,12 @@ def chat_request(body,model,reasoning):
             raise control.IntegrityError('Unapproved gateway tool')
         tools.append({'type':'function','function':{'name':tool['name'],'description':tool.get('description',''),'parameters':tool['input_schema']}})
     request={'model':model,'messages':messages,'max_tokens':bounds.MAX_OUTPUT,'stream':False}
-    if tools:request['tools']=tools;request['tool_choice']='auto'
+    if tools:
+        request['tools']=tools
+        # DeepSeek's agent compatibility contract omits tool_choice entirely.
+        # Presence alone can reject thinking-mode tool continuations. Other
+        # models retain their normal automatic tool selection.
+        if not model.startswith('deepseek-'):request['tool_choice']='auto'
     return request
 
 def responses_request(chat,retained):
@@ -185,6 +190,21 @@ def response_observation(raw,model):
     return result
 
 
+def request_observation(payload,mode):
+    """Bounded protocol shape only, never content, reasoning text or call IDs."""
+    result={'api_mode':mode,'tool_choice_present':'tool_choice' in payload,
+            'tools':len(payload.get('tools',[]))}
+    if mode=='chat':
+        messages=payload['messages']
+        assistants=[row for row in messages if row.get('role')=='assistant']
+        calls=[row for row in assistants if row.get('tool_calls')]
+        result.update(messages=len(messages),assistant_tool_messages=len(calls),
+            assistant_tool_reasoning_messages=sum(isinstance(row.get('reasoning_content'),str) for row in calls),
+            assistant_tool_null_content=sum(row.get('content') is None for row in calls),
+            tool_results=sum(row.get('role')=='tool' for row in messages))
+    return result
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):return None
 
@@ -270,6 +290,10 @@ class Gateway:
                 self.total['usage_complete']=False;self.checkpoint()
                 self.journal.add('provider_request','Gateway request admitted',provider=provider,request=self.total['api_calls'])
                 self.context.request(input_bound,input_bound,0)
+                requests=self.context.data.setdefault('provider_request_observations',[])
+                if len(requests)<16:
+                    requests.append({'provider':provider,'request':self.total['api_calls'],**request_observation(payload,mode)})
+                    self.context.save()
                 endpoint=self.data['providers'][provider]['base_url']+('/responses' if mode=='responses' else '/chat/completions')
                 try:raw=self.invoke(endpoint,key,payload,max(.1,min(120,self.deadline-time.time())))
                 except ProviderError as exc:

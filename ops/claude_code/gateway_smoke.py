@@ -31,6 +31,15 @@ def case(data,model,builder=False,failure=None):
             if settings['api_mode']=='responses':
                 items=[{'type':'function_call','call_id':'call_fixture','name':'mcp__phpretro__execute','arguments':'{"command":"echo fixture"}'}] if tool else [{'type':'message','content':[{'type':'output_text','text':'fixture complete'}]}]
                 return {'status':'completed','model':reported,'output':items,'usage':{'input_tokens':35,'output_tokens':4,'total_tokens':39,'input_tokens_details':{'cached_tokens':7},'output_tokens_details':{'reasoning_tokens':0}}}
+            # Match the actual DeepSeek protocol contract, including the native
+            # CLI's resumed tool message, rather than accepting every payload.
+            assert 'tool_choice' not in body
+            if builder and not tool:
+                assistant=[m for m in body['messages'] if m.get('tool_calls')]
+                assert len(assistant)==1 and assistant[0]['content'] is not None
+                assert assistant[0]['reasoning_content']=='retained synthetic reasoning'
+                results=[m for m in body['messages'] if m.get('role')=='tool']
+                assert len(results)==1 and results[0]['tool_call_id']==assistant[0]['tool_calls'][0]['id']
             message={'content':'fixture complete'}
             if tool:message={'content':None,'reasoning_content':'retained synthetic reasoning','tool_calls':[{'id':'call_fixture','function':{'name':'mcp__phpretro__execute','arguments':'{"command":"echo fixture"}'}}]}
             return {'model':reported,'choices':[{'finish_reason':'tool_calls' if tool else 'stop','message':message}],

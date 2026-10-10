@@ -126,6 +126,19 @@ class GatewayTests(unittest.TestCase):
         value=gateway.responses_request(chat,{'call_1':[thought]})
         self.assertEqual(value['input'][0],thought);self.assertEqual(value['input'][-1]['type'],'function_call_output')
 
+    def test_deepseek_tool_continuation_omits_tool_choice_and_keeps_reasoning(self):
+        body={'messages':[{'role':'assistant','content':[{'type':'tool_use','id':'call_1',
+            'name':'mcp__phpretro__execute','input':{'command':'echo fixture'}}]},
+            {'role':'user','content':[{'type':'tool_result','tool_use_id':'call_1','content':'fixture'}]}],
+            'tools':[{'name':'mcp__phpretro__execute','input_schema':{'type':'object'}}]}
+        payload=gateway.chat_request(body,'deepseek-v4.1-flash',{'call_1':'synthetic reasoning'})
+        self.assertNotIn('tool_choice',payload)
+        self.assertEqual(payload['messages'][0]['reasoning_content'],'synthetic reasoning')
+        self.assertEqual(payload['messages'][0]['content'],'')
+        self.assertEqual(payload['messages'][1]['tool_call_id'],'call_1')
+        self.assertEqual(payload['tools'][0]['function']['name'],'mcp__phpretro__execute')
+        self.assertEqual(gateway.chat_request(body,'gpt-6.1-sol',{})['tool_choice'],'auto')
+
     def test_reviewed_bootstrap_can_measure_expired_primary_without_admitting_fallback(self):
         for model in ('gpt-6.1-sol','gpt-6-luna','deepseek-v4.1-flash'):
             with self.subTest(model=model):
@@ -165,6 +178,17 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(actual['conservative_tokens'],0)
 
 class ResponseDiagnosticTests(unittest.TestCase):
+    def test_request_diagnostics_keep_only_counts_and_shape(self):
+        payload={'messages':[{'role':'assistant','content':'private content',
+            'reasoning_content':'private reasoning','tool_calls':[{'id':'private ID'}]},
+            {'role':'tool','content':'private output','tool_call_id':'private ID'}],
+            'tools':[{'function':{'name':'private name'}}]}
+        row=gateway.request_observation(payload,'chat')
+        self.assertEqual(row,{'api_mode':'chat','tool_choice_present':False,'tools':1,
+            'messages':2,'assistant_tool_messages':1,'assistant_tool_reasoning_messages':1,
+            'assistant_tool_null_content':0,'tool_results':1})
+        self.assertNotIn('private',json.dumps(row))
+
     def test_response_diagnostics_keep_only_numeric_usage_and_known_shape(self):
         raw={'model':'gpt-6.1-sol','status':'completed','output':[{'text':'private content'}],
              'error':{'message':'private error'},'secret':'private key',
