@@ -9,7 +9,7 @@ def answer(request,path):
     method=request.get('method');params=request.get('params',{})
     if method=='initialize':
         version=params.get('protocolVersion')
-        if version not in ('2024-11-05','2025-03-26','2025-06-18'):raise ValueError('Unsupported MCP version')
+        if version not in ('2024-11-05','2025-03-26','2025-06-18','2025-11-25'):raise ValueError('Unsupported MCP version')
         return {'protocolVersion':version,'capabilities':{'tools':{}},'serverInfo':{'name':'phpretro','version':'1.0.0'}}
     if method=='tools/list':return {'tools':[{'name':'execute','description':'Execute a command in the isolated PHPRetro checkout. No host, credentials or network access.',
       'inputSchema':{'type':'object','properties':{'command':{'type':'string','maxLength':20000},'timeout':{'type':'integer','minimum':1,'maximum':300}},'required':['command'],'additionalProperties':False}}]}

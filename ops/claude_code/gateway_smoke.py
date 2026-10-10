@@ -7,7 +7,7 @@ provider identity, fallback holds and credential-free MCP children.
 import json,subprocess,sys,tempfile,time,uuid
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-import integrity,request_accounting,context_usage,worker
+import integrity,request_accounting,context_usage,worker,sandbox,runtime_policy
 from claude_code import command,gateway,protocol,runner,observations
 
 class Evidence:
@@ -37,18 +37,31 @@ def case(data,model,builder=False,failure=None):
               'usage':{'prompt_tokens':35,'completion_tokens':4,'total_tokens':39,'prompt_cache_hit_tokens':7,'prompt_cache_miss_tokens':28,'completion_tokens_details':{'reasoning_tokens':0}}}
         client=gateway.Gateway(data,manifest,model,total,lambda:writes.append(dict(total)),Evidence(),context,
           {'a6api_api_key':'synthetic-primary','portdan':{'openai':'synthetic-fallback','deepseek':'synthetic-fallback'}},invoke=fake,routes=['a6api','portdan'])
+        box=None
         try:
             mcp=root/'mcp.json';child=root/'child-env.json'
-            (root/'mcp.py').write_text('''import json,os,sys
+            if builder:
+                # The deployed MCP implementation must negotiate with the real
+                # pinned CLI. A mock that echoes any requested protocol version
+                # hid an unsupported initialize revision in the live bridge.
+                repo=root/'repo';repo.mkdir();(repo/'README.md').write_text('Synthetic bridge fixture')
+                subprocess.run(['git','init','--quiet',str(repo)],check=True)
+                subprocess.run(['git','-C',str(repo),'add','README.md'],check=True)
+                subprocess.run(['git','-C',str(repo),'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','--quiet','-m','fixture'],check=True)
+                subprocess.run(['git','-C',str(repo),'update-ref','refs/remotes/origin/main','HEAD'],check=True)
+                rid=str(uuid.uuid4());receipt=root/'mcp-receipt.json'
+                integrity.atomic_json(receipt,{'run_id':rid,'runtime':'claude-code','role':'builder','status':'running',
+                    'cwd':str(repo),'prepared_at':time.time(),'timeout':100})
+                box=sandbox.Sandbox(rid,repo);box.prepare()
+            (root/'mcp.py').write_text('''import json,os,sys,runpy
 from pathlib import Path
 Path(sys.argv[1]).write_text(json.dumps({'provider_secret':any(k in os.environ for k in ('ANTHROPIC_AUTH_TOKEN','ANTHROPIC_API_KEY','A6API_API_KEY','PORTDAN_API_KEY'))}))
-for line in sys.stdin:
- r=json.loads(line);m=r.get('method');i=r.get('id')
- if i is None:continue
- value=({'protocolVersion':r['params']['protocolVersion'],'capabilities':{'tools':{}},'serverInfo':{'name':'fixture','version':'1'}} if m=='initialize' else {'tools':[{'name':'execute','description':'fixture','inputSchema':{'type':'object','properties':{'command':{'type':'string'}},'required':['command']}}]} if m=='tools/list' else {'content':[{'type':'text','text':'fixture tool success'}]} if m=='tools/call' else {})
- print(json.dumps({'jsonrpc':'2.0','id':i,'result':value}),flush=True)
+sys.argv=[sys.argv[2],sys.argv[3]]
+runpy.run_path(sys.argv[0],run_name='__main__')
 ''')
-            mcp.write_text(json.dumps({'mcpServers':{'phpretro':{'command':sys.executable,'args':[str(root/'mcp.py'),str(child)]}} if builder else {}}))
+            bridge={'command':sys.executable,'args':[str(root/'mcp.py'),str(child),str(Path(__file__).with_name('tool_bridge.py')),str(receipt)] if builder else [],
+                'env':{'PHPRETRO_RUNTIME':'claude-code','PHPRETRO_RUNTIME_POLICY':str(runtime_policy.POLICY),'PHPRETRO_OPS':str(runtime_policy.OPS)}}
+            mcp.write_text(json.dumps({'mcpServers':{'phpretro':bridge} if builder else {}}))
             for step in range(2 if builder else 1):
                 client.arm();stream=protocol.Stream(sid,model,['mcp__phpretro__execute'] if builder else [])
                 env=command.environment(root);env.update(client.environment(),CLAUDE_CONFIG_DIR=str(root/'config'))
@@ -74,9 +87,13 @@ for line in sys.stdin:
             if builder:
                 assert json.loads(child.read_text())['provider_secret'] is False
                 assert len(calls)==2
+                assert context.data['tool_errors']==0 and context.data['tool_calls']==1
                 if settings['api_mode']=='chat':
                     assert any(m.get('reasoning_content')=='retained synthetic reasoning' for m in calls[1]['body']['messages'])
-                else:assert any(i.get('type')=='function_call_output' for i in calls[1]['body']['input'])
+                    returned=[m['content'] for m in calls[1]['body']['messages'] if m.get('role')=='tool']
+                else:
+                    returned=[i['output'] for i in calls[1]['body']['input'] if i.get('type')=='function_call_output']
+                assert len(returned)==1 and json.loads(returned[0])=={'rc':0,'output':'fixture\n'}, 'Real sandbox output was not retained on native resume'
             if builder:
                 # Only disposable synthetic receipt files. These exercise real
                 # native tool events and the real durable-worker projection.
@@ -98,7 +115,9 @@ for line in sys.stdin:
                 assert total['unknown_api_calls']==1 and total['conservative_tokens']==64096+39
                 assert not total['usage_complete'] and total['provider']=='mixed:a6api-portdan'
             return {'model':model,'builder':builder,'case':failure or 'normal','passed':True,'requests':len(calls)}
-        finally:client.close()
+        finally:
+            client.close()
+            if box:box.close();sandbox.assert_absent(box.rid)
 
 def main():
     data=json.loads(Path(__file__).with_name('policy.json').read_text());checks=[]

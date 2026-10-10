@@ -132,6 +132,16 @@ class ClaudeAdmissionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder)/'receipt.json';path.write_text(json.dumps({'role':'reviewer','runtime':'claude-code','status':'running'}))
             with self.assertRaises(ValueError):tool_bridge.answer({'method':'tools/call','params':{'name':'execute','arguments':{'command':'echo forbidden'}}},path)
+    def test_real_cli_mcp_version_and_tool_schema(self):
+        for version in ('2024-11-05','2025-03-26','2025-06-18','2025-11-25'):
+            result=tool_bridge.answer({'method':'initialize','params':{'protocolVersion':version}},Path('/absent'))
+            self.assertEqual(result['protocolVersion'],version)
+            self.assertEqual(result['capabilities'],{'tools':{}})
+        for version in ('2026-unknown','',None):
+            with self.assertRaises(ValueError):tool_bridge.answer({'method':'initialize','params':{'protocolVersion':version}},Path('/absent'))
+        tools=tool_bridge.answer({'method':'tools/list'},Path('/absent'))['tools']
+        self.assertEqual([row['name'] for row in tools],['execute'])
+        self.assertFalse(tools[0]['inputSchema']['additionalProperties'])
 
 class ClaudeNativeHistoryTests(unittest.TestCase):
     def test_metadata_is_partial_deduplicated_and_project_scoped(self):
