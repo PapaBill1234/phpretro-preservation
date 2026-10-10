@@ -114,6 +114,43 @@ replace('web/src/App.tsx','}保存模型服务</button>',"}{label('保存模型�
 replace('src/models/testOpenAiCompatible.ts',"max_tokens: 5", "max_tokens: 512")
 replace('src/audit/ai-scanner.ts','    if (!raw) continue;',"    if (!raw) throw new Error('AI audit did not return valid JSON for ' + skill.name + '; check provider status, timeout and output allowance.');")
 replace('web/src/api.ts',"String((payload as { error: { message?: string } }).error.message ?? response.statusText)","(typeof (payload as {error:unknown}).error === 'string' ? String((payload as {error:string}).error) : String((payload as {error:{message?:string}}).error?.message ?? response.statusText))")
+# Scan cancellation races must not become uncaught browser errors. Only a
+# confirmed 404 is already finished; other cancellation failures prevent a new
+# scan and remain visible. Structured API/SSE errors need readable fallback text.
+replace('web/src/api.ts','async function request<T>(path:',"""export class ApiRequestError extends Error {
+  constructor(message:string,public status:number){super(message);this.name='ApiRequestError';}
+}
+function apiErrorText(value:unknown,fallback:string):string {
+  if(typeof value==='string')return value||fallback;
+  if(value&&typeof value==='object'){
+    const row=value as {error?:unknown;message?:unknown};
+    if(typeof row.message==='string')return row.message||fallback;
+    if(row.message&&typeof row.message==='object'&&typeof (row.message as {message?:unknown}).message==='string')return String((row.message as {message:string}).message);
+    if(row.error!==undefined&&row.error!==value){
+      if(typeof row.error==='string')return row.error||fallback;
+      if(row.error&&typeof row.error==='object'&&typeof (row.error as {message?:unknown}).message==='string')return String((row.error as {message:string}).message);
+    }
+  }
+  return fallback;
+}
+async function request<T>(path:""")
+replace('web/src/api.ts',"    throw new Error(message);", "    throw new ApiRequestError(apiErrorText(payload,`Request failed (HTTP ${response.status})`),response.status);")
+api=root/'web/src/api.ts';text=api.read_text();start=text.index("    const message = typeof payload === 'object'");end=text.index('    throw new ApiRequestError',start);api.write_text(text[:start]+text[end:])
+replace('web/src/api.ts','new Error(payload.message)',"new Error(apiErrorText(payload,'scan_failed'))")
+replace('web/src/api.ts',"  await request(`/api/scans/${encodeURIComponent(scanId)}/cancel`, { method: 'POST' });", """  try {await request(`/api/scans/${encodeURIComponent(scanId)}/cancel`, { method: 'POST' });}
+  catch(error){if(error instanceof ApiRequestError&&error.status===404)return;throw error;}""")
+replace('web/src/App.tsx','    if (previousScanId) void cancelScan(previousScanId);',"""    if (previousScanId) {
+      try {await cancelScan(previousScanId);}
+      catch(nextError) {
+        if(version!==scanVersion.current)return;
+        activeScanId.current=previousScanId;
+        setError('Previous scan could not be cancelled; refresh its state before starting another scan.');
+        setScan(current=>({...current,running:false,status:'failed'}));return;
+      }
+      if(version!==scanVersion.current)return;
+    }""")
+replace('web/src/App.tsx','if (version !== scanVersion.current) { void cancelScan(id); return; }',"if (version !== scanVersion.current) { void cancelScan(id).catch(()=>setError('A superseded scan could not be cancelled; refresh its state before starting another scan.')); return; }")
+replace('web/src/App.tsx','        void runScan(configured);',"        void runScan({...configured,useAiAudit:false,conflictStrategy:'token',discoverMcpTools:false});")
 replace('src/ui-server/optimizationHandlers.ts',"  if (realpathSync(project) !== realpathSync(context.projectDir)) {", """  const sameProject = realpathSync(project) === realpathSync(context.projectDir);
   const readOnly = body.action === 'overview' || body.action === 'skill-catalogs';
   const allowedReadProjects: string[] = JSON.parse(process.env.PHPRETRO_DOCTOR_READ_PROJECTS || '[]');
@@ -183,6 +220,26 @@ replace('tests/ui/App.test.tsx',"  it('keeps the fixed style controls independen
   });
 
   it('keeps the fixed style controls independent of legacy theme preferences',""")
+replace('tests/ui/App.test.tsx',"  it('wires live OpenHands issues", """  it('keeps saved deep preferences out of automatic startup scans',async()=>{
+    localStorage.setItem('skill-doctor-project-preferences',JSON.stringify({'/tmp/project':{platform:'codex',useAiAudit:true,conflictStrategy:'embedding',discoverMcpTools:true}}));
+    render(<App/>);
+    await waitFor(()=>expect(mocks.startScan).toHaveBeenCalled());
+    expect(mocks.startScan.mock.calls[0][0]).toMatchObject({useAiAudit:false,conflictStrategy:'token',discoverMcpTools:false});
+  });
+  it('reports failed cancellation without starting a duplicate scan',async()=>{
+    localStorage.setItem('skill-doctor-locale','en-US');
+    const bootstrap=await mocks.getBootstrap();
+    mocks.getBootstrap.mockResolvedValue({...bootstrap,supportedPlatforms:['codex','claude'],detectedAgents:[codexAgent,{platform:'claude',displayName:'Claude Code',projectDetected:true,globalDetected:false,recommended:false}]});
+    mocks.streamScan.mockImplementation(()=>()=>{});
+    mocks.cancelScan.mockRejectedValueOnce(new Error('Synthetic cancellation failure'));
+    render(<App/>);
+    await waitFor(()=>expect(mocks.streamScan).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button',{name:/Claude Code/}));
+    expect(await screen.findByText('Previous scan could not be cancelled; refresh its state before starting another scan.')).toBeTruthy();
+    expect(mocks.startScan).toHaveBeenCalledOnce();
+    mocks.cancelScan.mockReset();
+  });
+  it('wires live OpenHands issues""")
 registry_test=root/'tests/platforms/registry.test.ts'
 registry_test.write_text(registry_test.read_text().replace("      'hermes',", "      'hermes',\n      'openhands',"))
 audit_test=root/'tests/audit/ai-scanner.test.ts'

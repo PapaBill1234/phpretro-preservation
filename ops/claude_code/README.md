@@ -88,6 +88,10 @@ Keep the owned migration STOP until this sequence completes:
    under the unchanged owned STOP, after reviewed paused installation and six
    passing source checks. It cannot reroute a unit, clear STOP or create allowance.
    Inspect a failed receipt; do not repeat blindly or reset the attempt record.
+   Use `--model gpt-6.1-sol` to check an explicitly unattempted model when an
+   earlier model stopped the batch. Attempts are persisted before execution;
+   completed and failed models cannot be repeated for the same source. A
+   selected-model pass does not mean all configured models passed.
 6. Repeat exact-source validation with `--provider-evidence
    /home/ubuntu/phpretro-ops/state/claude-code-provider.json` and the Doctor
    evidence. All seven checks must pass. Run `activate.py --enable` only then.

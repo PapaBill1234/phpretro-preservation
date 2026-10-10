@@ -154,7 +154,7 @@ def main(receipt_path):
                 if not native['usage_complete'] or any(native[k]!=observed[k] for k in ('input_tokens','output_tokens','cache_read_tokens','cache_write_tokens','total_tokens')):
                     raise control.IntegrityError('Native stream disagrees with trusted provider usage')
             else:
-                rc=75 if client.error=='IntegrityError' else 1
+                rc=75 if client.error_guard in gateway.BUDGET_GUARDS else 1
                 break
             current=None
             if not total['usage_complete']:

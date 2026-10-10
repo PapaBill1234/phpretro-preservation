@@ -178,6 +178,15 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(actual['conservative_tokens'],0)
 
 class ResponseDiagnosticTests(unittest.TestCase):
+    def test_protocol_and_identity_failures_are_not_budget_waits_or_arbitrary_text(self):
+        for message in ('Provider model identity mismatch','Cache hit/miss counters disagree'):
+            label=gateway.guard_label(integrity.IntegrityError(message))
+            self.assertEqual(label,message)
+            self.assertNotIn(label,gateway.BUDGET_GUARDS)
+        self.assertIn(gateway.guard_label(integrity.IntegrityError('Remaining original token hold cannot cover request')),gateway.BUDGET_GUARDS)
+        self.assertEqual(gateway.guard_label(integrity.IntegrityError('private payload')), 'Provider protocol validation failed')
+        self.assertIsNone(gateway.guard_label(ValueError('private payload')))
+
     def test_request_diagnostics_keep_only_counts_and_shape(self):
         payload={'messages':[{'role':'assistant','content':'private content',
             'reasoning_content':'private reasoning','tool_calls':[{'id':'private ID'}]},

@@ -10,6 +10,16 @@ import integrity as control,request_accounting as bounds,runtime_policy
 import provider_routing as routing
 
 SCHEMA='phpretro.claude-gateway-usage.v2'
+BUDGET_GUARDS={'Remaining original token hold cannot cover request',
+               'Remaining original spending hold cannot cover request'}
+PROTOCOL_GUARDS={'Provider model identity mismatch','Cache hit/miss counters disagree',
+    'Cache representations disagree','Cache counters exceed inclusive input','Provider total disagrees',
+    'Cache coverage missing','Completed provider response has empty usage','Incomplete provider response'}
+
+def guard_label(exc):
+    if not isinstance(exc,control.IntegrityError):return None
+    label=str(exc)
+    return label if label in BUDGET_GUARDS|PROTOCOL_GUARDS else 'Provider protocol validation failed'
 
 def credentials(path):
     path=Path(path);info=path.stat()
@@ -231,7 +241,7 @@ class Gateway:
         if not self.routes:raise control.IntegrityError('No admitted model provider route')
         self.guard_spent=0.0;self.quote_spent=0.0;self.unknown_price=False
         self.failed=set();self.recoverable=set();self.providers=set();self.token=secrets.token_urlsafe(32)
-        self.reasoning={};self.response_reasoning={};self.lock=threading.Lock();self.armed=False;self.last=None;self.error=None
+        self.reasoning={};self.response_reasoning={};self.lock=threading.Lock();self.armed=False;self.last=None;self.error=None;self.error_guard=None
         self.cancel=Path(manifest['_receipt_path']).with_suffix('.cancel.json')
         self.deadline=manifest['prepared_at']+manifest['timeout']
         self.server=http.server.ThreadingHTTPServer(('127.0.0.1',0),Handler);self.server.daemon_threads=True;self.server.gateway=self
@@ -239,7 +249,7 @@ class Gateway:
 
     def close(self):self.server.shutdown();self.server.server_close();self.thread.join(timeout=5)
     def arm(self):
-        with self.lock:self.armed=True;self.last=None;self.error=None
+        with self.lock:self.armed=True;self.last=None;self.error=None;self.error_guard=None
     def environment(self):
         return {'ANTHROPIC_AUTH_TOKEN':self.token,'ANTHROPIC_BASE_URL':'http://127.0.0.1:'+str(self.server.server_port),
           'ANTHROPIC_CUSTOM_MODEL_OPTION':self.model,'ANTHROPIC_MODEL':self.model,
@@ -363,6 +373,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             for kind,event in events(message):self.wfile.write(('event: '+kind+'\ndata: '+json.dumps(event)+'\n\n').encode());self.wfile.flush()
         except Exception as exc:
             g.error=type(exc).__name__
+            g.error_guard=guard_label(exc)
+            if g.error_guard:g.journal.add('provider_error',g.error_guard)
             status=exc.status_code if isinstance(exc,ProviderError) else 400
             try:self.reply(status,{'type':'error','error':{'type':'rate_limit_error' if status==429 else 'api_error','message':'Receipt-scoped request failed'}})
             except OSError:pass
