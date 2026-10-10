@@ -117,6 +117,7 @@ class ClaudeAdmissionTests(unittest.TestCase):
         with patch.dict(os.environ,{'ANTHROPIC_API_KEY':'not-a-real-secret','PORTDAN_API_KEY':'fixture'},clear=False):
             env=command.environment('/home/operator')
         self.assertNotIn('ANTHROPIC_API_KEY',env);self.assertNotIn('PORTDAN_API_KEY',env)
+        self.assertEqual(env['CLAUDE_CONFIG_DIR'],'/home/operator/.claude')
         self.assertEqual(env['CLAUDE_CODE_MAX_RETRIES'],'0');self.assertEqual(env['CLAUDE_CODE_MCP_ALLOWLIST_ENV'],'1')
         args=command.command(self.data,'id','mcp.json','System',builder=False)
         self.assertIn('--safe-mode',args);self.assertEqual(args[args.index('--tools')+1],'')

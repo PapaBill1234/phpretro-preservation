@@ -1,9 +1,10 @@
 """Pinned headless CLI contract; inference credentials never enter MCP tools."""
 import json,os
+from pathlib import Path
 
 def environment(home,output_tokens=4096):
     env={k:v for k,v in os.environ.items() if k in ('PATH','LANG','LC_ALL','SSL_CERT_FILE','SSL_CERT_DIR')}
-    env.update(HOME=str(home),CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='1',
+    env.update(HOME=str(home),CLAUDE_CONFIG_DIR=str(Path(home)/'.claude'),CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='1',
       CLAUDE_CODE_MAX_RETRIES='0',CLAUDE_CODE_MAX_OUTPUT_TOKENS=str(output_tokens),
       CLAUDE_CODE_DISABLE_CLAUDE_MDS='1',CLAUDE_CODE_DISABLE_POLICY_SKILLS='1',
       CLAUDE_CODE_DISABLE_CRON='1',CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL='1',

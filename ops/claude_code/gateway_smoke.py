@@ -35,7 +35,7 @@ def case(data,model,builder=False,failure=None):
             if tool:message={'content':None,'reasoning_content':'retained synthetic reasoning','tool_calls':[{'id':'call_fixture','function':{'name':'mcp__phpretro__execute','arguments':'{"command":"echo fixture"}'}}]}
             return {'model':reported,'choices':[{'finish_reason':'tool_calls' if tool else 'stop','message':message}],
               'usage':{'prompt_tokens':35,'completion_tokens':4,'total_tokens':39,'prompt_cache_hit_tokens':7,'prompt_cache_miss_tokens':28,'completion_tokens_details':{'reasoning_tokens':0}}}
-        client=gateway.Gateway(data,manifest,model,total,lambda:writes.append(dict(total)),Evidence(),Evidence(),
+        client=gateway.Gateway(data,manifest,model,total,lambda:writes.append(dict(total)),Evidence(),context,
           {'a6api_api_key':'synthetic-primary','portdan':{'openai':'synthetic-fallback','deepseek':'synthetic-fallback'}},invoke=fake,routes=['a6api','portdan'])
         try:
             mcp=root/'mcp.json';child=root/'child-env.json'
