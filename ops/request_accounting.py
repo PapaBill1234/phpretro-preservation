@@ -23,6 +23,20 @@ def bounded_tokens(data, observed):
     Tools cannot access these trusted-host checkpoints.
     """
     schema = data.get("usage_schema")
+    if data.get('runtime') == 'claude-code':
+        if schema != 'phpretro.claude-cli-usage.v1':return None
+        ceiling=control.nonnegative(data.get('request_token_ceiling'),'Claude ceiling')
+        started=control.nonnegative(data.get('api_calls'),'Claude started calls')
+        known=control.nonnegative(data.get('completed_api_calls'),'Claude completed calls')
+        unknown=control.nonnegative(data.get('unknown_api_calls'),'Claude unknown calls')
+        estimate=control.nonnegative(data.get('conservative_tokens'),'Claude estimate')
+        if (ceiling != 1004096 or started != known+unknown or
+            control.nonnegative(data.get('usage_known_calls'),'Claude known calls') != known or
+            estimate < max(observed,unknown*ceiling) or
+            unknown==0 and estimate!=observed or
+            data.get('usage_complete') is True and unknown!=0):
+            raise control.IntegrityError('Claude invocation accounting mismatch')
+        return estimate
     expected = CEILINGS.get(schema) if isinstance(schema, str) else None
     if expected is None or data.get("runtime") != "openhands":
         return None

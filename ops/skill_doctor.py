@@ -32,6 +32,10 @@ def cost(path, label, platform='codex'):
     return {'id':label,'estimated_tokens':tokens,'items':len(items),
             'tokenizer':'approx','usage_evidence':'unknown'}
 
+def claude_audits():
+    from claude_code import audit
+    return [audit.collect(HOME,OPS,BASE,cost)]
+
 def collect():
     os.umask(0o077)
     for path in (BASE,BASE/'reports',BASE/'audit-home',BASE/'snapshots'):
@@ -40,6 +44,7 @@ def collect():
     assert subprocess.check_output([str(CLI),'--version'],env=env,text=True,timeout=10).strip()==VERSION
     state=json.loads((OPS/'state/units.state.json').read_text())
     audits=[cost(REPO,'project'),cost(HOME/'phpretro-codex/work','supervisor')]
+    audits.extend(claude_audits())
     latest={}
     agent_latest={}
     for path in (OPS/'state/receipts').glob('*.json'):
@@ -100,7 +105,7 @@ def public_summary(ops=OPS):
         audits=[]
         for item in data['audits'][:10]:
             if not isinstance(item,dict):continue
-            if item.get('id') not in ('project','supervisor','openhands-builder','openhands-reviewer','openhands-agents'):continue
+            if item.get('id') not in ('project','supervisor','openhands-builder','openhands-reviewer','openhands-agents','claude-agents'):continue
             if not number(item.get('estimated_tokens')) or not number(item.get('items')):continue
             safe={k:item[k] for k in ('id','estimated_tokens','items')}
             history=item.get('history')

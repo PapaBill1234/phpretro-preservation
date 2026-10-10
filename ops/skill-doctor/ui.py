@@ -11,7 +11,7 @@ session=base/'ui-session'
 session.unlink(missing_ok=True)
 env={'PATH':'/usr/local/bin:/usr/bin:/bin','HOME':str(base/'audit-home'),'NO_COLOR':'1'}
 repo=Path(__file__).resolve().parents[2]
-image=json.loads((repo/'ops/openhands/policy.json').read_text())['image']
+image=json.loads((repo/'ops/claude_code/policy.json' if os.environ.get('PHPRETRO_RUNTIME')=='claude-code' else repo/'ops/openhands/policy.json').read_text())['image']
 command=['docker','run','--rm','--init','--name','phpretro-skill-doctor-ui','--user',f'{os.getuid()}:{os.getgid()}',
          '--read-only','--cap-drop=ALL','--security-opt=no-new-privileges','--memory=600m','--pids-limit=64',
          '--publish','127.0.0.1:38123:38124','--tmpfs','/tmp:rw,nosuid,size=128m',

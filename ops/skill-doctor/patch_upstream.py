@@ -29,8 +29,8 @@ replace('web/src/pages/ContextOptimizationPage.tsx',"import { OpenHandsSessions 
 replace('web/src/pages/ContextOptimizationPage.tsx','  onToggle,\n}: {','  onToggle,\n  runtime,\n}: {')
 replace('web/src/pages/ContextOptimizationPage.tsx','  active: boolean;','  runtime?: {report:RuntimeReport|null;error:string;reload:()=>void};\n  active: boolean;')
 replace('web/src/pages/ContextOptimizationPage.tsx',"  if (platform === 'openhands') return active ? <OpenHandsSessions /> : null;", """  if (platform === 'openhands') return active ? <section>
-    <nav className="context-optimization-tabs" role="tablist" aria-label="OpenHands context views">{tabs.map(tab=><button key={tab.id} role="tab" aria-selected={view===tab.id} onClick={()=>setView(tab.id)}><span>{tab.label}</span><small>{tab.detail}</small></button>)}</nav>
     <OpenHandsOptimization runtime={runtime} view={view} setView={setView}/>
+    {view==='current'&&<details className="codex-static-context"><summary>{t('context.codex.otherResources')}</summary><p className="muted">Static audit configuration estimates; observed SDK context is shown above.</p><ContextPage active={active} snapshot={snapshot} openResource={openResource} onToggle={onToggle} excludeCodexSkills/></details>}
   </section> : null;""")
 replace('web/src/pages/ContextOptimizationPage.tsx','    <nav className="context-optimization-tabs" role="tablist" aria-label={t(\'context.views\')}>',"    {platform==='all'&&active&&<OpenHandsOptimization runtime={runtime} view={view} setView={setView}/>}\n    <nav className=\"context-optimization-tabs\" role=\"tablist\" aria-label={t('context.views')}>")
 replace('web/src/App.tsx',"import { I18nProvider, useTranslation } from './i18n';", "import { I18nProvider, useTranslation } from './i18n';\nimport {useRuntimeReport,mergeRuntimeSnapshot,RuntimeCoverage} from './pages/RuntimeDashboard';\nimport './pages/runtimeDashboard.css';")
@@ -82,6 +82,13 @@ replace('web/src/App.tsx','      {selectedIssue && <IssueDrawer',"""      {selec
         setScanOptions(current=>({...current,platform:'all'}));setContextView('evidence');setRoute('context');window.location.hash='/context?view=evidence&session='+encodeURIComponent(identity);
       }}>View this agent session</button></div>}
       {selectedIssue && <IssueDrawer""")
+# Native Claude pipeline uses the same original pages and runtime wizard.
+replace('web/src/pages/ContextOptimizationPage.tsx',"if (platform === 'openhands') return active ? <section>","if (platform === 'openhands' || platform === 'claude') return active ? <section>")
+replace('web/src/pages/ContextOptimizationPage.tsx','<OpenHandsOptimization runtime={runtime} view={view} setView={setView}/>\n    {view', '<OpenHandsOptimization runtime={runtime} view={view} setView={setView} platform={platform}/>\n    {view')
+replace('web/src/App.tsx',"projectDir: platform==='codex'?", "projectDir: platform==='claude'?'/home/ubuntu/phpretro-skill-doctor/claude-agents':platform==='codex'?")
+replace('web/src/pages/ScanPathsPage.tsx',"const sourceProject = active==='openhands'?", "const sourceProject = active==='claude'?'/home/ubuntu/phpretro-skill-doctor/claude-agents':active==='openhands'?")
+replace('web/src/pages/ScanPathsPage.tsx',"active==='openhands'?'OpenHands paths", "(active==='openhands'||active==='claude')?'Agent paths")
+replace('web/src/pages/ScanPathsPage.tsx',"active==='openhands'?'Included in audit'", "(active==='openhands'||active==='claude')?'Included in audit'")
 # Upstream's model settings were hard-coded in Chinese, even in English mode.
 app=root/'web/src/App.tsx';text=app.read_text();before,fragment=text.split('function ModelServiceSettings',1)
 fragment,after=fragment.split('function emptyModelServiceForm',1)
@@ -122,6 +129,20 @@ shutil.copyfile(here/'OpenHandsSessions.tsx',root/'web/src/pages/OpenHandsSessio
 shutil.copyfile(here/'OpenHandsSessions.test.tsx',root/'tests/ui/OpenHandsSessions.test.tsx')
 shutil.copyfile(here/'OpenHandsOptimization.tsx',root/'web/src/pages/OpenHandsOptimization.tsx')
 shutil.copyfile(here/'OpenHandsOptimization.test.tsx',root/'tests/ui/OpenHandsOptimization.test.tsx')
+shutil.copyfile(here/'OptimizationLayout.tsx',root/'web/src/pages/OptimizationLayout.tsx')
+# Keep the original wizard and the runtime adapter on one presentation contract.
+replace('web/src/pages/OptimizationWizard.tsx',"import './optimizationWizard.css';", "import './optimizationWizard.css';\nimport {OptimizationHeader,OptimizationSteps,OptimizationSessionBar} from './OptimizationLayout';")
+replace('web/src/pages/OptimizationWizard.tsx',"import { ArrowLeft, ArrowRight, Check, Info,", "import { ArrowRight, Info,")
+wizard=root/'web/src/pages/OptimizationWizard.tsx';text=wizard.read_text()
+start=text.index('    <header className="opt-heading">');end=text.index('    <div className="opt-session-bar">',start)
+text=text[:start]+"""    <OptimizationHeader title={t('opt.title')} subtitle={t('opt.subtitle')} backLabel={t(step === 1 ? 'opt.backSuggestions' : 'opt.backCost')} onBack={() => setStep(step === 1 ? 2 : 1)} />
+    <OptimizationSteps step={step} sessionPresent={Boolean(session)} labels={[t('opt.step1'),t('opt.step2'),t('opt.step3')]} details={[t('opt.step1Detail'),t('opt.step2Detail'),t('opt.step3Detail')]} onStep={setStep} />
+"""+text[end:]
+text=text.replace('    <div className="opt-session-bar">','    <OptimizationSessionBar>',1)
+start=text.index('    <OptimizationSessionBar>');end=text.index('    {error &&',start)
+segment=text[start:end];assert segment.endswith('    </div>\n')
+text=text[:start]+segment[:-len('    </div>\n')]+'    </OptimizationSessionBar>\n'+text[end:]
+wizard.write_text(text)
 shutil.copyfile(here/'RuntimeDashboard.tsx',root/'web/src/pages/RuntimeDashboard.tsx')
 shutil.copyfile(here/'runtimeDashboard.css',root/'web/src/pages/runtimeDashboard.css')
 for name,directory in [('DoctorScopes.test.tsx','ui'),('DoctorApiError.test.ts','ui'),('DoctorReadProjects.test.ts','ui-server')]:
@@ -151,10 +172,12 @@ replace('tests/ui/App.test.tsx',"  it('keeps the fixed style controls independen
     expect(await screen.findByRole('button',{name:/Agent run needs review/})).toBeTruthy();
     fireEvent.keyDown(window,{key:'Escape'});
     fireEvent.click(screen.getByRole('button',{name:'Optimization suggestions'}));
-    await screen.findByText('Current usage · OpenHands');
-    const tabs=screen.getAllByRole('tab');expect(tabs).toHaveLength(3);
-    fireEvent.click(tabs[1]);expect(screen.getByText('Optimization suggestions · OpenHands')).toBeTruthy();
-    fireEvent.click(tabs[2]);expect(screen.getByText('A6API account calls')).toBeTruthy();
+    await screen.findByRole('heading',{name:'Current usage'});
+    expect(screen.queryAllByRole('tab')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button',{name:'View optimization suggestions'}));
+    expect(screen.getByRole('heading',{name:'Optimization suggestions'})).toBeTruthy();
+    fireEvent.click(screen.getByText('Data and verification evidence'));
+    expect(screen.getByText('A6API account calls')).toBeTruthy();
     fireEvent.click(screen.getByRole('button',{name:'Scan records'}));
     expect(await screen.findByRole('heading',{name:'Scan records'})).toBeTruthy();
   });
@@ -179,6 +202,8 @@ text=text.replace("    const first = await runAiAudit(skills, { llmOptions: make
 audit_test.write_text(text)
 # Ship the extension's real discovery scenario, rather than skipping upstream's
 # manifest check (the published source omits its internal scenario documents).
+replace('tests/ui/ManagePage.test.tsx',"import { beforeEach, describe, expect, it, vi }", "import { afterEach, beforeEach, describe, expect, it, vi }")
+replace('tests/ui/ManagePage.test.tsx',"describe('ManagePage unified Skill Center', () => {", "describe('ManagePage unified Skill Center', () => {\n  afterEach(async()=>{cleanup();await new Promise(resolve=>setTimeout(resolve,0));});")
 scenario=root/'doc/scenarios/phpretro-openhands'
 (scenario/'evidence').mkdir(parents=True,exist_ok=True)
 (scenario/'spec.md').write_text('OpenHands audit snapshots must be discovered under their own platform at global and project scope. They must not become Codex skills or writable deployment targets. Runtime receipt evidence remains separate from provider billing calls.\n')

@@ -1,0 +1,40 @@
+{
+  "schema": "phpretro.claude-code-policy.v1",
+  "runtime": "claude-code",
+  "cli": "/home/ubuntu/.local/bin/claude",
+  "cli_version": "2.1.287 (Claude Code)",
+  "auth_mode": "subscription",
+  "automatic_planning": false,
+  "max_builders": 2,
+  "required_review_families": 1,
+  "review_policy": "user-authorized-independent-claude-sessions",
+  "estimated_daily_cost_ceiling": 5.0,
+  "prices_calibrated": false,
+  "portdan_cost_check": "user-disabled",
+  "image": "phpretro-tools:20261010",
+  "cgroup_parent": "phpretro-build.slice",
+  "container_memory": "1400m",
+  "container_pids": 192,
+  "host_cpu_ceiling": 0.9,
+  "minimum_available_memory_bytes": 1610612736,
+  "restore_after_seconds": 300,
+  "pressure_after_seconds": 20,
+  "max_iterations": 80,
+  "max_output_tokens": 4096,
+  "context_window_tokens": 1000000,
+  "model_roles": {"builder": "claude-sonnet-5-5", "reviewer": "claude-sonnet-5-5"},
+  "models": {
+    "claude-sonnet-5-5": {
+      "automatic": true,
+      "input_includes_cache": false,
+      "input": 2.0,
+      "output": 10.0,
+      "cache_read": 0.1,
+      "cache_write": 4.0,
+      "cache_write_quote": "Conservative 1h cache write ceiling; 5m is 2.50",
+      "price_source": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview",
+      "provider_order": ["anthropic"]
+    }
+  },
+  "providers": {"anthropic": {"base_url": "https://api.anthropic.com"}}
+}

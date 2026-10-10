@@ -30,7 +30,7 @@ class Journal:
         if len(safe)>4000:self.data['truncated']=True
         row={'at':time.time(),'kind':kind,'text':safe[:4000]}
         for key in ('rc','request','provider'):
-            if key in meta and (type(meta[key]) is int or key=='provider' and meta[key] in ('a6api','portdan')):row[key]=meta[key]
+            if key in meta and (type(meta[key]) is int or key=='provider' and meta[key] in ('a6api','portdan','anthropic')):row[key]=meta[key]
         self.data['events'].append(row);self.save()
     def finish(self,complete):
         self.data['complete']=bool(complete and not self.failed and not self.data['truncated']);self.save()

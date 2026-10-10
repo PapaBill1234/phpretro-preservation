@@ -13,12 +13,15 @@ import canary
 
 ROOT = Path(__file__).resolve().parent
 OPS = Path(os.environ.get("PHPRETRO_OPS", Path.home() / "phpretro-ops"))
-DEFAULT = ROOT / "openhands" / "policy.json"
+DEFAULT = ROOT / ("claude_code" if os.environ.get("PHPRETRO_RUNTIME") == "claude-code" else "openhands") / "policy.json"
 POLICY = Path(os.environ.get("PHPRETRO_RUNTIME_POLICY", DEFAULT))
 
 
 def load():
     data = json.loads(POLICY.read_text())
+    if data.get("schema") == "phpretro.claude-code-policy.v1":
+        from claude_code import policy
+        return policy.load(POLICY)
     if data.get("schema") != "phpretro.runtime.v1":
         raise control.IntegrityError("unsupported runtime policy")
     if data.get("automatic_planning") is not False:
@@ -75,6 +78,9 @@ def capability_fingerprint():
 
 def ready(model=None):
     data = load()
+    if data.get("runtime") == "claude-code":
+        from claude_code import policy
+        return policy.ready(data, OPS, fingerprint(), model)
     if model is not None and data["models"].get(model, {}).get("automatic") is not True:
         return False
     stamp = OPS / "state" / "openhands-validation.json"
