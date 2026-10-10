@@ -3,9 +3,10 @@ import hashlib, time
 import integrity as control
 
 class Recorder:
-    def __init__(self,path):
+    def __init__(self,path,enabled_tools=None):
         self.path=path; self.commands=set(); self.failed=False
-        self.data={'schema':'phpretro.context-usage.v1','complete':False,'enabled_tools':['execute'],
+        self.data={'schema':'phpretro.context-usage.v1','complete':False,
+                   'enabled_tools':['execute'] if enabled_tools is None else list(enabled_tools),
                    'tool_calls':0,'tool_errors':0,'repeated_commands':0,'events':0,
                    'requests':[],'requests_truncated':False,'brief_chars':0}
     def save(self):
@@ -41,10 +42,13 @@ def summary(raw):
         names=('estimated_context_tokens','estimated_tool_schema_tokens','estimated_system_tokens')
         if not isinstance(r,dict) or any(type(r.get(k)) is not int or not 0<=r[k]<=100000000 for k in names):raise ValueError()
         clean.append({k:r[k] for k in names})
-    complete=raw.get('complete') is True and raw.get('enabled_tools')==['execute']
+    enabled=raw.get('enabled_tools')
+    if enabled not in ([],['execute']) or not enabled and raw['tool_calls']:
+        raise ValueError()
+    complete=raw.get('complete') is True
     return {**{k:raw[k] for k in keys},'complete':complete,'requests':len(rows),
             'first_context_tokens':clean[0]['estimated_context_tokens'] if clean else None,
             'peak_context_tokens':max((r['estimated_context_tokens'] for r in clean),default=None),
             'peak_tool_schema_tokens':max((r['estimated_tool_schema_tokens'] for r in clean),default=None),
-            'unused_tools':['execute'] if complete and clean and raw['tool_calls']==0 else [],
+            'unused_tools':list(enabled) if complete and clean and raw['tool_calls']==0 else [],
             'usage_status':'complete' if complete and clean and not raw.get('requests_truncated') else 'partial'}
