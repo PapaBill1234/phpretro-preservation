@@ -69,6 +69,11 @@ def launch_child(path):
             "--property=TimeoutStopSec=" + str(manifest["grace"]),
             "--setenv=HOME=" + str(Path.home()),
             "--setenv=PATH=" + os.environ.get("PATH", "/usr/bin:/bin"),
+            # The user manager does not inherit the controller environment.
+            # Forward only the selected non-secret runtime metadata, never keys.
+            *(["--setenv=PHPRETRO_RUNTIME=" + manifest["runtime"],
+               "--setenv=PHPRETRO_OPS=" + str(path.resolve().parent.parent.parent)]
+              if manifest.get("runtime") in ("openhands", "claude-code") else []),
             "--", sys.executable,
             str(Path(__file__).resolve()), "--exec", str(path.resolve())]
         os.environ.update(bus_env())

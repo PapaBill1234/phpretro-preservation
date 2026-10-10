@@ -20,6 +20,11 @@ def main():
         old=json.loads(destination.read_text())
         if old.get('implementation_sha256')==fingerprint and old.get('attempted') is True:
             raise control.IntegrityError('Provider acceptance already attempted for this source; inspect its receipt')
+        if old.get('attempted') is True:
+            prior=old.get('implementation_sha256','')
+            if isinstance(prior,str) and len(prior)==64 and all(c in '0123456789abcdef' for c in prior):
+                archive=ops/'state'/('claude-code-provider-'+prior+'.json')
+                if not archive.exists():control.atomic_json(archive,old)
     with (ops/'locks/orchestrator.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         state=controller.load_state()

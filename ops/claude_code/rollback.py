@@ -14,7 +14,7 @@ def restore(backup):
     if state.get('reservations'):raise control.IntegrityError('Workers must drain before rollback')
     old=json.loads((backup/'rollback.json').read_text());base=Path.home()/'phpretro-skill-doctor';units=Path.home()/'.config/systemd/user'
     subprocess.run(['sudo','-n','systemctl','disable','--now','phpretro-orchestrator.timer','phpretro-nightly.timer','phpretro-alerts.timer'],check=True)
-    for service in ('phpretro-claude-supervisor.timer','phpretro-claude-supervisor.service','phpretro-skill-doctor-ui.service','phpretro-skill-doctor.timer','phpretro-skill-doctor.service'):
+    for service in ('phpretro-claude-desktop.service','phpretro-claude-supervisor.timer','phpretro-claude-supervisor.service','phpretro-skill-doctor-ui.service','phpretro-skill-doctor.timer','phpretro-skill-doctor.service'):
         subprocess.run(['systemctl','--user','stop',service],env=worker.bus_env(),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
     (Path.home()/'phpretro-claude-code/ENABLED').unlink(missing_ok=True)
     for name in ('phpretro-orchestrator.service','phpretro-nightly.service','phpretro-alerts.service'):

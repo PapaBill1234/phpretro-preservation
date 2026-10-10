@@ -64,6 +64,23 @@ class WorkerServiceTest(unittest.TestCase):
             "profile_home": str(self.root), "usage_path": str(self.usage),
             "timeout": timeout, "grace": grace, "reserved_tokens": 100})
 
+    def test_native_runtime_crosses_real_user_manager_without_controller_secrets(self):
+        code=("import os,json; from pathlib import Path; "
+              "Path("+repr(str(self.marker))+").write_text(json.dumps({"
+              "'runtime':os.environ.get('PHPRETRO_RUNTIME'),'ops':os.environ.get('PHPRETRO_OPS'),"
+              "'private':os.environ.get('PHPRETRO_TEST_PRIVATE_VALUE')}))")
+        self._manifest(code,timeout=10,grace=.2)
+        row=json.loads(self.path.read_text());row['runtime']='claude-code';control.atomic_json(self.path,row)
+        env={**worker.bus_env(),'PHPRETRO_RUNTIME':'openhands','PHPRETRO_TEST_PRIVATE_VALUE':'synthetic-private-fixture'}
+        result=subprocess.run([sys.executable,str(Path(worker.__file__)),str(self.path)],
+                              env=env,capture_output=True,text=True,timeout=20)
+        self.assertEqual(result.returncode,0,result.stderr)
+        observed=json.loads(self.marker.read_text())
+        self.assertEqual(observed['runtime'],'claude-code')
+        self.assertEqual(observed['ops'],str(self.path.resolve().parent.parent.parent))
+        self.assertIsNone(observed['private'])
+        self.assertEqual(worker.unit_state(self.name),'inactive')
+
     def test_timeout_flushes_sidecar_and_drains_term_ignoring_descendant(self):
         self._manifest(self._script(), timeout=.4, grace=.2)
         result = subprocess.run([sys.executable, str(Path(worker.__file__)), str(self.path)],

@@ -93,7 +93,7 @@ def main():
         staged=backup/name;staged.write_text(text)
         subprocess.run(['sudo','-n','install','-m','644',str(staged),str(previous)],check=True)
     units=Path.home()/'.config/systemd/user';units.mkdir(parents=True,exist_ok=True)
-    for name in ('phpretro-claude-supervisor.service','phpretro-claude-supervisor.timer'):
+    for name in ('phpretro-claude-supervisor.service','phpretro-claude-supervisor.timer','phpretro-claude-desktop.service'):
         (units/name).write_text((ROOT/'ops/systemd'/name).read_text().replace('/home/ubuntu/phpretro-preservation',str(ROOT)))
     for old in ('phpretro-codex-supervisor.timer','phpretro-codex-supervisor.service','phpretro-openhands-webui.service'):
         if checked('systemctl','--user','show',old,'--property=LoadState','--value')!='not-found':
@@ -125,6 +125,7 @@ def main():
     control.atomic_json(OPS/'state/claude-code-activation.json',{'installed':True,'enabled':False,'source_head':head,'backup':str(backup),'installed_at':time.time(),'source_review_deferred':args.defer_source_review})
     subprocess.run(['systemctl','--user','start','phpretro-skill-doctor.service','phpretro-skill-doctor.timer','phpretro-skill-doctor-ui.service'],env=worker.bus_env(),check=True)
     subprocess.run(['systemctl','--user','restart','phpretro-dashboard.service','phpretro-access.service'],env=worker.bus_env(),check=True)
+    subprocess.run(['systemctl','--user','enable','--now','phpretro-claude-desktop.service'],env=worker.bus_env(),check=True)
     print('Claude pipeline installed paused. STOP, charges, original caps and historical sessions retained.')
 
 if __name__=='__main__':

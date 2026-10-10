@@ -6,7 +6,7 @@ sessions. OpenHands receipts and Canvas volumes remain historical/rollback data.
 
 The pinned binary is `/home/ubuntu/.local/bin/claude`, version
 `2.1.287 (Claude Code)`. Claude Code is the harness, not the model provider.
-Builders retain Luna â†’ Sol â†’ DeepSeek escalation; independent reviewers use a
+Builders retain Luna Ã¢â€ â€™ Sol Ã¢â€ â€™ DeepSeek escalation; independent reviewers use a
 separate model family. Sol 6.1 supervises. All routes prefer A6API then admitted
 Portdan fallback, using existing private Ubuntu credentials. No Anthropic login
 is needed. Managed sessions receive only an ephemeral authenticated loopback
@@ -114,3 +114,10 @@ and Doctor manifests record review as pending. The bounded provider acceptance
 can run while paused; ordinary coding activation still requires actual
 independent source review. This never substitutes for unit approval or changes
 any spending, token, provider or review-family limit.
+
+On Ubuntu XFCE/RDP, `phpretro-claude-desktop.service` opens a terminal for each
+active native builder. Windows follow the existing redacted assistant/tool
+journal and show the original run identity and exit status. Closing a window
+does not stop or duplicate its builder. No inference credentials are passed
+to the desktop viewer. Completed windows remain visible for two minutes;
+retained sessions and history remain available in Doctor.
