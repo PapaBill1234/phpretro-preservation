@@ -186,7 +186,7 @@ def usage_snapshot(path, db, marker, runtime="hermes"):
                 v = raw.get(k)
                 if isinstance(v, (int, float)) and not isinstance(v, bool) and __import__("math").isfinite(v) and v >= 0:
                     data[k] = v
-            for k in ("cost_status", "model", "provider", "session_id", "runtime"):
+            for k in ("cost_status", "model", "reported_model", "provider", "session_id", "runtime"):
                 v = raw.get(k)
                 if isinstance(v, str) and __import__("re").fullmatch(r"[A-Za-z0-9_.:/-]{1,120}", v):
                     data[k] = v

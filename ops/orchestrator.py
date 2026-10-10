@@ -887,13 +887,6 @@ def admit_paid(state: dict, unit: dict | None, role: str, *, limit=None, bootstr
         allowance = min(allowance, limit)
     allowance = canary.allowance(unit, role, allowance)
     policy = runtime_policy.load()
-    if RUNTIME == 'claude-code':
-        from claude_code import policy as claude_policy
-        try:
-            estimate=claude_policy.cash_reservation(policy,role,allowance,
-                _load_telemetry().read_runs(STATE_DIR/'runs.jsonl'),state,reservations,
-                json.loads((Path(__file__).parent/'openhands/policy.json').read_text()),billing.summary(OPS))
-        except control.IntegrityError as exc:raise BudgetDenied(str(exc)) from exc
     # This is an estimated spending guard, never a claim about account deductions.
     rows = _load_telemetry().read_runs(STATE_DIR / "runs.jsonl")
     spent = 0.0
@@ -920,19 +913,19 @@ def admit_paid(state: dict, unit: dict | None, role: str, *, limit=None, bootstr
                 spent += override
         else:
             spent += cost
-    if unknown and RUNTIME != 'claude-code':
+    if unknown:
         raise BudgetDenied("daily spend contains unknown usage; accounting reconciliation required")
     rate = max(float(m["output"]) for m in policy["models"].values() if m.get("automatic"))
     # Imported historical counters have no exact bill. Reserve their worst-case
     # quote estimate so preserved baselines cannot become free spending.
     spent += max(0, int(state.get("tokens_today", 0)) - day_charges) * rate / 1e6
     held_cost = sum(float(r.get("reserved_cost_estimate", r["reserved_tokens"] * rate / 1e6)) for r in reservations.values())
-    if RUNTIME != 'claude-code':estimate = allowance * rate / 1e6
-    if billing_current and RUNTIME != 'claude-code':
+    estimate = allowance * rate / 1e6
+    if billing_current:
         spent = max(spent, billing.number(provider_bill['account_day_billed_usd']))
         if held_cost + estimate > billing.number(provider_bill['account_balance_usd']):
             raise BudgetDenied("A6API observed balance cannot cover reserved cash estimate")
-    if RUNTIME != 'claude-code' and spent + held_cost + estimate > policy["estimated_daily_cost_ceiling"]:
+    if spent + held_cost + estimate > policy["estimated_daily_cost_ceiling"]:
         raise BudgetDenied("estimated daily spending allowance exhausted")
     held = sum(r["reserved_tokens"] for r in reservations.values())
     held_unit = sum(r["reserved_tokens"] for r in reservations.values() if uid and r.get("unit") == uid)
@@ -1331,8 +1324,6 @@ def normalize_verdict(raw) -> str:
 
 
 def reviewer_model_for(author: str) -> str:
-    if RUNTIME == 'claude-code' and runtime_policy.load()['required_review_families']==1:
-        return runtime_policy.load()['model_roles']['reviewer']
     for candidate in automatic_review_models():
         if control.model_family(candidate) != control.model_family(author):
             return candidate
@@ -1788,24 +1779,7 @@ def independent_review(unit, model, evidence, slot):
     author=unit.get('model') or MODEL['luna']
     excluded=(unit.get('review_model',''),) if slot=='review2' else ()
     if control.model_family(model) not in {control.model_family(m) for m in (author,*excluded)}:return True
-    policy=runtime_policy.load()
-    if RUNTIME!='claude-code' or policy['required_review_families']!=1 or slot!='review':return False
-    # Same model is allowed only under the explicit new session policy. An
-    # independent completed receipt must prove separate author/reviewer jobs.
-    if policy.get('review_policy')!='user-authorized-independent-claude-sessions':return False
-    ids=(unit.get('run_id'),evidence.get('run_id'))
-    if any(not isinstance(x,str) or not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',x) for x in ids) or ids[0]==ids[1]:return False
-    sessions=[]
-    for rid,role in zip(ids,('builder','reviewer')):
-        rec=read_json(STATE_DIR/'receipts'/(rid+'.json'),{})
-        use=rec.get('usage',{})
-        if (rec.get('runtime')!='claude-code' or rec.get('status')!='complete' or rec.get('rc')!=0 or
-            rec.get('unit')!=unit['id'] or rec.get('role')!=role or use.get('usage_complete') is not True or
-            rec.get('model')!=(author if role=='builder' else model) or use.get('model')!=rec.get('model')):return False
-        sid=use.get('session_id')
-        if not isinstance(sid,str) or not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',sid):return False
-        sessions.append(sid)
-    return sessions[0]!=sessions[1] and evidence.get('session_id')==sessions[1]
+    return False
 
 
 def ensure_reviewed(unit: dict, wt: Path, state: dict) -> bool:
@@ -2122,7 +2096,6 @@ def merge_queue(unit: dict, wt: Path, state: dict) -> bool:
 # --------------------------------------------------------------------------
 
 def model_for_attempt(attempt: int) -> str:
-    if RUNTIME == 'claude-code':return runtime_policy.load()['model_roles']['builder']
     idx = min(max(attempt - 1, 0), len(LADDER) - 1)
     return MODEL[LADDER[idx]]
 

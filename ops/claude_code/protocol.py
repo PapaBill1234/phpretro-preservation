@@ -81,7 +81,7 @@ class Stream:
              'completed_api_calls':1 if complete else 0,'unknown_api_calls':0 if complete else 1,
              'usage_known_calls':1 if complete else 0,'usage_complete':complete,
              'conservative_tokens':conservative,'request_token_ceiling':ceiling,
-             'input_includes_cache':False,'session_id':self.sid,'provider':'anthropic:claude-code',
+             'input_includes_cache':False,'session_id':self.sid,'provider':'unknown:claude-code',
              'model':self.model,'accounting_source':'claude-cli-stream','cost_status':'api-equivalent-estimate'}
         cost=self.result.get('total_cost_usd') if self.result else None
         if type(cost) in (int,float) and math.isfinite(cost) and cost>=0:row['cli_conversation_cost_usd']=cost

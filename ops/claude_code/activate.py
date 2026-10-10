@@ -18,7 +18,7 @@ def main():
     if not previous.get('installed'):raise control.IntegrityError('Reviewed paused installation required')
     state=json.loads((ops/'state/units.state.json').read_text())
     if state.get('reservations'):raise control.IntegrityError('Existing reservations must drain')
-    active={**previous,'enabled':True,'authorized_by':'user','review_policy':'independent-claude-sessions','enabled_at':time.time()}
+    active={**previous,'enabled':True,'authorized_by':'user','review_policy':runtime_policy.load()['review_policy'],'enabled_at':time.time()}
     control.atomic_json(activation_path,active)
     try:
         if not runtime_policy.ready(runtime_policy.load()['model_roles']['builder']):

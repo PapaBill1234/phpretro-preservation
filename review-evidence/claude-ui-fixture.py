@@ -10,7 +10,9 @@ g=importlib.util.module_from_spec(spec);spec.loader.exec_module(g)
 manifest=json.loads((Path.home()/'phpretro-claude-code/doctor-build-home/phpretro-skill-doctor/extension-manifest.json').read_text());source=Path(manifest['package']).parent
 original=doctor_sessions.sessions
 def report(**kwargs):
-    value=original(**kwargs);row=dict(value['sessions'][0]);row.update(id='cccccccc-cccc-4ccc-8ccc-cccccccccccc',runtime='claude-code',unit='Synthetic UI acceptance',role='builder',model='claude-sonnet-5-5',provider='anthropic:claude-code',status='failed',rc=1,started=time.time(),ended=time.time(),tokens=39,input=23,output=4,cached=7,cache_write=5,complete=True,context_complete=False,context={},context_requests=[],unused_tools=[],journal_available=False,resources=[],native_session_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd')
+    value=original(**kwargs);row=dict(value['sessions'][0]);row.update(id='cccccccc-cccc-4ccc-8ccc-cccccccccccc',runtime='claude-code',unit='Synthetic UI acceptance',role='builder',model='gpt-6.1-sol',provider='custom:a6api',status='failed',rc=1,started=time.time(),ended=time.time(),tokens=39,input=23,output=4,cached=7,cache_write=5,complete=True,context_complete=False,context={},context_requests=[],unused_tools=[],journal_available=False,resources=[],native_session_id='dddddddd-dddd-4ddd-8ddd-dddddddddddd')
+    for model,identity in [('gpt-6-luna','eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'),('deepseek-v4.1-flash','ffffffff-ffff-4fff-8fff-ffffffffffff')]:
+        value['sessions'].append({**row,'id':identity,'model':model,'role':'reviewer','status':'complete','rc':0})
     value['sessions'].insert(0,row);value['issues'].insert(0,{'id':'runtime:synthetic-failure','runtime':'claude-code','session_id':row['id'],'kind':'context','severity':'med','title':'Synthetic native agent failure','summary':'Browser acceptance fixture only','resourceNames':['Claude Code'],'resourceIds':[],'evidence':[{'label':'Session','value':row['id']}],'recommendation':'Review the retained session','detectionMethod':'Synthetic fixture'})
     return value
 doctor_sessions.sessions=report

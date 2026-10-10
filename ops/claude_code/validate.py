@@ -19,7 +19,7 @@ def main():
     with (logs/'ops.log').open('w') as output:
         result=subprocess.run(['bash','ops/tests/run_all.sh'],cwd=ROOT,env=env,stdout=output,stderr=subprocess.STDOUT,timeout=600)
     with (logs/'transport.log').open('w') as output:
-        transport=subprocess.run([sys.executable,str(Path(__file__).with_name('transport_smoke.py'))],cwd=ROOT,stdout=output,stderr=subprocess.STDOUT,timeout=180)
+        transport=subprocess.run([sys.executable,str(Path(__file__).with_name('gateway_smoke.py'))],cwd=ROOT,stdout=output,stderr=subprocess.STDOUT,timeout=180)
     with (logs/'bridge.log').open('w') as output:
         bridge=subprocess.run([sys.executable,str(Path(__file__).with_name('bridge_smoke.py'))],cwd=ROOT,stdout=output,stderr=subprocess.STDOUT,timeout=180)
     checks['ops']=result.returncode==0 and transport.returncode==0 and bridge.returncode==0
@@ -47,16 +47,16 @@ def main():
         doctor=json.loads(args.doctor_evidence.read_text())
         checks['frontend']=checks['frontend'] and doctor.get('implementation_sha256')==fingerprint and doctor.get('passed') is True
     else:checks['frontend']=False
-    models={}
+    models={};provider_models={}
     if args.provider_evidence:
         provider=json.loads(args.provider_evidence.read_text())
-        models=provider.get('models',{})
+        models=provider.get('models',{});provider_models=provider.get('provider_models',{})
         checks['provider']=(provider.get('implementation_sha256')==fingerprint and 0<=time.time()-provider.get('completed_at',0)<=86400
           and policy.authenticated(data) and all(models.get(m,{}).get('tool_calls') is True and models.get(m,{}).get('usage') is True
             for m,v in data['models'].items() if v.get('automatic')))
     if fingerprint!=runtime_policy.fingerprint():raise control.IntegrityError('Source changed during validation')
     evidence={'schema':'phpretro.claude-validation.v1','implementation_sha256':fingerprint,'checks':checks,'passed':all(checks.values()),
-      'validated_at':time.time(),'vulnerability_snapshot_at':snapshot_at,'models':models,
+      'validated_at':time.time(),'vulnerability_snapshot_at':snapshot_at,'models':models,'provider_models':provider_models,
       'image_id':sandbox.docker('image','inspect','--format={{.Id}}',data['image']).decode().strip()}
     control.atomic_json(OPS/'state/claude-code-validation.json',evidence)
     print(json.dumps(evidence));return 0 if evidence['passed'] else 1

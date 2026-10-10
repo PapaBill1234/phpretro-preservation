@@ -14,7 +14,7 @@ def main():
     parser=argparse.ArgumentParser();parser.add_argument('--run',action='store_true');args=parser.parse_args()
     if not args.run:parser.error('Explicit --run required')
     os.umask(0o077);ops=runtime_policy.OPS;data=runtime_policy.load();fingerprint=runtime_policy.fingerprint()
-    if not policy.bootstrap_ready(data,ops,fingerprint):raise control.IntegrityError('Reviewed paused installation, owned STOP and native login required')
+    if not policy.bootstrap_ready(data,ops,fingerprint):raise control.IntegrityError('Reviewed paused installation, owned STOP and private provider credentials required')
     destination=ops/'state/claude-code-provider.json'
     if destination.is_file():
         old=json.loads(destination.read_text())
@@ -29,20 +29,27 @@ def main():
             row=json.loads(receipt.read_text())
             if row.get('status')=='running' or worker.alive(row.get('worker_pid'),row.get('worker_identity')):
                 raise control.IntegrityError('An existing worker must drain')
-        control.atomic_json(destination,{'attempted':True,'implementation_sha256':fingerprint,'started_at':time.time(),'models':{}})
-        rc,_,usage=controller.hermes_run('claude-bootstrap',data['model_roles']['builder'],
-          "Use execute exactly once with command: printf 'CLAUDE_BRIDGE_ACCEPTED\\n'. Then finish with CLAUDE_BRIDGE_ACCEPTED. Do not edit files or use additional tools.",
-          '',controller.REPO,'claude-provider-acceptance',180,role='builder',state=state,bootstrap=True)
-        state['tokens_today']=int(state.get('tokens_today',0))+controller.usage_tokens(usage)
-        controller.write_json(controller.STATE_JSON,state)
-        rid=usage.get('run_id');context=controller.read_json(ops/'state/receipts'/(str(rid)+'.context.json'),{})
-        tool_ok=context.get('tool_calls')==1 and context.get('tool_errors')==0
-        complete=rc==0 and usage.get('usage_complete') is True and tool_ok and usage.get('model')==data['model_roles']['builder']
-        evidence={'attempted':True,'implementation_sha256':fingerprint,'completed_at':time.time(),'run_id':rid,'rc':rc,
-          'models':{data['model_roles']['builder']:{'tool_calls':tool_ok,'usage':complete,'cli_version':data['cli_version'],
-            'native_session_id':usage.get('session_id')}},'note':'Actual native request/tool/usage evidence; subscription quota is unknown.'}
+        evidence={'attempted':True,'implementation_sha256':fingerprint,'started_at':time.time(),'models':{},'provider_models':{},
+          'note':'Actual native harness compatibility with existing providers; not an availability poll or unit review.'}
         control.atomic_json(destination,evidence)
+        complete=True;charged=0
+        for model,settings in data['models'].items():
+            if not settings.get('automatic'):continue
+            rc,_,usage=controller.hermes_run('claude-bootstrap',model,
+              "Use execute exactly once with command: printf 'CLAUDE_BRIDGE_ACCEPTED\\n'. Then finish with CLAUDE_BRIDGE_ACCEPTED. Do not edit files or use additional tools.",
+              '',controller.REPO,'claude-provider-acceptance',180,role='builder',state=state,bootstrap=True)
+            tokens=controller.usage_tokens(usage);charged+=tokens
+            state['tokens_today']=int(state.get('tokens_today',0))+tokens;controller.write_json(controller.STATE_JSON,state)
+            rid=usage.get('run_id');context=controller.read_json(ops/'state/receipts'/(str(rid)+'.context.json'),{})
+            tool_ok=context.get('tool_calls')==1 and context.get('tool_errors')==0
+            ok=rc==0 and usage.get('usage_complete') is True and tool_ok and usage.get('model')==model
+            evidence['models'][model]={'tool_calls':tool_ok,'usage':ok,'cli_version':data['cli_version'],'native_session_id':usage.get('session_id'),'run_id':rid,'rc':rc}
+            provider=usage.get('provider','').removeprefix('custom:')
+            if ok and provider in ('a6api','portdan'):
+                evidence['provider_models'].setdefault(provider,{})[model]={'tool_calls':True,'usage':True,'reported_model':usage.get('reported_model'),'checked_at':time.time()}
+            evidence['completed_at']=time.time();control.atomic_json(destination,evidence)
+            if not ok:complete=False;break  # No unchanged retry and no repeated paid acceptance.
         if runtime_policy.fingerprint()!=fingerprint:raise control.IntegrityError('Source changed during provider acceptance')
-        print(json.dumps({'passed':complete,'run_id':rid,'tokens':controller.usage_tokens(usage),'STOP':(ops/'STOP').is_file()}))
+        print(json.dumps({'passed':complete,'models':list(evidence['models']),'tokens':charged,'STOP':(ops/'STOP').is_file()}))
         return 0 if complete else 1
 if __name__=='__main__':raise SystemExit(main())

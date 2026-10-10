@@ -30,7 +30,7 @@ def collect(home,exclude):
                 started=started or doctor.timestamp(event.get('timestamp'))
                 if event.get('type')!='assistant':continue
                 message=event.get('message',{});failed=failed or event.get('isApiErrorMessage') is True or event.get('is_api_error_message') is True
-                if not isinstance(message.get('model'),str) or not re.fullmatch(r'claude-[a-zA-Z0-9._-]{1,80}',message['model']):continue
+                if not isinstance(message.get('model'),str) or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._/-]{0,100}',message['model']):continue
                 if not isinstance(message.get('id'),str):continue
                 model=message['model'];value=protocol.counters(message.get('usage'))
                 previous=messages.get(message['id'])
@@ -38,7 +38,7 @@ def collect(home,exclude):
                 messages[message['id']]=value
             totals={k:sum(u[k] for u in messages.values()) for k in (*protocol.COUNTERS,'total_tokens')}
             rows.append({'id':sid,'native_session_id':sid,'runtime':'claude-code','unit':'Interactive','role':'interactive',
-              'model':model or 'Unknown','provider':'anthropic:claude-code','status':'failed' if failed else 'incomplete',
+              'model':model or 'Unknown','provider':'unknown:claude-code','status':'failed' if failed else 'incomplete',
               'rc':None,'started':started or ended,'ended':ended,'tokens':totals['total_tokens'] if messages else None,
               'input':totals['input_tokens'] if messages else None,'output':totals['output_tokens'] if messages else None,
               'cached':totals['cache_read_tokens'] if messages else None,'cache_write':totals['cache_write_tokens'] if messages else None,

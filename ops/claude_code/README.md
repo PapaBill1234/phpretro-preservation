@@ -4,14 +4,20 @@ This replaces active OpenHands execution on the Ubuntu PHPRetro host. Native
 Claude Code provides builder, independent reviewer and operational supervisor
 sessions. OpenHands receipts and Canvas volumes remain historical/rollback data.
 
-The pinned native binary is `/home/ubuntu/.local/bin/claude`, version
-`2.1.287 (Claude Code)`. The initial model is `claude-sonnet-5-5`. Authentication
-uses the operator's native Claude subscription login, without copying credentials
-to Docker or putting them in the repository. Run on the host:
+The pinned binary is `/home/ubuntu/.local/bin/claude`, version
+`2.1.287 (Claude Code)`. Claude Code is the harness, not the model provider.
+Builders retain Luna → Sol → DeepSeek escalation; independent reviewers use a
+separate model family. Sol 6.1 supervises. All routes prefer A6API then admitted
+Portdan fallback, using existing private Ubuntu credentials. No Anthropic login
+is needed. Managed sessions receive only an ephemeral authenticated loopback
+endpoint; provider credentials never enter the CLI, MCP children or Docker.
 
-```sh
-ssh -t phpretro '/home/ubuntu/.local/bin/claude auth login'
-```
+`gateway.py` translates Anthropic requests to Sol/Luna Responses or DeepSeek
+chat requests. It preserves function calls/results and provider reasoning across
+native resume, validates reported model aliases and numeric inclusive-cache
+usage, and emits exclusive-cache Anthropic wire counters. A bounded nonstreaming
+upstream response is sent as Anthropic SSE to the CLI. Unsupported content and
+execution tools fail closed. Both response size and original timeout are bounded.
 
 Builders have one explicit MCP tool, `execute`, in the existing credential-free,
 network-disabled Docker sandbox. All native filesystem/terminal tools, hooks,
@@ -23,21 +29,27 @@ reconciled against strict final per-invocation counters. Native cumulative cost
 on resume is not charged again. Missing usage receives a conservative full
 request charge and stops; it is never marked complete.
 
-The user requested full Claude replacement. Consequently the initial review
-policy uses separate completed Claude author/reviewer sessions, with different
-receipt IDs and native UUIDs, bound to the exact Git head. This is one model
-family, not evidence of independent model families. Sensitive work retains the
-same head, CI, receipt and merge requirements.
+The existing temporary two-family user policy remains. Different receipts alone
+do not replace independent model families. Exact-head approval and CI remain.
 
-All existing limits and charges remain. The original $5/day estimated spending
-guard is an API-equivalent quote, not a Claude subscription invoice or remaining
-quota. CLI's soft cash option is not a hard guard: the trusted runner reserves
-the full 1,004,096-token request ceiling and checks the original cash hold before
-each invocation. This can limit concurrency. Historical A6API prices/billing are
-not repriced at Claude rates; Portdan's user-disabled cash check stays disabled.
-Claude quota/reset information is unavailable and must not be invented.
+All original limits/charges remain. A receipt-scoped gateway admits each physical
+upstream attempt durably before transport, including fallback/reconnect attempts.
+Its conservative input estimate is UTF-8 payload bytes plus4096 format overhead;
+this estimate is explicitly not measured prompt tokenization. Context above the
+60000-token input ceiling is denied before forwarding, with4096 output tokens.
+The byte estimate and output must fit the remaining original hold. Unknown calls
+retain their actual request holds under usagev2; v1 historical charges remain.
+Unknown counters/identity/truncation stop the run without fabricated zero usage.
 
-The dashboard's Claude panel shows installation/login/activation status and links
+A6API billing and new Claude-harness receipts share the same provider cost basis:
+use their maximum when reconciling daily spend, never add the same charge twice.
+The original five-dollar daily estimate and observed balance guard stay active.
+Portdan cash checks remain user-disabled, token charges retained, and unknown
+Portdan model prices stay unknown. Failed Portdan DeepSeek capability evidence
+is not promoted to verified fallback. This bridge is project-owned compatibility;
+Anthropic does not officially support non-Claude models through gateways.
+
+The dashboard's Claude panel shows installation/provider-credential/activation status and links
 to the shared Doctor pages. Controlled receipts carry actual native session
 identity, roles, final usage and bounded redacted timelines. Interactive native
 transcripts are read as project-scoped metadata only, deduplicated against
@@ -70,7 +82,7 @@ Keep the owned migration STOP until this sequence completes:
    The installer switches root/user service source paths, dashboard and Doctor
    runtime, disables old Codex supervision and Canvas restart, and retains STOP.
    A known backup is restored on installation failure; coding remains disabled.
-5. After native login, run the explicit, once-per-source charged provider
+5. After reviewed paused installation, run the explicit, once-per-source charged provider
    acceptance: `PHPRETRO_RUNTIME=claude-code python3 ops/claude_code/probe.py --run`.
    It uses the unchanged controller ledger/caps and a maintenance receipt, only
    under the unchanged owned STOP, after reviewed paused installation and six
@@ -91,5 +103,5 @@ maintenance approval do not unblock, reroute, requeue or reset that unit.
 
 Official references: [headless operation](https://code.claude.com/docs/en/headless),
 [CLI flags](https://code.claude.com/docs/en/cli-reference),
-[authentication](https://code.claude.com/docs/en/authentication),
-[Sonnet model/prices](https://platform.claude.com/docs/en/models/sonnet-5-5/overview).
+[gateway compatibility](https://code.claude.com/docs/en/llm-gateway),
+[custom models](https://code.claude.com/docs/en/model-config).

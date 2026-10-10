@@ -91,13 +91,13 @@ def period_bounds(period, now):
 
 def costs(row):
     # Subscription and Canvas invoices cannot be inferred from an SDK quote.
-    if row.get('runtime')=='claude-code':
+    if row.get('runtime')=='claude-code' and row.get('provider')=='custom:a6api':
         try:
             rates=json.loads((Path(__file__).parent/'claude_code/policy.json').read_text())['models'][row['model']]
             values=[row.get(k) for k in ('input','output','cached','cache_write')]
             if not row.get('complete') or any(doctor_sessions.number(v) is None for v in values):raise ValueError()
             return {'usd':sum(v*rates[k] for v,k in zip(values,('input','output','cache_read','cache_write')))/1e6,
-                    'basis':'Native Claude actual-model API-equivalent quote; not the subscription invoice'}
+                    'basis':'Configured A6API model quote; not a matched provider invoice'}
         except (OSError,ValueError,KeyError,TypeError):return {'usd':None,'basis':'Unknown native Claude usage/pricing'}
     if row.get('runtime') != 'openhands' or row.get('provider') != 'custom:a6api':
         return {'usd': None, 'basis': 'Unknown provider price / subscription usage'}

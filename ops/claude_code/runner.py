@@ -9,7 +9,7 @@ import json,os,selectors,signal,subprocess,sys,time,uuid
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import integrity as control,runtime_policy,sandbox,context_usage,session_journal
-from claude_code import command,policy as admission,protocol
+from claude_code import command,policy as admission,protocol,gateway
 
 REVIEWER_SYSTEM_PROMPT='''You are an independent diff-only code reviewer.
 The user supplies the complete unified diff, acceptance bullets and exact Git
@@ -86,15 +86,14 @@ def main(receipt_path):
     sandbox.container_name(rid)
     cancel=receipt_path.with_suffix('.cancel.json')
     policy=runtime_policy.load();model=manifest['model'];settings=runtime_policy.model_settings(model)
-    control.atomic_json(Path(manifest['usage_path']),zero(sid,model,admission.request_ceiling(policy)))
+    prelaunch=zero(sid,model,admission.request_ceiling(policy));prelaunch.update(usage_schema=gateway.SCHEMA,unknown_request_ceilings=[],provider='unlaunched:gateway',cost_status='quoted-estimate')
+    control.atomic_json(Path(manifest['usage_path']),prelaunch)
     if cancel.exists() or manifest.get('status')!='running':return 130
     bootstrap=(manifest.get('profile')=='claude-bootstrap' and manifest.get('role')=='builder' and not manifest.get('unit')
       and admission.bootstrap_ready(policy,runtime_policy.OPS,runtime_policy.fingerprint()))
     if policy.get('runtime')!='claude-code' or not (bootstrap or runtime_policy.ready(model)):return 75
     is_builder=manifest.get('role')=='builder'
     is_supervisor=manifest.get('profile')=='claude-supervisor' and manifest.get('role')=='reviewer' and not manifest.get('unit')
-    if model!=policy['model_roles']['builder' if is_builder else 'reviewer']:
-        raise control.IntegrityError('Receipt role/model changed')
     private=receipt_path.parent/(rid+'-cli');private.mkdir(mode=0o700)
     tools=['mcp__phpretro__execute'] if is_builder else []
     mcp=private/'mcp.json'
@@ -104,11 +103,12 @@ def main(receipt_path):
     control.atomic_json(mcp,{'mcpServers':{'phpretro':bridge} if is_builder else {}})
     deadline=manifest['prepared_at']+manifest['timeout']
     ceiling=admission.request_ceiling(policy);cost_ceiling=admission.request_cost_ceiling(policy,model)
-    total=zero(sid,model,ceiling);usage=Path(manifest['usage_path'])
+    total=zero(sid,model,ceiling);total.update(usage_schema=gateway.SCHEMA,unknown_request_ceilings=[],provider='unlaunched:gateway',cost_status='quoted-estimate')
+    usage=Path(manifest['usage_path'])
     context=context_usage.Recorder(receipt_path.with_suffix('.context.json'),['execute'] if is_builder else [])
     journal=session_journal.Journal(receipt_path.with_suffix('.session.json'))
     box=sandbox.Sandbox(rid,Path(manifest['cwd']),writable=is_builder,paths=manifest.get('allowed_paths',[])) if is_builder else None
-    finished=False;rc=1;current=None;calls=0;final_text=''
+    finished=False;rc=1;current=None;client=None;calls=0;final_text=''
     control.atomic_json(private/'identity.json',{'runtime':'claude-code','run_id':rid,'session_id':sid,'model':model,'role':manifest['role']})
     def checkpoint():control.atomic_json(usage,total)
     def update(event):
@@ -128,38 +128,32 @@ def main(receipt_path):
     signal.signal(signal.SIGINT,lambda *_:(_ for _ in ()).throw(InterruptedError()))
     checkpoint()
     try:
+        secrets=gateway.credentials(policy['providers_file'])
+        import provider_routing
+        journal.secrets=tuple(provider_routing.credential(secrets,p,model) for p in runtime_policy.verified_providers(model))
+        client=gateway.Gateway(policy,{**manifest,'_receipt_path':str(receipt_path)},model,total,checkpoint,journal,context,secrets)
         if box:box.prepare()
         prompt=Path(manifest['prompt_path']).read_text();context.data['brief_chars']=len(prompt);context.save()
         journal.add('brief',prompt)
         for step in range(policy['max_iterations']):
             if cancel.exists() or time.time()>=deadline:raise InterruptedError()
-            if total['conservative_tokens']+ceiling>manifest['reserved_tokens']:
-                rc=75;break
-            if total['estimated_cost_usd']+cost_ceiling>manifest['reserved_cost_estimate']+1e-9:
-                rc=75;break
-            current=protocol.Stream(sid,model,tools);calls+=1
-            # Persist the full pessimistic charge before launching the opaque CLI.
-            pending=dict(total);pending.update(api_calls=total['api_calls']+1,
-              unknown_api_calls=total['unknown_api_calls']+1,usage_complete=False,
-              conservative_tokens=total['conservative_tokens']+ceiling,
-              estimated_cost_usd=total['estimated_cost_usd']+cost_ceiling)
-            control.atomic_json(usage,pending)
-            journal.add('provider_request','Claude one-request invocation admitted',provider='anthropic',request=calls)
+            current=protocol.Stream(sid,model,tools);calls+=1;client.arm()
             system='Choose one permitted operational action from the provided typed facts. Return the required JSON only. No tools are available. Never change budgets, credentials, STOP or review policy.' if is_supervisor else BUILDER_SYSTEM_PROMPT if is_builder else REVIEWER_SYSTEM_PROMPT
-            args=command.command(policy,sid,mcp,system,
-                                 resume=step>0,builder=is_builder)
-            invoke(args,command.environment(Path.home()),private,prompt,current,deadline,cancel,update)
-            row=current.usage(ceiling)
-            if not row['usage_complete']:total['unknown_cost_floor']=total['estimated_cost_usd']+cost_ceiling
-            combine(total,row,settings);checkpoint()
-            outcome=current.outcome()
-            final_text=current.result.get('result','') if current.result else ''
-            provider_error=current.error
+            args=command.command(policy,sid,mcp,system,resume=step>0,builder=is_builder,model=model)
+            env=command.environment(Path.home());env.update(client.environment())
+            invoke(args,env,private,prompt,current,deadline,cancel,update)
+            outcome=current.outcome();final_text=current.result.get('result','') if current.result else ''
+            if client.last:
+                native=current.usage(ceiling);observed=client.last['usage']
+                if not native['usage_complete'] or any(native[k]!=observed[k] for k in ('input_tokens','output_tokens','cache_read_tokens','cache_write_tokens','total_tokens')):
+                    raise control.IntegrityError('Native stream disagrees with trusted provider usage')
+            else:
+                rc=75 if client.error=='IntegrityError' else 1
+                break
             current=None
             if not total['usage_complete']:
-                if provider_error:
-                    journal.add('provider_error',provider_error,provider='anthropic',request=calls)
-                    print(json.dumps({'status':'provider unavailable','error_type':provider_error}),flush=True)
+                journal.add('provider_error','Earlier physical attempt has unknown usage; safe stop',request=total['api_calls'])
+                print(json.dumps({'status':'provider unavailable','error_type':'usage_incomplete'}),flush=True)
                 break
             if outcome=='success':
                 if not isinstance(final_text,str) or not final_text.strip():
@@ -175,12 +169,8 @@ def main(receipt_path):
     except Exception as exc:
         print(json.dumps({'status':'failed','error_type':type(exc).__name__}),flush=True);finished=False;rc=1
     finally:
-        if current is not None:
-            try:row=current.usage(ceiling)
-            except (ValueError,control.IntegrityError):row=protocol.Stream(sid,model,tools).usage(ceiling)
-            if not row['usage_complete']:total['unknown_cost_floor']=total['estimated_cost_usd']+cost_ceiling
-            combine(total,row,settings)
-        checkpoint();context.finish(False)  # Native full prompt/schema tokenization is unavailable.
+        if client:client.close()
+        checkpoint();context.finish(False)  # Byte bounds are not measured prompt tokenization.
         journal.add('result','Completed' if finished else 'Budget wait' if rc==75 else 'Failed',rc=rc);journal.finish(finished)
         if box:box.close()
         control.atomic_json(receipt_path.with_suffix('.sandbox.json'),{'run_id':rid,'drained':True})

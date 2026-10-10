@@ -14,12 +14,13 @@ def environment(home,output_tokens=4096):
       MAX_MCP_OUTPUT_TOKENS='4000',MAX_STRUCTURED_OUTPUT_RETRIES='0',CLAUDE_CODE_AUTO_CONNECT_IDE='false')
     return env
 
-def command(policy,sid,mcp,system,resume=False,builder=False):
+def command(policy,sid,mcp,system,resume=False,builder=False,model=None):
     args=[policy['cli'],'--restricted','-p','--verbose','--output-format','stream-json',
       '--tools','','--strict-mcp-config','--mcp-config',str(mcp),'--setting-sources','',
       '--settings',json.dumps({'disableAllHooks':True}), '--disable-slash-commands','--no-chrome',
-      '--max-turns','1','--model',policy['model_roles']['builder' if builder else 'reviewer'],
+      '--max-turns','1','--model',model or policy['model_roles']['builder' if builder else 'reviewer'],
       '--resume' if resume else '--session-id',sid,'--system-prompt',system]
+    if policy.get('auth_mode')=='gateway':args+=['--bare']
     if builder:args+=['--allowedTools','mcp__phpretro__execute']
     else:args+=['--safe-mode']
     return args

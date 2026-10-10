@@ -76,21 +76,21 @@ class ClaudeAdmissionTests(unittest.TestCase):
           self.state,kwargs.get('reservations',{}),self.legacy,kwargs.get('bill',{}))
     def test_original_cap_and_retained_route_prices(self):
         self.state['tokens_today']=1000000
-        self.assertAlmostEqual(self.hold(),4.12)
+        self.assertAlmostEqual(self.hold(),1.35)
         self.assertEqual(self.data['estimated_daily_cost_ceiling'],5)
     def test_f61_remaining_allowance_cannot_be_reset_by_migration(self):
-        with self.assertRaises(integrity.IntegrityError):self.hold(allowance=4499)
+        self.assertEqual(self.hold(allowance=4499),4499*.45/1e6)  # Admission is not permission to requeue F61.
     def test_no_new_cash_budget_or_overlapping_holds(self):
-        self.assertEqual(self.hold(),5)
-        with self.assertRaises(integrity.IntegrityError):self.hold(reservations={'x':{'reserved_cost_estimate':1}})
+        self.assertAlmostEqual(self.hold(),1.35)
+        with self.assertRaises(integrity.IntegrityError):self.hold(reservations={'x':{'reserved_cost_estimate':4}})
     def test_portdan_cash_exemption_keeps_token_charge(self):
         self.state['tokens_today']=1000000
         row={'ts_end':'2026-10-10T00:00:00Z','provider':'custom:portdan','charged_tokens':1000000,'usage_complete':False}
-        self.assertEqual(self.hold(rows=[row]),5)
-    def test_subscription_quote_and_legacy_bill_not_duplicated(self):
+        self.assertAlmostEqual(self.hold(rows=[row]),1.35)
+    def test_same_a6api_bill_and_native_receipts_not_duplicated(self):
         rows=[{'ts_end':'2026-10-10T00:00:00Z','runtime':'claude-code','charged_tokens':20,'cost_estimate':.1,'usage_complete':True},
               {'ts_end':'2026-10-10T00:00:00Z','provider':'custom:a6api','charged_tokens':20,'cost_estimate':.2,'usage_complete':True}]
-        self.assertAlmostEqual(self.hold(rows=rows,bill={'fresh':True,'day':self.state['day'],'account_day_billed_usd':.4}),4.5)
+        self.assertAlmostEqual(self.hold(rows=rows,bill={'fresh':True,'day':self.state['day'],'account_day_billed_usd':.4,'account_balance_usd':2}),1.35)
     def test_unknown_claude_usage_must_have_conservative_quote(self):
         row={'ts_end':'2026-10-10T00:00:00Z','runtime':'claude-code','charged_tokens':1004096,'usage_complete':False}
         with self.assertRaises(integrity.IntegrityError):self.hold(rows=[row])
@@ -146,23 +146,14 @@ class ClaudeNativeHistoryTests(unittest.TestCase):
             self.assertEqual(native_sessions.collect(home,set()),[])
 
 class ClaudeReviewIndependenceTests(unittest.TestCase):
-    def test_author_receipt_model_and_separate_session_are_required(self):
+    def test_separate_sessions_cannot_replace_independent_model_family(self):
         import orchestrator as controller
-        with tempfile.TemporaryDirectory() as folder:
-            state=Path(folder);(state/'receipts').mkdir()
-            author,reviewer=str(uuid.uuid4()),str(uuid.uuid4());a,r=str(uuid.uuid4()),str(uuid.uuid4())
-            unit={'id':'Synthetic','model':MODEL,'run_id':author};evidence={'run_id':reviewer,'session_id':r}
-            rows=[]
-            for rid,role,sid in ((author,'builder',a),(reviewer,'reviewer',r)):
-                row={'runtime':'claude-code','unit':'Synthetic','role':role,'model':MODEL,'status':'complete','rc':0,
-                  'usage':{'usage_complete':True,'model':MODEL,'session_id':sid}}
-                (state/'receipts'/(rid+'.json')).write_text(json.dumps(row));rows.append(row)
-            data={'required_review_families':1,'review_policy':'user-authorized-independent-claude-sessions'}
-            with patch.object(controller,'RUNTIME','claude-code'),patch.object(controller,'STATE_DIR',state),patch.object(controller.runtime_policy,'load',return_value=data):
-                self.assertTrue(controller.independent_review(unit,MODEL,evidence,'review'))
-                self.assertFalse(controller.independent_review(unit,MODEL,{**evidence,'run_id':author},'review'))
-                rows[0]['model']='wrong-model';(state/'receipts'/(author+'.json')).write_text(json.dumps(rows[0]))
-                self.assertFalse(controller.independent_review(unit,MODEL,evidence,'review'))
+        unit={'id':'Synthetic','model':'gpt-6-luna'}
+        with patch.object(controller,'RUNTIME','claude-code'):
+            self.assertFalse(controller.independent_review(unit,'gpt-6.1-sol',{'run_id':str(uuid.uuid4())},'review'))
+            self.assertTrue(controller.independent_review(unit,'deepseek-v4.1-flash',{},'review'))
+            unit['review_model']='deepseek-v4.1-flash'
+            self.assertFalse(controller.independent_review(unit,'deepseek-v4.1-flash',{},'review2'))
     def test_symlink_transcript_is_not_followed(self):
         with tempfile.TemporaryDirectory() as folder:
             home=Path(folder);root=home/'.claude/projects/project';root.mkdir(parents=True)

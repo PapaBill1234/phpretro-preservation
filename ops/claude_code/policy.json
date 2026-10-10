@@ -3,11 +3,11 @@
   "runtime": "claude-code",
   "cli": "/home/ubuntu/.local/bin/claude",
   "cli_version": "2.1.287 (Claude Code)",
-  "auth_mode": "subscription",
+  "auth_mode": "gateway",
   "automatic_planning": false,
   "max_builders": 2,
-  "required_review_families": 1,
-  "review_policy": "user-authorized-independent-claude-sessions",
+  "required_review_families": 2,
+  "review_policy": "temporary-two-family-user-override",
   "estimated_daily_cost_ceiling": 5.0,
   "prices_calibrated": false,
   "portdan_cost_check": "user-disabled",
@@ -21,20 +21,78 @@
   "pressure_after_seconds": 20,
   "max_iterations": 80,
   "max_output_tokens": 4096,
-  "context_window_tokens": 1000000,
-  "model_roles": {"builder": "claude-sonnet-5-5", "reviewer": "claude-sonnet-5-5"},
+  "context_window_tokens": 60000,
+  "model_roles": {
+    "builder": "gpt-6-luna",
+    "reviewer": "gpt-6.1-sol",
+    "supervisor": "gpt-6.1-sol"
+  },
   "models": {
-    "claude-sonnet-5-5": {
+    "gpt-6-luna": {
       "automatic": true,
-      "input_includes_cache": false,
-      "input": 2.0,
-      "output": 10.0,
-      "cache_read": 0.1,
-      "cache_write": 4.0,
-      "cache_write_quote": "Conservative 1h cache write ceiling; 5m is 2.50",
-      "price_source": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview",
-      "provider_order": ["anthropic"]
+      "api_mode": "responses",
+      "input_includes_cache": true,
+      "input": 0.018,
+      "output": 0.09,
+      "cache_read": 0.0018,
+      "cache_write": 0.0225,
+      "provider_order": [
+        "a6api",
+        "portdan"
+      ],
+      "reported_model_aliases": [
+        "cb/gpt-6-luna"
+      ]
+    },
+    "deepseek-v4.1-flash": {
+      "automatic": true,
+      "api_mode": "chat",
+      "input_includes_cache": true,
+      "input": 0.0516,
+      "output": 0.2064,
+      "cache_read": 0.001,
+      "cache_write": 0.0516,
+      "provider_order": [
+        "a6api",
+        "portdan"
+      ],
+      "reported_model_aliases": [
+        "deepseek-v4-1-flash-260910"
+      ]
+    },
+    "claude-haiku-5-5": {
+      "automatic": false,
+      "retirement_reason": "Retired pending a verified independent replacement",
+      "api_mode": "chat",
+      "input_includes_cache": true,
+      "input": 0.024,
+      "output": 0.12,
+      "cache_read": 0.0024,
+      "cache_write": 0.03
+    },
+    "gpt-6.1-sol": {
+      "automatic": true,
+      "api_mode": "responses",
+      "price_source": "user merchant quote 2026-10-09; uncalibrated",
+      "input_includes_cache": true,
+      "input": 0.09,
+      "output": 0.45,
+      "cache_read": 0.0045,
+      "cache_write": 0.0,
+      "provider_order": [
+        "a6api",
+        "portdan"
+      ]
     }
   },
-  "providers": {"anthropic": {"base_url": "https://api.anthropic.com"}}
+  "providers": {
+    "a6api": {
+      "base_url": "https://api.a6api.com/v1"
+    },
+    "portdan": {
+      "base_url": "https://portdan.com/v1"
+    }
+  },
+  "automatic_sol": true,
+  "providers_file": "/home/ubuntu/phpretro-openhands/secrets/providers.json"
 }

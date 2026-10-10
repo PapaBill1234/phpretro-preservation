@@ -16,7 +16,7 @@ ENABLED=BASE/'ENABLED'
 def public_summary(ops=OPS):
     data=health.load(ops/'state/claude-supervisor.json') if (ops/'state/claude-supervisor.json').is_file() else {}
     return {k:data.get(k) for k in ('mode','reason','checked_at','next_check_at','history','authenticated','enabled')} | {
-      'model':'claude-sonnet-5-5','runtime':'claude-code','interval_minutes':30,
+      'model':runtime_policy.load()['model_roles']['supervisor'],'runtime':'claude-code','interval_minutes':30,
       'quota_status':'unavailable; original request/token/cash bounds and provider backoff apply'}
 
 def cycle(inspect=False):
@@ -53,7 +53,7 @@ def cycle(inspect=False):
               '. Use defer if no supported safe action. Never remove STOP, raise limits or change review policy. '
               'Mapping:'+json.dumps(health.REPAIRS)+'. Facts:'+json.dumps(before))
             data['attempts']=attempts+[time.time()];data.update(mode='running',reason='decision_running');save()
-            rc,text,usage=orchestrator.hermes_run('claude-supervisor',runtime_policy.load()['model_roles']['reviewer'],
+            rc,text,usage=orchestrator.hermes_run('claude-supervisor',runtime_policy.load()['model_roles']['supervisor'],
               prompt,'',BASE,'claude-supervisor',180,role='reviewer',state=state)
             if usage.get('admission_denied') is True:data['attempts']=attempts
             state['tokens_today']=int(state.get('tokens_today',0))+orchestrator.usage_tokens(usage)

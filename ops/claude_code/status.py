@@ -20,6 +20,6 @@ def public_summary(ops):
       'version':data['cli_version'],'authenticated':policy.authenticated(data),
       'activated':activation.get('enabled') is True,'paused':(ops/'STOP').exists(),
       'validation_passed':current and validation.get('passed') is True,'model':data['model_roles']['builder'],
-      'review_policy':data['review_policy'],'quota_status':'Unavailable; no remaining subscription quota is inferred',
-      'cost_basis':'API-equivalent quotes; subscription bill unknown',
+      'models':[m for m,v in data['models'].items() if v.get('automatic')], 'provider_order':['a6api','portdan'], 'auth_mode':'private-gateway', 'review_policy':data['review_policy'],'quota_status':'Provider console and original token/spending caps',
+      'cost_basis':'A6API observed billing and provider quotes; Portdan cash checks disabled',
       'session_view':'/skill-doctor/#/context?view=evidence','ssh_alias':'phpretro'}

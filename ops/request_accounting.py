@@ -24,6 +24,19 @@ def bounded_tokens(data, observed):
     """
     schema = data.get("usage_schema")
     if data.get('runtime') == 'claude-code':
+        if schema=='phpretro.claude-gateway-usage.v2':
+            ceiling=control.nonnegative(data.get('request_token_ceiling'),'gateway ceiling')
+            started=control.nonnegative(data.get('api_calls'),'gateway calls')
+            known=control.nonnegative(data.get('completed_api_calls'),'gateway known calls')
+            unknown=control.nonnegative(data.get('unknown_api_calls'),'gateway unknown calls')
+            pending=data.get('unknown_request_ceilings')
+            if not isinstance(pending,list) or len(pending)!=unknown:raise control.IntegrityError('Missing physical request holds')
+            if any(type(v) is not int or not MAX_OUTPUT<v<=CALL_CEILING for v in pending):raise control.IntegrityError('Invalid physical request hold')
+            estimate=control.nonnegative(data.get('conservative_tokens'),'gateway estimate')
+            if (ceiling!=CALL_CEILING or started!=known+unknown or control.nonnegative(data.get('usage_known_calls'),'gateway usage calls')!=known
+                or estimate<observed+sum(pending) or unknown==0 and estimate!=observed
+                or data.get('usage_complete') is True and unknown!=0):raise control.IntegrityError('Gateway accounting mismatch')
+            return estimate
         if schema != 'phpretro.claude-cli-usage.v1':return None
         ceiling=control.nonnegative(data.get('request_token_ceiling'),'Claude ceiling')
         started=control.nonnegative(data.get('api_calls'),'Claude started calls')
