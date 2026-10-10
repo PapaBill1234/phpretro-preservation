@@ -83,6 +83,7 @@ def invoke(args,env,cwd,prompt,stream,deadline,cancel,update):
 def main(receipt_path):
     os.umask(0o077)
     manifest=json.loads(receipt_path.read_text());rid=manifest['run_id'];sid=str(uuid.uuid4())
+    source=runtime_policy.fingerprint()
     sandbox.container_name(rid)
     cancel=receipt_path.with_suffix('.cancel.json')
     policy=runtime_policy.load();model=manifest['model'];settings=runtime_policy.model_settings(model)
@@ -176,6 +177,10 @@ def main(receipt_path):
     finally:
         if client:client.close()
         checkpoint();context.finish(False)  # Byte bounds are not measured prompt tokenization.
+        if finished and runtime_policy.fingerprint()==source:
+            from claude_code import observations
+            try:observations.record(receipt_path,source,total,context.data)
+            except (OSError,ValueError,TypeError,KeyError):pass  # Optional evidence; never interrupt cleanup or invent freshness.
         journal.add('result','Completed' if finished else 'Budget wait' if rc==75 else 'Failed',rc=rc);journal.finish(finished)
         if box:box.close()
         control.atomic_json(receipt_path.with_suffix('.sandbox.json'),{'run_id':rid,'drained':True})

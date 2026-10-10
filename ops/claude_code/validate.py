@@ -4,8 +4,26 @@ import argparse,json,os,subprocess,sys,time
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import integrity as control,runtime_policy,sandbox
-from claude_code import policy
+from claude_code import policy,observations
 ROOT=Path(__file__).resolve().parents[2];OPS=runtime_policy.OPS
+
+def provider_evidence(ops,fingerprint,data,provider):
+    models={};provider_models={}
+    if (isinstance(provider,dict) and provider.get('implementation_sha256')==fingerprint
+        and observations.fresh(provider.get('completed_at'))):
+        original=provider.get('models',{});routes=provider.get('provider_models',{})
+        if isinstance(original,dict) and isinstance(routes,dict):
+            models={m:r for m,r in original.items() if isinstance(r,dict) and r.get('tool_calls') is True
+              and r.get('usage') is True and r.get('rc')==0 and r.get('cli_version')==data['cli_version']}
+            provider_models={p:{m:r for m,r in rows.items() if m in models} for p,rows in routes.items() if isinstance(rows,dict)}
+    provider_models=observations.merge(ops,fingerprint,data['models'],provider_models)
+    # Real successful tool receipts renew their own observed route, without
+    # inference or timestamp changes to the original acceptance record.
+    models={m:{**models.get(m,{}),'tool_calls':any(row.get(m,{}).get('tool_calls') is True for row in provider_models.values()),
+      'usage':any(row.get(m,{}).get('usage') is True for row in provider_models.values())}
+      for m,v in data['models'].items() if v.get('automatic')}
+    return models,provider_models
+
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--provider-evidence',type=Path);parser.add_argument('--doctor-evidence',type=Path)
@@ -47,13 +65,9 @@ def main():
         doctor=json.loads(args.doctor_evidence.read_text())
         checks['frontend']=checks['frontend'] and doctor.get('implementation_sha256')==fingerprint and doctor.get('passed') is True
     else:checks['frontend']=False
-    models={};provider_models={}
-    if args.provider_evidence:
-        provider=json.loads(args.provider_evidence.read_text())
-        models=provider.get('models',{});provider_models=provider.get('provider_models',{})
-        checks['provider']=(provider.get('implementation_sha256')==fingerprint and 0<=time.time()-provider.get('completed_at',0)<=86400
-          and policy.authenticated(data) and all(models.get(m,{}).get('tool_calls') is True and models.get(m,{}).get('usage') is True
-            for m,v in data['models'].items() if v.get('automatic')))
+    provider=json.loads(args.provider_evidence.read_text()) if args.provider_evidence else {}
+    models,provider_models=provider_evidence(OPS,fingerprint,data,provider)
+    checks['provider']=bool(models) and policy.authenticated(data) and all(row['tool_calls'] and row['usage'] for row in models.values())
     if fingerprint!=runtime_policy.fingerprint():raise control.IntegrityError('Source changed during validation')
     evidence={'schema':'phpretro.claude-validation.v1','implementation_sha256':fingerprint,'checks':checks,'passed':all(checks.values()),
       'validated_at':time.time(),'vulnerability_snapshot_at':snapshot_at,'models':models,'provider_models':provider_models,

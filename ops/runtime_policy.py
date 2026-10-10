@@ -131,6 +131,9 @@ def verified_providers(model, checked=None):
         # CLI bridge. New native validation is still independently mandatory.
         try:evidence=json.loads((OPS/'state/openhands-validation.json').read_text()).get('provider_models',{})
         except (OSError,ValueError):evidence={}
+    if load().get('runtime')=='claude-code':
+        from claude_code import observations
+        evidence=observations.merge(OPS,fingerprint(),load()['models'],evidence)
     return [p for p in model_settings(model)["provider_order"]
             if route_passed(evidence.get(p, {}).get(model, {})) or canary.operator_route(p, model)]
 

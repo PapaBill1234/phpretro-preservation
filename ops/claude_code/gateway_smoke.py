@@ -7,8 +7,8 @@ provider identity, fallback holds and credential-free MCP children.
 import json,subprocess,sys,tempfile,time,uuid
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-import integrity,request_accounting
-from claude_code import command,gateway,protocol,runner
+import integrity,request_accounting,context_usage,worker
+from claude_code import command,gateway,protocol,runner,observations
 
 class Evidence:
     def add(self,*args,**kwargs):pass
@@ -17,6 +17,7 @@ class Evidence:
 def case(data,model,builder=False,failure=None):
     with tempfile.TemporaryDirectory(prefix='phpretro-gateway-smoke-') as folder:
         root=Path(folder);(root/'CLAUDE.md').write_text('HOST_CONTEXT_SENTINEL');(root/'AGENTS.md').write_text('HOST_CONTEXT_SENTINEL');sid=str(uuid.uuid4());calls=[];writes=[];settings=data['models'][model]
+        context=context_usage.Recorder(root/'native.context.json',['execute'] if builder else [])
         total=runner.zero(sid,model,64096);total.update(usage_schema=gateway.SCHEMA,unknown_request_ceilings=[])
         manifest={'_receipt_path':str(root/'receipt.json'),'role':'builder' if builder else 'reviewer',
           'prepared_at':time.time(),'timeout':100,'reserved_tokens':300000,'reserved_cost_estimate':1}
@@ -53,7 +54,14 @@ for line in sys.stdin:
                 env=command.environment(root);env.update(client.environment(),CLAUDE_CONFIG_DIR=str(root/'config'))
                 result=subprocess.run(command.command(data,sid,mcp,'Fixture system',model=model,builder=builder,resume=step>0),
                   input='Fixture task' if not step else 'Continue',env=env,cwd=root,capture_output=True,text=True,timeout=40)
-                for line in result.stdout.splitlines():stream.accept(json.loads(line))
+                for line in result.stdout.splitlines():
+                    event=json.loads(line);stream.accept(event)
+                    if event.get('type')=='assistant':
+                        for part in event.get('message',{}).get('content',[]):
+                            if part.get('type')=='tool_use':context.tool(part.get('input',{}).get('command',''))
+                    elif event.get('type')=='user':
+                        for part in event.get('message',{}).get('content',[]):
+                            if part.get('type')=='tool_result':context.data['tool_errors']+=int(part.get('is_error') is True)
                 if failure=='identity':
                     assert client.error=='IntegrityError' and total['unknown_api_calls']==1
                     assert len(calls)==1 and not total['usage_complete'];break
@@ -69,6 +77,22 @@ for line in sys.stdin:
                 if settings['api_mode']=='chat':
                     assert any(m.get('reasoning_content')=='retained synthetic reasoning' for m in calls[1]['body']['messages'])
                 else:assert any(i.get('type')=='function_call_output' for i in calls[1]['body']['input'])
+            if builder:
+                # Only disposable synthetic receipt files. These exercise real
+                # native tool events and the real durable-worker projection.
+                context.finish(False);receipts=root/'state/receipts';receipts.mkdir(parents=True)
+                rid=str(uuid.uuid4());receipt=receipts/(rid+'.json');usage=receipt.with_suffix('.usage.json')
+                integrity.atomic_json(usage,total)
+                integrity.atomic_json(receipt.with_suffix('.context.json'),context.data)
+                record={'run_id':rid,'runtime':'claude-code','model':model,'prepared_at':manifest['prepared_at'],
+                  'status':'complete','rc':0,'reserved_tokens':manifest['reserved_tokens'],
+                  'usage':worker.usage_snapshot(usage,root/'absent.db','',runtime='claude-code')}
+                integrity.atomic_json(receipt,record)
+                observations.record(receipt,'synthetic-adapter-source',total,context.data)
+                record['completed_at']=time.time();integrity.atomic_json(receipt,record)
+                proof=observations.recent(root,'synthetic-adapter-source',data['models'])
+                assert proof['a6api'][model]['run_id']==rid
+                assert 'portdan' not in proof
             if failure=='fallback':
                 assert [c['provider'] for c in calls]==['a6api','portdan']
                 assert total['unknown_api_calls']==1 and total['conservative_tokens']==64096+39
