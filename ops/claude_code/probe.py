@@ -32,17 +32,17 @@ def main():
     os.umask(0o077);ops=runtime_policy.OPS;data=runtime_policy.load();fingerprint=runtime_policy.fingerprint()
     if not policy.bootstrap_ready(data,ops,fingerprint):raise control.IntegrityError('Authorized paused installation, owned STOP and private provider credentials required')
     destination=ops/'state/claude-code-provider.json'
-    old={}
-    if destination.is_file():
-        old=json.loads(destination.read_text())
+    with (ops/'locks/orchestrator.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        # Read attempt state under the same lock as the physical execution.
+        # Another invocation may have finished while this one prepared.
+        old=json.loads(destination.read_text()) if destination.is_file() else {}
+        models=model_plan(data,fingerprint,old,args.model)
         if old.get('implementation_sha256')!=fingerprint and old.get('attempted') is True:
             prior=old.get('implementation_sha256','')
             if isinstance(prior,str) and len(prior)==64 and all(c in '0123456789abcdef' for c in prior):
                 archive=ops/'state'/('claude-code-provider-'+prior+'.json')
                 if not archive.exists():control.atomic_json(archive,old)
-    models=model_plan(data,fingerprint,old,args.model)
-    with (ops/'locks/orchestrator.lock').open('a') as lock:
-        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         state=controller.load_state()
         if state.get('reservations'):raise control.IntegrityError('Existing reservations must drain')
         for receipt in (ops/'state/receipts').glob('*.json'):
