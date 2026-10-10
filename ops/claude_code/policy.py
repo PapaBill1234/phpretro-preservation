@@ -50,12 +50,13 @@ def source_reviewed(ops,head):
     except (OSError,ValueError):return False
 
 
-def installed_source_matches(activation,fingerprint):
+def installed_source_matches(activation,fingerprint,*,require_main=False):
     """Bind installed metadata to this actual clean checkout and source bytes."""
     try:
         if activation.get('installed') is not True or activation.get('implementation_sha256')!=fingerprint:return False
         head=subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],text=True,stderr=subprocess.DEVNULL,timeout=10).strip()
         dirty=subprocess.check_output(['git','-C',str(ROOT),'status','--porcelain'],text=True,stderr=subprocess.DEVNULL,timeout=10).strip()
+        if require_main and head!=subprocess.check_output(['git','-C',str(ROOT),'rev-parse','origin/main'],text=True,stderr=subprocess.DEVNULL,timeout=10).strip():return False
         return bool(head) and not dirty and activation.get('source_head')==head
     except (OSError,subprocess.SubprocessError):return False
 
@@ -115,7 +116,8 @@ def ready(data,ops,fingerprint,model=None):
         evidence=json.loads((ops/'state/claude-code-validation.json').read_text())
         if activation.get('authorized_by')!='user' or activation.get('enabled') is not True:return False
         if activation.get('review_policy')!=data['review_policy']:return False
-        if not installed_source_matches(activation,fingerprint) or not source_reviewed(ops,activation.get('source_head')):return False
+        if activation.get('source_review_deferred') is not False:return False
+        if not installed_source_matches(activation,fingerprint,require_main=True) or not source_reviewed(ops,activation.get('source_head')):return False
         if len({control.model_family(m) for m,v in data['models'].items() if v.get('automatic')})<data['required_review_families']:return False
         if evidence.get('implementation_sha256')!=fingerprint or evidence.get('passed') is not True:return False
         required=('foundation','ops','frontend','isolation','lifecycle','resources','provider')

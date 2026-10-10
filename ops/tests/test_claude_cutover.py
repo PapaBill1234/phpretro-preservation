@@ -108,8 +108,11 @@ class CutoverTests(unittest.TestCase):
                     'enabled':True,'review_policy':data['review_policy']}
             self.write('claude-code-activation.json',active)
             self.assertFalse(policy.ready(data,self.ops,'source'))
+            self.write('claude-code-source-review.json',{'head':'head','verdict':'pass','independent':True})
+            self.assertFalse(policy.ready(data,self.ops,'source'))  # Review does not complete the deferred installation.
             self.assertFalse(policy.bootstrap_ready(data,self.ops,'source'))
             self.write('claude-code-activation.json',{**self.previous,'source_review_deferred':True})
+            (self.ops/'state/claude-code-source-review.json').unlink()
             self.authorization(expires_at=time.time()-1)
             self.assertFalse(policy.bootstrap_ready(data,self.ops,'source'))
         self.safe_state()
@@ -218,14 +221,17 @@ class NativeSourceBindingTests(unittest.TestCase):
             git('init','--quiet');file=root/'fixture';file.write_text('first')
             git('add','fixture');git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','--quiet','-m','first')
             row={'installed':True,'source_head':git('rev-parse','HEAD'),'implementation_sha256':'source'}
+            git('update-ref','refs/remotes/origin/main',row['source_head'])
             with patch.object(policy,'ROOT',root):
                 self.assertTrue(policy.installed_source_matches(row,'source'))
+                self.assertTrue(policy.installed_source_matches(row,'source',require_main=True))
                 file.write_text('edited');self.assertFalse(policy.installed_source_matches(row,'source'))
                 git('restore','fixture');extra=root/'injected';extra.write_text('untracked')
                 self.assertFalse(policy.installed_source_matches(row,'source'));extra.unlink()
                 file.write_text('second');git('add','fixture');git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','--quiet','-m','second')
                 self.assertFalse(policy.installed_source_matches(row,'source'))
                 self.assertTrue(policy.installed_source_matches({**row,'source_head':git('rev-parse','HEAD')},'source'))
+                self.assertFalse(policy.installed_source_matches({**row,'source_head':git('rev-parse','HEAD')},'source',require_main=True))
 
 
 if __name__ == '__main__':
