@@ -170,6 +170,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
    except (ValueError,TypeError,sqlite3.Error): self.send(400,{'error':'Invalid request'})
    return
   if not self.authenticated(): self.send(401,{'error':'Sign in required'}); return
+  if path in ('/skill-doctor/api/runtime-optimization','/agent-doctor/api/runtime-optimization'):
+   import sys
+   module_dir=str(Path.home()/'phpretro-preservation/ops')
+   if module_dir not in sys.path:sys.path.insert(0,module_dir)
+   try:
+    from runtime_optimization import dispatch
+    from doctor_sessions import sessions
+    from doctor_canvas import collect
+    self.send(200,dispatch(self.body(),report=sessions(canvas=collect())))
+   except (ValueError,TypeError,KeyError):self.send(400,{'error':'Invalid or stale optimization request; reload the preview and session evidence.'})
+   except OSError:self.send(503,{'error':'Optimization update could not be confirmed; reload recorded settings before retrying.'})
+   return
   if path=='/auth/logout':
    with db() as c: c.execute('DELETE FROM sessions WHERE hash=?',(hashlib.sha256(self.cookie().encode()).hexdigest(),)); c.commit()
    self.send(200,{'ok':True},headers={'Set-Cookie':'pd_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0'}); return

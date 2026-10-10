@@ -25,18 +25,18 @@ replace('web/src/components/ui.tsx','<span className="platform-icon" style={styl
 replace('web/src/pages/ContextOptimizationPage.tsx',"import './contextOptimizationPage.css';","import './contextOptimizationPage.css';\nimport { OpenHandsSessions } from './OpenHandsSessions';")
 replace('web/src/pages/ContextOptimizationPage.tsx',"  if (platform === 'codex')", "  if (platform === 'openhands') return active ? <OpenHandsSessions /> : null;\n\n  if (platform === 'codex')")
 replace('web/src/pages/ContextOptimizationPage.tsx',"import { OpenHandsSessions } from './OpenHandsSessions';", "import { OpenHandsSessions } from './OpenHandsSessions';\nimport type { RuntimeReport } from './RuntimeDashboard';")
+replace('web/src/pages/ContextOptimizationPage.tsx',"import { OpenHandsSessions } from './OpenHandsSessions';", "import { OpenHandsOptimization } from './OpenHandsOptimization';")
 replace('web/src/pages/ContextOptimizationPage.tsx','  onToggle,\n}: {','  onToggle,\n  runtime,\n}: {')
 replace('web/src/pages/ContextOptimizationPage.tsx','  active: boolean;','  runtime?: {report:RuntimeReport|null;error:string;reload:()=>void};\n  active: boolean;')
 replace('web/src/pages/ContextOptimizationPage.tsx',"  if (platform === 'openhands') return active ? <OpenHandsSessions /> : null;", """  if (platform === 'openhands') return active ? <section>
     <nav className="context-optimization-tabs" role="tablist" aria-label="OpenHands context views">{tabs.map(tab=><button key={tab.id} role="tab" aria-selected={view===tab.id} onClick={()=>setView(tab.id)}><span>{tab.label}</span><small>{tab.detail}</small></button>)}</nav>
-    <OpenHandsSessions report={runtime?.report} error={runtime?.error} reload={runtime?.reload} view={view}/>
-    {view==='recommendations'&&<ContextPage active={active} snapshot={snapshot} openResource={openResource} onToggle={onToggle}/>}
+    <OpenHandsOptimization runtime={runtime} view={view} setView={setView}/>
   </section> : null;""")
-replace('web/src/pages/ContextOptimizationPage.tsx','    <nav className="context-optimization-tabs" role="tablist" aria-label={t(\'context.views\')}>',"    {platform==='all'&&active&&<OpenHandsSessions report={runtime?.report} error={runtime?.error} reload={runtime?.reload} view={view}/>}\n    <nav className=\"context-optimization-tabs\" role=\"tablist\" aria-label={t('context.views')}>")
+replace('web/src/pages/ContextOptimizationPage.tsx','    <nav className="context-optimization-tabs" role="tablist" aria-label={t(\'context.views\')}>',"    {platform==='all'&&active&&<OpenHandsOptimization runtime={runtime} view={view} setView={setView}/>}\n    <nav className=\"context-optimization-tabs\" role=\"tablist\" aria-label={t('context.views')}>")
 replace('web/src/App.tsx',"import { I18nProvider, useTranslation } from './i18n';", "import { I18nProvider, useTranslation } from './i18n';\nimport {useRuntimeReport,mergeRuntimeSnapshot,RuntimeCoverage} from './pages/RuntimeDashboard';\nimport './pages/runtimeDashboard.css';")
 replace('web/src/App.tsx','const [snapshot, setSnapshot] = useState<DoctorSnapshot | null>(null);','const [scanSnapshot, setSnapshot] = useState<DoctorSnapshot | null>(null);')
 replace('web/src/App.tsx','  const [scan, setScan] = useState<ScanState>',"  const runtime = useRuntimeReport();\n  const snapshot = useMemo(()=>mergeRuntimeSnapshot(scanSnapshot,runtime.report,scanOptions.platform),[scanSnapshot,runtime.report,scanOptions.platform]);\n  const [scan, setScan] = useState<ScanState>")
-replace('web/src/App.tsx','const next = { ...scanOptions, platform };',"const next = { ...scanOptions, platform, projectDir: platform==='codex'?'/home/ubuntu/phpretro-codex/work':scanOptions.projectDir };")
+replace('web/src/App.tsx','const next = { ...scanOptions, platform };',"const next = { ...scanOptions, platform, projectDir: platform==='codex'?'/home/ubuntu/phpretro-codex/work':platform==='openhands'?'/home/ubuntu/phpretro-skill-doctor/agents':scanOptions.projectDir };")
 replace('web/src/App.tsx','        <div className="page-container">',"""        {runtime.error&&<InlineNotice kind="warning" title="Runtime evidence unavailable">{runtime.error} Previously loaded runtime findings may be stale.</InlineNotice>}
         <div className="page-container">
           {['overview','resources','history'].includes(route)&&<RuntimeCoverage {...runtime}/>}
@@ -51,6 +51,19 @@ replace('web/src/pages/ScanPathsPage.tsx','void getScanSources()', 'void getScan
 replace('web/src/pages/ScanPathsPage.tsx','  }, []);','  }, [projectDir]);')
 replace('web/src/pages/ScanPathsPage.tsx','await saveScanSources(config)', 'await saveScanSources(config,projectDir)')
 replace('web/src/pages/ScanPathsPage.tsx','await resetScanSources(active)', 'await resetScanSources(active,projectDir)')
+replace('web/src/pages/ScanPathsPage.tsx','onSaved: (rescan: boolean) => Promise<void>', 'onSaved: (rescan: boolean, context?: {platform:Platform;projectDir?:string}) => Promise<void>')
+replace('web/src/pages/ScanPathsPage.tsx',"  const [sources, setSources]", "  const sourceProject = active==='openhands'?'/home/ubuntu/phpretro-skill-doctor/agents':active==='codex'?'/home/ubuntu/phpretro-codex/work':projectDir;\n  const [sources, setSources]")
+replace('web/src/pages/ScanPathsPage.tsx','getScanSources(projectDir)', 'getScanSources(sourceProject)')
+replace('web/src/pages/ScanPathsPage.tsx','  }, [projectDir]);','  }, [sourceProject]);')
+replace('web/src/pages/ScanPathsPage.tsx','saveScanSources(config,projectDir)', 'saveScanSources(config,sourceProject)')
+replace('web/src/pages/ScanPathsPage.tsx','resetScanSources(active,projectDir)', 'resetScanSources(active,sourceProject)')
+replace('web/src/pages/ScanPathsPage.tsx','await onSaved(rescan)', 'await onSaved(rescan,{platform:active,projectDir:sourceProject})')
+replace('web/src/pages/ScanPathsPage.tsx',"    setBusy(true);\n    void getScanSources", "    setBusy(true);setSources([]);setLocalError(null);\n    void getScanSources")
+replace('web/src/pages/ScanPathsPage.tsx',".catch((error) => setLocalError(error instanceof Error ? error.message : String(error))).finally", ".catch((error) => {if(alive)setLocalError(error instanceof Error ? error.message : String(error));}).finally")
+replace('web/src/pages/ScanPathsPage.tsx',"<span>{t('scanPaths.help')}</span>", "<span>{active==='openhands'?'OpenHands paths contain Doctor audit snapshots. Included in audit means scanned, not loaded into builders. Actual SDK instructions and tools are recorded under Current usage.':t('scanPaths.help')}</span>")
+replace('web/src/pages/ScanPathsPage.tsx',"<span />{t('scanPaths.enabled')}", "<span />{active==='openhands'?'Included in audit':t('scanPaths.enabled')}")
+replace('web/src/App.tsx','onSaved={async (rescan) => {','onSaved={async (rescan, sourceContext) => {')
+replace('web/src/App.tsx',"              if (rescan) refresh();", "              if (rescan) {const next={...scanOptions,...sourceContext};setScanOptions(next);void runScan(next);}")
 replace('web/src/api.ts','getScanSources():','getScanSources(projectDir?:string):')
 replace('web/src/api.ts',"return request('/api/scan-sources');", "return request('/api/scan-sources'+(projectDir?'?projectDir='+encodeURIComponent(projectDir):''));")
 replace('web/src/api.ts','saveScanSources(scanSources: Record<string, AgentScanSourcesUserConfig>)', 'saveScanSources(scanSources: Record<string, AgentScanSourcesUserConfig>,projectDir?:string)')
@@ -93,14 +106,30 @@ replace('web/src/App.tsx','}保存模型服务</button>',"}{label('保存模型�
 # that ceiling. Keep the real analysis path high; the tiny test uses no reasoning.
 replace('src/models/testOpenAiCompatible.ts',"max_tokens: 5", "max_tokens: 512")
 replace('src/audit/ai-scanner.ts','    if (!raw) continue;',"    if (!raw) throw new Error('AI audit did not return valid JSON for ' + skill.name + '; check provider status, timeout and output allowance.');")
+replace('web/src/api.ts',"String((payload as { error: { message?: string } }).error.message ?? response.statusText)","(typeof (payload as {error:unknown}).error === 'string' ? String((payload as {error:string}).error) : String((payload as {error:{message?:string}}).error?.message ?? response.statusText))")
+replace('src/ui-server/optimizationHandlers.ts',"  if (realpathSync(project) !== realpathSync(context.projectDir)) {", """  const sameProject = realpathSync(project) === realpathSync(context.projectDir);
+  const readOnly = body.action === 'overview' || body.action === 'skill-catalogs';
+  const allowedReadProjects: string[] = JSON.parse(process.env.PHPRETRO_DOCTOR_READ_PROJECTS || '[]');
+  const allowedRead = readOnly && allowedReadProjects.some(p => realpathSync(p) === realpathSync(project));
+  if (!sameProject && !allowedRead) {""")
+replace('src/ui-server/optimizationHandlers.ts',"      result = await optimizationOverview(project, context.homeDir, period);", """      const overview = await optimizationOverview(project, context.homeDir, period);
+      if (!sameProject) {
+        for (const session of overview.sessions) for (const suggestion of session.suggestions) {suggestion.available = false;suggestion.canEnable = false;}
+        overview.diagnostics.push('Native project history is read-only here. Subscription supervisor configuration is protected; SDK controls are available under OpenHands.');
+      }
+      result = overview;""")
 shutil.copyfile(here/'OpenHandsSessions.tsx',root/'web/src/pages/OpenHandsSessions.tsx')
 shutil.copyfile(here/'OpenHandsSessions.test.tsx',root/'tests/ui/OpenHandsSessions.test.tsx')
+shutil.copyfile(here/'OpenHandsOptimization.tsx',root/'web/src/pages/OpenHandsOptimization.tsx')
+shutil.copyfile(here/'OpenHandsOptimization.test.tsx',root/'tests/ui/OpenHandsOptimization.test.tsx')
 shutil.copyfile(here/'RuntimeDashboard.tsx',root/'web/src/pages/RuntimeDashboard.tsx')
 shutil.copyfile(here/'runtimeDashboard.css',root/'web/src/pages/runtimeDashboard.css')
+for name,directory in [('DoctorScopes.test.tsx','ui'),('DoctorApiError.test.ts','ui'),('DoctorReadProjects.test.ts','ui-server')]:
+ shutil.copyfile(here/name,root/'tests'/directory/name)
 shutil.copyfile(here/'RuntimeDashboard.test.tsx',root/'tests/ui/RuntimeDashboard.test.tsx')
 replace('tests/ui/App.test.tsx',"import { beforeEach, describe, expect, it, vi } from 'vitest';", "import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';\nafterEach(()=>{cleanup();vi.unstubAllGlobals();});")
-replace('tests/ui/App.test.tsx',"expect(mocks.resetScanSources).toHaveBeenCalledWith('codex')", "expect(mocks.resetScanSources).toHaveBeenCalledWith('codex','/tmp/project')")
-replace('tests/ui/App.test.tsx',"    vi.clearAllMocks();\n    mocks.loadOptimization", "    vi.clearAllMocks();\n    vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({sessions:[],provider_calls:[],issues:[],runtimes:[]})}));\n    mocks.loadOptimization")
+replace('tests/ui/App.test.tsx',"expect(mocks.resetScanSources).toHaveBeenCalledWith('codex')", "expect(mocks.resetScanSources).toHaveBeenCalledWith('codex','/home/ubuntu/phpretro-codex/work')")
+replace('tests/ui/App.test.tsx',"    vi.clearAllMocks();\n    mocks.loadOptimization", "    vi.clearAllMocks();\n    vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>({sessions:[],operations:[],settings:{values:{}},provider_calls:[],issues:[],runtimes:[]})}));\n    mocks.loadOptimization")
 replace('tests/ui/App.test.tsx',"  it('keeps the fixed style controls independent of legacy theme preferences',", """  it('wires live OpenHands issues, resources, sessions and all context tabs into real pages',async()=>{
     localStorage.setItem('skill-doctor-locale','en-US');
     const runtimeIssue={id:'runtime:failed:run',kind:'context',severity:'med',title:'Agent run needs review',summary:'Failed reviewer',resourceIds:[],resourceNames:['openhands','F61','reviewer'],evidence:[{label:'Session',value:'run'}],runtime:'openhands',session_id:'run'};
@@ -108,7 +137,7 @@ replace('tests/ui/App.test.tsx',"  it('keeps the fixed style controls independen
     const agent={platform:'openhands',displayName:'OpenHands',projectDetected:true,globalDetected:true,recommended:true};
     const openSnapshot={...snapshot,target:{...snapshot.target,platform:'openhands'},resources:[resource],summary:{...snapshot.summary,resources:1,platforms:{openhands:1}}};
     const report={sessions:[{id:'run',runtime:'openhands',unit:'F61',role:'reviewer',model:'gpt-6.1-sol',status:'complete',rc:1,started:1,tokens:20,complete:false,context_complete:false,context:{},context_requests:[],unused_tools:[]}],provider_calls:[],issues:[runtimeIssue],runtimes:[{id:'openhands',label:'OpenHands SDK',state:'paused',sessions:1,source:'Receipts'}],evidence:'Missing older history stays unknown',session_limit:500};
-    vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>report}));
+    vi.stubGlobal('fetch',vi.fn(async(url)=>({ok:true,json:async()=>String(url).includes('runtime-optimization')?{sessions:report.sessions.map(s=>({...s,cost:{usd:null,basis:'Unknown'},suggestions:[]})),operations:[],settings:{values:{}},period_start:1,period_end:2}:report})));
     mocks.getBootstrap.mockResolvedValue({version:'test',projectDir:'/tmp/project',configPath:'/tmp/config',defaultScope:'all',supportedPlatforms:['openhands','codex'],detectedAgents:[agent],capabilities:snapshot.capabilities,registry:[],snapshot:openSnapshot});
     mocks.getResourceDetail.mockResolvedValue({resource,issues:[]});
     render(<App/>);
@@ -122,9 +151,9 @@ replace('tests/ui/App.test.tsx',"  it('keeps the fixed style controls independen
     expect(await screen.findByRole('button',{name:/Agent run needs review/})).toBeTruthy();
     fireEvent.keyDown(window,{key:'Escape'});
     fireEvent.click(screen.getByRole('button',{name:'Optimization suggestions'}));
-    await screen.findByText('Agent sessions and provider evidence');
+    await screen.findByText('Current usage · OpenHands');
     const tabs=screen.getAllByRole('tab');expect(tabs).toHaveLength(3);
-    fireEvent.click(tabs[1]);expect(screen.getByText('Optimization evidence')).toBeTruthy();
+    fireEvent.click(tabs[1]);expect(screen.getByText('Optimization suggestions · OpenHands')).toBeTruthy();
     fireEvent.click(tabs[2]);expect(screen.getByText('A6API account calls')).toBeTruthy();
     fireEvent.click(screen.getByRole('button',{name:'Scan records'}));
     expect(await screen.findByRole('heading',{name:'Scan records'})).toBeTruthy();
