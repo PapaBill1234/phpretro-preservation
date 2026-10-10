@@ -1,5 +1,6 @@
 """Read only the dedicated Canvas API; publish metadata, never its agent config."""
-import datetime,json,subprocess,time,urllib.parse,urllib.request,uuid
+import datetime,json,subprocess,time,urllib.parse,urllib.request,uuid,os
+from pathlib import Path
 
 _cache=None
 
@@ -30,6 +31,10 @@ def normalize(row):
 
 def collect():
     global _cache
+    try:
+        activation=json.loads((Path(os.environ.get('PHPRETRO_OPS',Path.home()/'phpretro-ops'))/'state/claude-code-activation.json').read_text())
+        if activation.get('installed') is True:return {'collected_at':time.time(),'available':False,'retired':True,'sessions':[],'truncated':False}
+    except (OSError,ValueError):pass
     if _cache and time.time()-_cache['collected_at']<30:return _cache
     result={'collected_at':time.time(),'available':False,'sessions':[],'truncated':False}
     try:

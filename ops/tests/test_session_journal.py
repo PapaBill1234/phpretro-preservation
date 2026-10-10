@@ -55,4 +55,4 @@ class JournalTest(unittest.TestCase):
    self.assertEqual(report['sessions'][0]['tokens'],99);self.assertEqual(report['sessions'][0]['status'],'running')
    self.assertTrue(any(i['title']=='Tool executions returned errors' for i in report['issues']))
    self.assertTrue(any(i['title']=='Repeated commands consumed context' for i in report['issues']))
-   self.assertEqual(len(report['runtimes']),6)
+   self.assertEqual({r['id'] for r in report['runtimes']},{'claude-code','openhands','openhands-ui','codex','doctor','a6api','portdan'})

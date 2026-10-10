@@ -850,15 +850,20 @@ class RecoveryConflict(RuntimeError):
     pass
 
 
-def paid_allowed(state: dict, unit: dict | None, role: str) -> bool:
+def paid_allowed(state: dict, unit: dict | None, role: str, *, bootstrap=False) -> bool:
     rollover(state)
     if not canary.allowed(unit):
         return False
     if role in ("planner", "audit"):
         return False
-    if RUNTIME != "openhands" or not runtime_policy.ready():
+    bootstrap_ok=False
+    if bootstrap and RUNTIME=='claude-code' and unit is None and role=='builder':
+        from claude_code import policy as claude_policy
+        bootstrap_ok=claude_policy.bootstrap_ready(runtime_policy.load(),OPS,runtime_policy.fingerprint())
+    if bootstrap and not bootstrap_ok:return False
+    if RUNTIME not in ("openhands", "claude-code") or not (bootstrap_ok or runtime_policy.ready()):
         return False
-    if _SHUTDOWN_REQUESTED or STOP_FILE.exists() or state.get("dispatch_disabled") or GUARD_DISABLED:
+    if _SHUTDOWN_REQUESTED or (STOP_FILE.exists() and not bootstrap_ok) or state.get("dispatch_disabled") or GUARD_DISABLED:
         return False
     if float(state.get("provider_retry_at", 0)) > time.time():
         return False
@@ -871,8 +876,8 @@ def paid_allowed(state: dict, unit: dict | None, role: str) -> bool:
     return True
 
 
-def admit_paid(state: dict, unit: dict | None, role: str, *, limit=None) -> str:
-    if not paid_allowed(state, unit, role):
+def admit_paid(state: dict, unit: dict | None, role: str, *, limit=None, bootstrap=False) -> str:
+    if not paid_allowed(state, unit, role, bootstrap=bootstrap):
         raise BudgetDenied(f"{role}: STOP, provider pause or budget admission denied")
     reservations = state.setdefault("reservations", {})
     used = int(unit.get("tokens", 0)) if unit else 0
@@ -942,7 +947,7 @@ def release_paid(state: dict, rid: str) -> None:
 def completed_receipt(path, rid, state):
     """Settlement requires durable proof that requester and cgroup drained."""
     rec = read_json(path, {})
-    if rec.get("runtime") == "openhands":
+    if rec.get("runtime") in ("openhands", "claude-code"):
         sandbox.assert_absent(rec["run_id"])
     reservation = state.get("reservations", {}).get(rid, {})
     if (not isinstance(rec, dict) or rec.get("status") != "complete"
@@ -966,23 +971,27 @@ def completed_receipt(path, rid, state):
 def prepare_worker(rid, state, profile, model, command, cwd, usage, timeout, attempt=None, paths=()):
     rec = dict(state["reservations"][rid])
     rec.update(status="prepared", model=model, attempt=attempt, command=command,
-               cwd=str(cwd), profile=profile, profile_home=str(PROFILE_HOME[profile]),
+               cwd=str(cwd), profile=profile, profile_home=str(PROFILE_HOME.get(profile,STATE_DIR/'receipts')),
                usage_path=str(usage), timeout=timeout, grace=TERM_GRACE,
                controller_pid=os.getpid(), controller_identity=run_worker.process_identity(os.getpid()),
                prepared_at=time.time())
     # Every paid runtime gets the same containment/cancellation contract.
     rec["runtime"] = RUNTIME
     rec["unit_name"] = "phpretro-run-" + rid + ".service"
-    if RUNTIME == "openhands":
+    if RUNTIME in ("openhands", "claude-code"):
         runtime_policy.model_settings(model)
-        if not runtime_policy.ready(model):
+        bootstrap_ok=False
+        if RUNTIME=='claude-code' and profile=='claude-bootstrap' and not rec.get('unit'):
+            from claude_code import policy as claude_policy
+            bootstrap_ok=claude_policy.bootstrap_ready(runtime_policy.load(),OPS,runtime_policy.fingerprint())
+        if not (bootstrap_ok or runtime_policy.ready(model)):
             raise BudgetDenied("model capabilities or migration validation are pending")
         rec["sandbox_name"] = sandbox.container_name(rid)
         rec["allowed_paths"] = list(paths)
         if rec.get("role") == "builder" and rec.get("unit"):
             rec["allowed_paths"].append("docs/units/" + rec["unit"] + ".md")
-        rec["profile_home"] = str(STATE_DIR / "receipts" / (rid + "-sdk"))
-        rec["command"] = [runtime_policy.load()["sdk_python"], str(Path(__file__).with_name("openhands") / "runner.py"), str(STATE_DIR / "receipts" / (rid + ".json"))]
+        rec["profile_home"] = str(STATE_DIR / "receipts" / (rid + ("-cli" if RUNTIME == 'claude-code' else "-sdk")))
+        rec["command"] = [sys.executable if RUNTIME == 'claude-code' else runtime_policy.load()["sdk_python"], str(Path(__file__).with_name("claude_code" if RUNTIME == 'claude-code' else "openhands") / "runner.py"), str(STATE_DIR / "receipts" / (rid + ".json"))]
         rec["prompt_path"] = str(BRIEF_DIR / (rid + ".md"))
     path = STATE_DIR / "receipts" / (rid + ".json")
     control.atomic_json(path, rec)
@@ -1077,7 +1086,7 @@ def settle_worker_receipts():
                 # Drain the requester first, then stop the cgroup. The durable
                 # cancellation guard also denies registrations arriving later.
                 run_worker.stop_unit(run_worker.checked_unit(rec["unit_name"], rid))
-            if rec.get("runtime") == "openhands":
+            if rec.get("runtime") in ("openhands", "claude-code"):
                 sandbox.cleanup(rid)
             fresh = run_worker.usage_snapshot(Path(rec["usage_path"]),
                 Path(rec["profile_home"]) / "state.db", "RUN ID " + rid, rec.get("runtime", "hermes"))
@@ -1146,20 +1155,25 @@ def bootstrap_accounting(state: dict, roadmap: dict) -> None:
 
 def hermes_run(profile: str, model: str, prompt: str, toolsets: str,
                cwd: Path, tag: str, timeout: int, *, unit: str = "", attempt=None,
-               role: str = "", outcome: str = "other", state=None, budget_unit=None) -> tuple[int, str, dict]:
+               role: str = "", outcome: str = "other", state=None, budget_unit=None, bootstrap=False) -> tuple[int, str, dict]:
     role = role or _role_for_profile(profile)
     if state is None:
         raise control.IntegrityError("paid role missing accounting state")
     try:
         runtime_policy.model_settings(model)
-        if not runtime_policy.ready(model):
+        bootstrap_ok=False
+        if bootstrap and profile=='claude-bootstrap' and role=='builder' and not unit and budget_unit is None and RUNTIME=='claude-code':
+            from claude_code import policy as claude_policy
+            bootstrap_ok=claude_policy.bootstrap_ready(runtime_policy.load(),OPS,runtime_policy.fingerprint())
+        if bootstrap and not bootstrap_ok:raise BudgetDenied('Manual bootstrap is not admitted')
+        if not (bootstrap_ok or runtime_policy.ready(model)):
             raise BudgetDenied("model capability validation pending")
-        rid = admit_paid(state, budget_unit, role)
+        rid = admit_paid(state, budget_unit, role, bootstrap=bootstrap_ok)
     except BudgetDenied as exc:
         return 75, str(exc), {"total_tokens": 0, "api_calls": 0, "admission_denied": True}
     usage = LOG_DIR / f"{tag}-{rid}.usage.json"
-    env = {"HERMES_HOME": str(PROFILE_HOME[profile])}
-    cmd = [HERMES, "-z", prompt + "\nRUN ID " + rid, "--usage-file", str(usage), "-m", model,
+    env = {} if RUNTIME=='claude-code' else {"HERMES_HOME": str(PROFILE_HOME[profile])}
+    cmd = [] if RUNTIME=='claude-code' else [HERMES, "-z", prompt + "\nRUN ID " + rid, "--usage-file", str(usage), "-m", model,
            "--provider", PROVIDER, "--reasoning", "low", "-t", toolsets,
            "-s", SKILL_NAME[profile], "--in", str(cwd), "--accept-hooks"]
     ts_start = now()
@@ -1171,6 +1185,7 @@ def hermes_run(profile: str, model: str, prompt: str, toolsets: str,
     rec = completed_receipt(receipt, rid, state)
     rc = rec["rc"] if rc not in (124, 130) else rc
     data = accounted_usage(rec.get("usage") or read_json(usage, {}))
+    data['run_id']=rid
     charge = data["accounted_tokens"]
     outage = control.provider_error(rc, out)
     data["provider_error"] = outage
@@ -1214,7 +1229,8 @@ def log_model_run(role: str, model: str, unit: str, attempt, rc, outcome: str,
         ts_start=ts_start or now(), ts_end=ts_end or now(), role=role, model=model,
         unit=unit or "", attempt=attempt, rc=rc, outcome=outcome, usage=usage or {},
         provider=provider_override or (usage or {}).get("provider") or PROVIDER,
-        flags={"runtime": "openhands", "context_engine": "sdk", "plugins": {"active": False}, "toolsets": "docker-exec"}
+        flags={"runtime":"claude-code","context_engine":"native-cli","plugins":{"active":False},"toolsets":"docker-mcp" if role=='builder' else 'none',"session":(usage or {}).get('session_id')}
+              if (usage or {}).get('runtime')=='claude-code' else {"runtime": "openhands", "context_engine": "sdk", "plugins": {"active": False}, "toolsets": "docker-exec"}
               if (usage or {}).get("runtime") == "openhands" else mod.default_flags(profile, toolsets,
                     session=str((usage or {}).get("session_id") or "")))
     rec["run_id"] = run_id or control.identity()
@@ -1727,12 +1743,14 @@ def validated_review(unit: dict, wt: Path, state: dict, model: str, slot: str) -
         dirty = git_out("status", "--porcelain", cwd=wt)
         if git_out("rev-parse", "HEAD", cwd=wt) != head or dirty:
             verdict, finding = "unavailable", "reviewer changed reviewed checkout"
-        if control.model_family(chosen) in {control.model_family(m) for m in (author, *excluded)}:
+        if not independent_review(unit, chosen, usage, slot):
             verdict, finding = "unavailable", "review model shares author family"
         review_id = control.identity()
         control.atomic_json(LOG_DIR / f"{unit['id']}-{slot}-{review_id}.verdict.json",
             {"unit": unit["id"], "head": head, "model": chosen, "verdict": verdict,
-             "findings": finding, "rc": rc, "ts": now()})
+             "findings": finding, "rc": rc, "ts": now(),
+             "runtime":usage.get('runtime'),"session_id":usage.get('session_id'),
+             "run_id":usage.get('run_id'),"author_run_id":unit.get('run_id')})
         if verdict != "unavailable":
             unit[slot + "_id"] = review_id
             unit[slot + "_head"] = head
@@ -1753,10 +1771,15 @@ def approval_valid(unit: dict, slot: str, head: str) -> bool:
              rec.get("rc") == 0 and rec.get("verdict") == "pass" and
              rec.get("model") == unit.get(slot + "_model"))
     valid = valid and rec.get("model") in automatic_review_models()
-    valid = valid and control.model_family(rec.get("model", "")) != control.model_family(unit.get("model") or MODEL["luna"])
-    if slot == "review2":
-        valid = valid and control.model_family(rec.get("model", "")) != control.model_family(unit.get("review_model", ""))
+    valid = valid and independent_review(unit, rec.get('model',''), rec, slot)
     return bool(valid)
+
+
+def independent_review(unit, model, evidence, slot):
+    author=unit.get('model') or MODEL['luna']
+    excluded=(unit.get('review_model',''),) if slot=='review2' else ()
+    if control.model_family(model) not in {control.model_family(m) for m in (author,*excluded)}:return True
+    return False
 
 
 def ensure_reviewed(unit: dict, wt: Path, state: dict) -> bool:

@@ -1,0 +1,11 @@
+[Unit]
+Description=Check PHPRetro with native Claude Code every thirty minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+AccuracySec=30sec
+Persistent=true
+
+[Install]
+WantedBy=timers.target

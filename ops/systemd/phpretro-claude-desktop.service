@@ -1,0 +1,15 @@
+[Unit]
+Description=PHPRetro Claude builder desktop terminals
+After=graphical-session.target
+
+[Service]
+Type=simple
+Environment=PHPRETRO_RUNTIME=claude-code
+ExecStart=/usr/bin/python3 /home/ubuntu/phpretro-preservation/ops/claude_code/desktop.py --watch
+Restart=on-failure
+RestartSec=15
+MemoryMax=512M
+TasksMax=64
+
+[Install]
+WantedBy=default.target

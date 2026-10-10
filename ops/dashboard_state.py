@@ -16,7 +16,7 @@ def live_workers(ops, units, now):
             continue
         try:
             rec = json.loads(path.read_text())
-            if rec.get("runtime") != "openhands" or rec.get("status") != "running":
+            if rec.get("runtime") not in ("openhands", "claude-code") or rec.get("status") != "running":
                 continue
             if not worker.alive(rec.get("worker_pid"), rec.get("worker_identity")):
                 continue
@@ -30,7 +30,7 @@ def live_workers(ops, units, now):
                            "api_calls": usage.get("api_calls"), "provider": usage.get("provider"),
                            "usage_complete": usage.get("usage_complete") is True,
                            "updated_at": path.stat().st_mtime,
-                           "hint": "OpenHands " + str(rec.get("role")) + "; durable worker receipt active"})
+                           "runtime":rec.get('runtime'),"hint": ("Claude Code " if rec.get('runtime')=='claude-code' else "OpenHands ") + str(rec.get("role")) + "; durable worker receipt active"})
         except (OSError, ValueError, TypeError, KeyError):
             continue
     return result
@@ -42,8 +42,8 @@ def builder_activity(ops, units, rows, events, live, stopped, now):
         return value if type(value) in (int, float) and math.isfinite(value) and value >= 0 else None
     def label(value, allowed):
         return value if value in allowed else 'unknown'
-    models = {'gpt-6.1-sol', 'gpt-6-luna', 'deepseek-v4.1-flash'}
-    providers = {'custom:a6api', 'custom:portdan', 'mixed:a6api-portdan'}
+    models = {'gpt-6.1-sol', 'gpt-6-luna', 'deepseek-v4.1-flash','claude-sonnet-5-5'}
+    providers = {'custom:a6api', 'custom:portdan', 'mixed:a6api-portdan','anthropic:claude-code'}
     outcomes = {'success', 'passed', 'failed', 'gate_failed', 'timeout', 'timed_out', 'no_change',
                 'no-change', 'provider_error', 'other', 'interrupted', 'completed', 'merged'}
     recent = []
