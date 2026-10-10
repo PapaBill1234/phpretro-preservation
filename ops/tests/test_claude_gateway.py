@@ -47,6 +47,17 @@ class GatewayTests(unittest.TestCase):
         raw={'prompt_tokens':35,'completion_tokens':4,'total_tokens':39,'prompt_cache_hit_tokens':7,'prompt_cache_miss_tokens':28}
         self.assertEqual(gateway.usage(raw,'chat')['input_tokens'],28)
         with self.assertRaises(integrity.IntegrityError):gateway.usage({**raw,'prompt_cache_miss_tokens':27},'chat')
+    def test_all_supplied_cache_representations_must_agree(self):
+        raw={'prompt_tokens':35,'completion_tokens':4,'total_tokens':39,'prompt_tokens_details':{'cached_tokens':7},
+             'prompt_cache_hit_tokens':7,'prompt_cache_miss_tokens':28}
+        self.assertEqual(gateway.usage(raw,'chat')['input_tokens'],28)
+        for changes in ({'prompt_cache_hit_tokens':True},{'prompt_cache_miss_tokens':'28'},
+            {'prompt_cache_hit_tokens':6,'prompt_cache_miss_tokens':29},
+            {'prompt_tokens_details':{'cached_tokens':True}},{'prompt_cache_miss_tokens':27}):
+            with self.subTest(changes=changes),self.assertRaises(integrity.IntegrityError):gateway.usage({**raw,**changes},'chat')
+        for absent in ('prompt_cache_hit_tokens','prompt_cache_miss_tokens'):
+            row={k:v for k,v in raw.items() if k!=absent}
+            with self.assertRaises(integrity.IntegrityError):gateway.usage(row,'chat')
     def test_physical_request_hold_precedes_transport(self):
         client=self.start();message=client.call(self.body)
         self.assertEqual(message['usage']['input_tokens'],28);self.assertEqual(self.row['api_calls'],1)
@@ -91,6 +102,7 @@ class GatewayTests(unittest.TestCase):
         self.assertIn('a6api',self.calls[0]);self.assertIn('portdan',self.calls[1])
         self.assertFalse(self.row['usage_complete']);self.assertEqual(self.row['unknown_request_ceilings'],[64096])
         self.assertEqual(request_accounting.bounded_tokens(self.row,39),64096+39)
+        self.assertEqual(client.context.data['provider_transport_errors'],[{'provider':'a6api','status_code':429,'request':1}])
     def test_cancelled_backoff_cannot_reconnect(self):
         def fake(*args):
             self.calls.append('attempt');self.root.joinpath('receipt.cancel.json').write_text('{}')

@@ -99,13 +99,17 @@ def usage(raw,mode):
     prompt=control.nonnegative(raw.get(input_key),'provider input')
     output=control.nonnegative(raw.get(output_key),'provider output')
     details=raw.get('input_tokens_details' if mode=='responses' else 'prompt_tokens_details')
+    reads=[]
     if isinstance(details,dict) and 'cached_tokens' in details:
-        read=control.nonnegative(details['cached_tokens'],'provider cached input');write=0
-    elif 'prompt_cache_hit_tokens' in raw and 'prompt_cache_miss_tokens' in raw:
-        read=control.nonnegative(raw['prompt_cache_hit_tokens'],'provider cache hit')
-        miss=control.nonnegative(raw['prompt_cache_miss_tokens'],'provider cache miss');write=0
-        if read+miss!=prompt:raise control.IntegrityError('Cache hit/miss counters disagree')
-    else:raise control.IntegrityError('Cache coverage missing')
+        reads.append(control.nonnegative(details['cached_tokens'],'provider cached input'))
+    if 'prompt_cache_hit_tokens' in raw or 'prompt_cache_miss_tokens' in raw:
+        hit=control.nonnegative(raw.get('prompt_cache_hit_tokens'),'provider cache hit')
+        miss=control.nonnegative(raw.get('prompt_cache_miss_tokens'),'provider cache miss')
+        if hit+miss!=prompt:raise control.IntegrityError('Cache hit/miss counters disagree')
+        reads.append(hit)
+    if not reads:raise control.IntegrityError('Cache coverage missing')
+    if any(value!=reads[0] for value in reads):raise control.IntegrityError('Cache representations disagree')
+    read=reads[0];write=0
     if 'cache_creation_input_tokens' in raw:write=control.nonnegative(raw['cache_creation_input_tokens'],'provider cache write')
     if read+write>prompt:raise control.IntegrityError('Cache counters exceed inclusive input')
     if prompt<=0 or output<=0:raise control.IntegrityError('Completed provider response has empty usage')
@@ -267,7 +271,17 @@ class Gateway:
                 self.journal.add('provider_request','Gateway request admitted',provider=provider,request=self.total['api_calls'])
                 self.context.request(input_bound,input_bound,0)
                 endpoint=self.data['providers'][provider]['base_url']+('/responses' if mode=='responses' else '/chat/completions')
-                raw=self.invoke(endpoint,key,payload,max(.1,min(120,self.deadline-time.time())))
+                try:raw=self.invoke(endpoint,key,payload,max(.1,min(120,self.deadline-time.time())))
+                except ProviderError as exc:
+                    # Numeric transport evidence only. Provider error bodies and
+                    # exception text may contain credentials or request content.
+                    code=exc.status_code
+                    if type(code) is int and 100<=code<=599:
+                        errors=self.context.data.setdefault('provider_transport_errors',[])
+                        if len(errors)<16:
+                            errors.append({'provider':provider,'status_code':code,'request':self.total['api_calls']});self.context.save()
+                        self.journal.add('provider_error','Provider request failed',provider=provider,http_status=code,request=self.total['api_calls'])
+                    raise
                 observed=self.context.data.setdefault('provider_response_observations',[])
                 if len(observed)<16:observed.append(response_observation(raw,self.model));self.context.save()
                 message,row,reported=output(raw,mode,self.model,allowed,self.reasoning,self.response_reasoning)

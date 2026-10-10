@@ -1,7 +1,8 @@
-"""Cutover fault injection. All files are disposable and every subprocess mocked."""
+"""Cutover fault injection and disposable Git source-identity checks."""
 import copy
 import json
 import sys
+import subprocess
 import tempfile
 import time
 import unittest
@@ -99,6 +100,7 @@ class CutoverTests(unittest.TestCase):
         data={'image':'tools','review_policy':'temporary-two-family-user-override'}
         with patch.object(policy,'authenticated',return_value=True), \
              patch.object(policy,'version_matches',return_value=True), \
+             patch.object(policy,'installed_source_matches',return_value=True), \
              patch.object(policy.subprocess,'check_output',return_value='image'):
             self.assertTrue(policy.bootstrap_ready(data,self.ops,'source'))
             self.assertFalse(policy.bootstrap_ready(data,self.ops,'changed'))
@@ -109,6 +111,31 @@ class CutoverTests(unittest.TestCase):
             self.assertFalse(policy.bootstrap_ready(data,self.ops,'source'))
             self.write('claude-code-activation.json',{**self.previous,'source_review_deferred':True})
             self.authorization(expires_at=time.time()-1)
+            self.assertFalse(policy.bootstrap_ready(data,self.ops,'source'))
+        self.safe_state()
+
+    def test_installed_source_binds_head_fingerprint_and_clean_checkout(self):
+        installed={**self.previous,'implementation_sha256':'source'}
+        with patch.object(policy.subprocess,'check_output',side_effect=['head','']):
+            self.assertTrue(policy.installed_source_matches(installed,'source'))
+        for outputs in (['other',''],['head',' M ops/claude_code/gateway.py'],['head','?? injected.py']):
+            with patch.object(policy.subprocess,'check_output',side_effect=outputs):
+                self.assertFalse(policy.installed_source_matches(installed,'source'))
+        with patch.object(policy.subprocess,'check_output') as git:
+            self.assertFalse(policy.installed_source_matches(installed,'changed'))
+            self.assertFalse(policy.installed_source_matches({**installed,'installed':False},'source'))
+            git.assert_not_called()
+
+    def test_ordinary_admission_requires_review_even_after_normal_install(self):
+        data={'image':'tools','review_policy':'temporary-two-family-user-override'}
+        active={**self.previous,'source_review_deferred':False,'authorized_by':'user','enabled':True,'review_policy':data['review_policy']}
+        self.write('claude-code-activation.json',active);self.write('claude-code-validation.json',self.validation)
+        with patch.object(policy,'installed_source_matches',return_value=True):
+            self.assertFalse(policy.ready(data,self.ops,'source'))
+        self.write('claude-code-source-review.json',{'head':'head','verdict':'pass','independent':True})
+        with patch.object(policy,'installed_source_matches',return_value=False):
+            self.assertFalse(policy.ready(data,self.ops,'source'))
+            self.write('claude-code-activation.json',self.previous)
             self.assertFalse(policy.bootstrap_ready(data,self.ops,'source'))
         self.safe_state()
 
@@ -181,6 +208,24 @@ class CutoverTests(unittest.TestCase):
         for name in ('server.py', 'gateway.py', 'index.html'):
             self.assertEqual((dashboard / name).read_text(), 'original')
         self.assertFalse(any('enable' in cmd for cmd in self.commands))
+
+
+class NativeSourceBindingTests(unittest.TestCase):
+    def test_real_git_new_head_and_tracked_or_untracked_edits_are_denied(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            def git(*args):return subprocess.check_output(['git','-C',str(root),*args],text=True,stderr=subprocess.DEVNULL).strip()
+            git('init','--quiet');file=root/'fixture';file.write_text('first')
+            git('add','fixture');git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','--quiet','-m','first')
+            row={'installed':True,'source_head':git('rev-parse','HEAD'),'implementation_sha256':'source'}
+            with patch.object(policy,'ROOT',root):
+                self.assertTrue(policy.installed_source_matches(row,'source'))
+                file.write_text('edited');self.assertFalse(policy.installed_source_matches(row,'source'))
+                git('restore','fixture');extra=root/'injected';extra.write_text('untracked')
+                self.assertFalse(policy.installed_source_matches(row,'source'));extra.unlink()
+                file.write_text('second');git('add','fixture');git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','--quiet','-m','second')
+                self.assertFalse(policy.installed_source_matches(row,'source'))
+                self.assertTrue(policy.installed_source_matches({**row,'source_head':git('rev-parse','HEAD')},'source'))
 
 
 if __name__ == '__main__':

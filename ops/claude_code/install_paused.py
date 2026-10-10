@@ -122,7 +122,7 @@ def main():
         target.write_text('[Service]\nEnvironment=PHPRETRO_RUNTIME=claude-code\nEnvironment=PHPRETRO_REPO='+str(ROOT)+'\n'+extra)
     subprocess.run(['sudo','-n','systemctl','daemon-reload'],check=True)
     subprocess.run(['systemctl','--user','daemon-reload'],env=worker.bus_env(),check=True)
-    control.atomic_json(OPS/'state/claude-code-activation.json',{'installed':True,'enabled':False,'source_head':head,'backup':str(backup),'installed_at':time.time(),'source_review_deferred':args.defer_source_review})
+    control.atomic_json(OPS/'state/claude-code-activation.json',{'installed':True,'enabled':False,'source_head':head,'implementation_sha256':runtime_policy.fingerprint(),'backup':str(backup),'installed_at':time.time(),'source_review_deferred':args.defer_source_review})
     subprocess.run(['systemctl','--user','start','phpretro-skill-doctor.service','phpretro-skill-doctor.timer','phpretro-skill-doctor-ui.service'],env=worker.bus_env(),check=True)
     subprocess.run(['systemctl','--user','restart','phpretro-dashboard.service','phpretro-access.service'],env=worker.bus_env(),check=True)
     subprocess.run(['systemctl','--user','enable','--now','phpretro-claude-desktop.service'],env=worker.bus_env(),check=True)

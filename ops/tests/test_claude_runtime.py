@@ -108,7 +108,7 @@ class ClaudeAdmissionTests(unittest.TestCase):
               'claude-code-validation.json':{'implementation_sha256':'source','validated_at':__import__('time').time(),
                'vulnerability_snapshot_at':__import__('time').time(),'image_id':'image','checks':{k:True for k in ('foundation','ops','frontend','isolation','lifecycle','resources')}}}
             for name,value in values.items():(ops/'state'/name).write_text(json.dumps(value))
-            with patch.object(policy,'authenticated',return_value=True),patch.object(policy,'version_matches',return_value=True),patch.object(policy.subprocess,'check_output',return_value='image'):
+            with patch.object(policy,'authenticated',return_value=True),patch.object(policy,'version_matches',return_value=True),patch.object(policy,'installed_source_matches',return_value=True),patch.object(policy.subprocess,'check_output',return_value='image'):
                 self.assertTrue(policy.bootstrap_ready(self.data,ops,'source'))
                 self.assertFalse(policy.bootstrap_ready(self.data,ops,'changed'))
                 (ops/'state/maintenance-pause.json').write_text(json.dumps({**pause,'stop_mtime_ns':0}))

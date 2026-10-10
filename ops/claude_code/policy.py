@@ -2,6 +2,7 @@
 import json,math,subprocess,time
 from pathlib import Path
 import integrity as control
+ROOT=Path(__file__).resolve().parents[2]
 
 def load(path):
     data=json.loads(Path(path).read_text())
@@ -49,6 +50,16 @@ def source_reviewed(ops,head):
     except (OSError,ValueError):return False
 
 
+def installed_source_matches(activation,fingerprint):
+    """Bind installed metadata to this actual clean checkout and source bytes."""
+    try:
+        if activation.get('installed') is not True or activation.get('implementation_sha256')!=fingerprint:return False
+        head=subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],text=True,stderr=subprocess.DEVNULL,timeout=10).strip()
+        dirty=subprocess.check_output(['git','-C',str(ROOT),'status','--porcelain'],text=True,stderr=subprocess.DEVNULL,timeout=10).strip()
+        return bool(head) and not dirty and activation.get('source_head')==head
+    except (OSError,subprocess.SubprocessError):return False
+
+
 def deployment_authorized(ops,head,fingerprint):
     """One explicit user-directed paused deployment, never a source approval."""
     try:
@@ -87,6 +98,7 @@ def bootstrap_ready(data,ops,fingerprint):
             pause.get('previous_stop') is not False or pause.get('resumed_at') or
             stop.stat().st_mtime_ns!=pause.get('stop_mtime_ns')):return False
         if activation.get('installed') is not True or activation.get('enabled') is not False:return False
+        if not installed_source_matches(activation,fingerprint):return False
         if not source_reviewed(ops,activation.get('source_head')):
             if activation.get('source_review_deferred') is not True or not deployment_authorized(ops,activation.get('source_head'),fingerprint):return False
         if evidence.get('implementation_sha256')!=fingerprint or not all(evidence.get('checks',{}).get(k) is True
@@ -103,7 +115,7 @@ def ready(data,ops,fingerprint,model=None):
         evidence=json.loads((ops/'state/claude-code-validation.json').read_text())
         if activation.get('authorized_by')!='user' or activation.get('enabled') is not True:return False
         if activation.get('review_policy')!=data['review_policy']:return False
-        if activation.get('source_review_deferred') is True and not source_reviewed(ops,activation.get('source_head')):return False
+        if not installed_source_matches(activation,fingerprint) or not source_reviewed(ops,activation.get('source_head')):return False
         if len({control.model_family(m) for m,v in data['models'].items() if v.get('automatic')})<data['required_review_families']:return False
         if evidence.get('implementation_sha256')!=fingerprint or evidence.get('passed') is not True:return False
         required=('foundation','ops','frontend','isolation','lifecycle','resources','provider')
