@@ -41,6 +41,14 @@ The byte estimate and output must fit the remaining original hold. Unknown calls
 retain their actual request holds under usagev2; v1 historical charges remain.
 Unknown counters/identity/truncation stop the run without fabricated zero usage.
 
+The exact `cb/deepseek-v4.1-flash` alias is accepted following its observation
+in A6API's request billing metadata. This does not verify a model's underlying
+weights or admit a route by itself. Future response diagnostics retain only
+configured model names and aliases, including a different configured model on
+an identity mismatch. Missing/unrecognized labels stay unknown without logging
+arbitrary provider text. A recognized alias never waives conflicting usage:
+historical malformed responses and their conservative charges remain intact.
+
 A6API billing and new Claude-harness receipts share the same provider cost basis:
 use their maximum when reconciling daily spend, never add the same charge twice.
 The original five-dollar daily estimate and observed balance guard stay active.

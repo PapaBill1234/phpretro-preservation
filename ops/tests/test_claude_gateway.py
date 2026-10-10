@@ -47,6 +47,25 @@ class GatewayTests(unittest.TestCase):
         raw={'prompt_tokens':35,'completion_tokens':4,'total_tokens':39,'prompt_cache_hit_tokens':7,'prompt_cache_miss_tokens':28}
         self.assertEqual(gateway.usage(raw,'chat')['input_tokens'],28)
         with self.assertRaises(integrity.IntegrityError):gateway.usage({**raw,'prompt_cache_miss_tokens':27},'chat')
+
+    def test_observed_deepseek_alias_does_not_waive_conflicting_usage(self):
+        model='deepseek-v4.1-flash';alias='cb/deepseek-v4.1-flash'
+        raw={'model':alias,'choices':[{'finish_reason':'stop','message':{'content':'ok'}}],
+          'usage':{'prompt_tokens':486,'completion_tokens':137,'total_tokens':682,
+            'prompt_cache_hit_tokens':0,'prompt_cache_miss_tokens':545}}
+        with patch.object(gateway.runtime_policy,'load',return_value=self.data):
+            self.assertTrue(gateway.runtime_policy.model_label_matches(model,alias))
+            for wrong in ('cb/deepseek-v4.1-pro','cb/cb/deepseek-v4.1-flash','cb/deepseek-v4.1-flash/suffix'):
+                self.assertFalse(gateway.runtime_policy.model_label_matches(model,wrong))
+            client=self.start(invoke=lambda *args:raw,routes=['a6api'],model=model)
+            with self.assertRaisesRegex(integrity.IntegrityError,'Cache hit/miss counters disagree'):
+                client.call(self.body)
+        self.assertEqual(self.row['unknown_api_calls'],1)
+        self.assertEqual(self.row['conservative_tokens'],64096)
+        self.assertFalse(self.row['usage_complete'])
+        diagnostic=client.context.data['provider_response_observations'][0]
+        self.assertEqual(diagnostic['reported_model'],alias)
+        self.assertTrue(diagnostic['identity_valid'])
     def test_all_supplied_cache_representations_must_agree(self):
         raw={'prompt_tokens':35,'completion_tokens':4,'total_tokens':39,'prompt_tokens_details':{'cached_tokens':7},
              'prompt_cache_hit_tokens':7,'prompt_cache_miss_tokens':28}
@@ -178,6 +197,23 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(actual['conservative_tokens'],0)
 
 class ResponseDiagnosticTests(unittest.TestCase):
+    def test_model_diagnostics_retain_only_configured_labels_even_on_mismatch(self):
+        models={'deepseek-v4.1-flash':{'automatic':True,'reported_model_aliases':['cb/deepseek-v4.1-flash']},
+                'gpt-6.1-sol':{'automatic':True},'retired-model':{'automatic':False}}
+        with patch.object(gateway.runtime_policy,'load',return_value={'models':models}):
+            row=gateway.response_observation({'model':'cb/deepseek-v4.1-flash'},'deepseek-v4.1-flash')
+            self.assertEqual(row['reported_model'],'cb/deepseek-v4.1-flash')
+            self.assertTrue(row['identity_valid'])
+            row=gateway.response_observation({'model':'gpt-6.1-sol'},'deepseek-v4.1-flash')
+            self.assertEqual(row['reported_model'],'gpt-6.1-sol')
+            self.assertFalse(row['identity_valid'])
+            for unknown in ('private credential','gpt-6.1-sol-private-secret','retired-model',42,None):
+                row=gateway.response_observation({'model':unknown},'deepseek-v4.1-flash')
+                self.assertIsNone(row['reported_model'])
+                self.assertFalse(row['identity_valid'])
+                self.assertEqual(row['reported_model_status'],'missing' if unknown is None else 'unrecognized')
+                self.assertNotIn('private',json.dumps(row))
+
     def test_protocol_and_identity_failures_are_not_budget_waits_or_arbitrary_text(self):
         for message in ('Provider model identity mismatch','Cache hit/miss counters disagree'):
             label=gateway.guard_label(integrity.IntegrityError(message))

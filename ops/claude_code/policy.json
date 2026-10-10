@@ -57,7 +57,8 @@
         "portdan"
       ],
       "reported_model_aliases": [
-        "deepseek-v4-1-flash-260910"
+        "deepseek-v4-1-flash-260910",
+        "cb/deepseek-v4.1-flash"
       ]
     },
     "claude-haiku-5-5": {

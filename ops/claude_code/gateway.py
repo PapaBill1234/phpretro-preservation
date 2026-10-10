@@ -182,10 +182,21 @@ def tool_block(identity,name,arguments,allowed):
     return {'type':'tool_use','id':identity,'name':name,'input':args}
 
 def response_observation(raw,model):
-    """Numeric/shape diagnostics only: no content, arguments, keys or error text."""
+    """Known model labels and numeric/shape diagnostics, never arbitrary text."""
     if not isinstance(raw,dict):return {'response_object':False}
     result={'response_object':True,'identity_valid':runtime_policy.model_label_matches(model,raw.get('model')),
             'fields':[k for k in ('id','object','model','usage','output','status','error','choices') if k in raw]}
+    reported=raw.get('model');known=set()
+    for name,settings in runtime_policy.load()['models'].items():
+        if not settings.get('automatic'):continue
+        for label in (name,*settings.get('reported_model_aliases',[])):
+            known.update((label,'openai/'+label,'deepseek/'+label,'openai/deepseek/'+label))
+    # Record a different configured model too: a genuine identity mismatch can
+    # then be explained without retaining provider-controlled arbitrary strings.
+    if isinstance(reported,str) and reported in known:
+        result.update(reported_model=reported,reported_model_status='recognized')
+    else:
+        result.update(reported_model=None,reported_model_status='missing' if reported is None else 'unrecognized')
     if raw.get('status') in ('completed','incomplete','failed','cancelled','queued','in_progress'):result['status']=raw['status']
     value=raw.get('usage')
     if isinstance(value,dict):

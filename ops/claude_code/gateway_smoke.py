@@ -27,7 +27,8 @@ def case(data,model,builder=False,failure=None):
             calls.append({'provider':'a6api' if 'a6api' in endpoint else 'portdan','api':'responses' if endpoint.endswith('/responses') else 'chat','body':body})
             if failure=='fallback' and len(calls)==1:raise gateway.ProviderError(429)
             tool=builder and len(calls)==1
-            reported='wrong-model' if failure=='identity' else 'cb/gpt-6-luna' if model=='gpt-6-luna' else model
+            reported=('wrong-model' if failure=='identity' else 'cb/gpt-6-luna' if model=='gpt-6-luna'
+                      else 'cb/deepseek-v4.1-flash' if model=='deepseek-v4.1-flash' else model)
             if settings['api_mode']=='responses':
                 items=[{'type':'function_call','call_id':'call_fixture','name':'mcp__phpretro__execute','arguments':'{"command":"echo fixture"}'}] if tool else [{'type':'message','content':[{'type':'output_text','text':'fixture complete'}]}]
                 return {'status':'completed','model':reported,'output':items,'usage':{'input_tokens':35,'output_tokens':4,'total_tokens':39,'input_tokens_details':{'cached_tokens':7},'output_tokens_details':{'reasoning_tokens':0}}}
@@ -98,6 +99,8 @@ runpy.run_path(sys.argv[0],run_name='__main__')
                 assert len(calls)==2
                 assert context.data['tool_errors']==0 and context.data['tool_calls']==1
                 if settings['api_mode']=='chat':
+                    assert all(row.get('reported_model')=='cb/deepseek-v4.1-flash' and row.get('identity_valid') is True
+                      for row in context.data['provider_response_observations'])
                     assert any(m.get('reasoning_content')=='retained synthetic reasoning' for m in calls[1]['body']['messages'])
                     returned=[m['content'] for m in calls[1]['body']['messages'] if m.get('role')=='tool']
                 else:
