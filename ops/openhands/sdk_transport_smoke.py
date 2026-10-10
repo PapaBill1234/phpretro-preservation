@@ -29,9 +29,6 @@ def main(model, small_allowance=False, reviewer=False, optimized=False):
     runner.runtime_policy.verified_providers = lambda model: ["a6api", "portdan"]
     runner.provider_credentials = lambda path: {"a6api": "synthetic", "portdan": {"openai": "synthetic", "deepseek": "synthetic"}}
     runner.time.sleep = lambda _: None
-    runner.runtime_optimization.snapshot = lambda: {'revision':'default',
-        'values':{'reviewer-thinking':optimized,'compact-tool-output':optimized},
-        'versions':{'reviewer-thinking':None,'compact-tool-output':None}}
 
     class Box:
         def __init__(self, *args, **kwargs): pass
@@ -46,6 +43,14 @@ def main(model, small_allowance=False, reviewer=False, optimized=False):
     with tempfile.TemporaryDirectory(prefix="phpretro-sdk-transport-") as td:
         root = Path(td)
         os.environ.update(HOME=td, OPENHANDS_PERSISTENCE_DIR=td)
+        os.environ.pop('PHPRETRO_OPS',None)
+        profile={'revision':str(uuid.uuid4()),
+                 'values':{'reviewer-thinking':optimized,'compact-tool-output':optimized},
+                 'versions':{'reviewer-thinking':str(uuid.uuid4()) if optimized else None,
+                             'compact-tool-output':str(uuid.uuid4()) if optimized else None}}
+        profile_root=root/'phpretro-ops/state/runtime-optimization'
+        profile_root.mkdir(mode=0o700,parents=True)
+        runner.control.atomic_json(profile_root/'settings.json',profile)
         usage = root / "usage.json"
 
         def synthetic(**kwargs):
@@ -135,6 +140,7 @@ def main(model, small_allowance=False, reviewer=False, optimized=False):
         assert history['requests']==(1 if reviewer else 2 if small_allowance else 4) and history['unused_tools']==[],history
         assert nonce not in receipt.with_suffix('.context.json').read_text(), 'tool output leaked into metadata'
         metadata=json.loads(receipt.with_suffix('.context.json').read_text())
+        assert metadata['optimization']==profile,'real operator profile lost when SDK isolated HOME'
         assert metadata['optimization']['values']['compact-tool-output']==optimized
         if optimized and not reviewer:
             assert metadata['truncated_observations']==1 and metadata['original_tool_output_chars']>metadata['sent_tool_output_chars']

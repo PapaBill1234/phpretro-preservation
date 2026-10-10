@@ -82,6 +82,9 @@ def main(receipt_path):
     settings = runtime_policy.model_settings(model)
     if not runtime_policy.ready(model):
         return 75
+    # Read the operator-owned profile before isolating the SDK's HOME.
+    # Each new conversation retains this snapshot throughout reconnects.
+    efficiency = runtime_optimization.snapshot()
     # SDK provider errors must not serialize request headers or credentials.
     logging.disable(logging.CRITICAL)
     private = receipt_path.parent / (rid + "-sdk")
@@ -104,7 +107,6 @@ def main(receipt_path):
     state = {"started": 0, "finished": 0, "depth": 0, "complete": False,
              "unknown_calls": 0, "pending": {}, "providers": [], "failed": set(), "recoverable": set()}
     is_reviewer = manifest["role"] == "reviewer"
-    efficiency = runtime_optimization.snapshot()
     context = context_usage.Recorder(receipt_path.with_suffix('.context.json'),
                                     enabled_tools=[] if is_reviewer else ['execute'])
     context.data.update(optimization=efficiency,original_tool_output_chars=0,
