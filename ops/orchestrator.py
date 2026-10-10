@@ -968,7 +968,7 @@ def completed_receipt(path, rid, state):
     return rec
 
 
-def prepare_worker(rid, state, profile, model, command, cwd, usage, timeout, attempt=None, paths=()):
+def prepare_worker(rid, state, profile, model, command, cwd, usage, timeout, attempt=None, paths=(), bootstrap_provider=None):
     rec = dict(state["reservations"][rid])
     rec.update(status="prepared", model=model, attempt=attempt, command=command,
                cwd=str(cwd), profile=profile, profile_home=str(PROFILE_HOME.get(profile,STATE_DIR/'receipts')),
@@ -986,6 +986,10 @@ def prepare_worker(rid, state, profile, model, command, cwd, usage, timeout, att
             bootstrap_ok=claude_policy.bootstrap_ready(runtime_policy.load(),OPS,runtime_policy.fingerprint())
         if not (bootstrap_ok or runtime_policy.ready(model)):
             raise BudgetDenied("model capabilities or migration validation are pending")
+        if bootstrap_provider is not None:
+            if not bootstrap_ok or rec.get('role')!='builder' or bootstrap_provider not in runtime_policy.model_settings(model).get('provider_order',[]):
+                raise BudgetDenied('Explicit provider is limited to authorized bootstrap acceptance')
+            rec['bootstrap_provider']=bootstrap_provider
         rec["sandbox_name"] = sandbox.container_name(rid)
         rec["allowed_paths"] = list(paths)
         if rec.get("role") == "builder" and rec.get("unit"):
@@ -1155,7 +1159,7 @@ def bootstrap_accounting(state: dict, roadmap: dict) -> None:
 
 def hermes_run(profile: str, model: str, prompt: str, toolsets: str,
                cwd: Path, tag: str, timeout: int, *, unit: str = "", attempt=None,
-               role: str = "", outcome: str = "other", state=None, budget_unit=None, bootstrap=False) -> tuple[int, str, dict]:
+               role: str = "", outcome: str = "other", state=None, budget_unit=None, bootstrap=False, bootstrap_provider=None) -> tuple[int, str, dict]:
     role = role or _role_for_profile(profile)
     if state is None:
         raise control.IntegrityError("paid role missing accounting state")
@@ -1166,6 +1170,8 @@ def hermes_run(profile: str, model: str, prompt: str, toolsets: str,
             from claude_code import policy as claude_policy
             bootstrap_ok=claude_policy.bootstrap_ready(runtime_policy.load(),OPS,runtime_policy.fingerprint())
         if bootstrap and not bootstrap_ok:raise BudgetDenied('Manual bootstrap is not admitted')
+        if bootstrap_provider is not None and (not bootstrap_ok or bootstrap_provider not in ('a6api','portdan') or bootstrap_provider not in runtime_policy.model_settings(model).get('provider_order',[])):
+            raise BudgetDenied('Explicit provider is limited to authorized bootstrap acceptance')
         if not (bootstrap_ok or runtime_policy.ready(model)):
             raise BudgetDenied("model capability validation pending")
         rid = admit_paid(state, budget_unit, role, bootstrap=bootstrap_ok)
@@ -1179,7 +1185,7 @@ def hermes_run(profile: str, model: str, prompt: str, toolsets: str,
     ts_start = now()
     control.atomic_text(BRIEF_DIR / (rid + ".md"), prompt)
     receipt = prepare_worker(rid, state, profile, model, cmd, cwd, usage, timeout, attempt,
-                             (budget_unit or {}).get("paths", []))
+                             (budget_unit or {}).get("paths", []), bootstrap_provider=bootstrap_provider)
     rc, out = sh([sys.executable, str(Path(__file__).with_name("worker.py")), str(receipt)],
                  cwd=cwd, timeout=timeout + TERM_GRACE + 15, env=env)
     rec = completed_receipt(receipt, rid, state)

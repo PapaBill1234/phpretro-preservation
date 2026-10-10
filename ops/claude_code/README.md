@@ -1,5 +1,14 @@
 # Native Claude Code runtime
 
+Manual route acceptance accepts `probe.py --run --model deepseek-v4.1-flash
+--provider portdan` only under the owned, authorized migration pause. Each
+source/model/provider combination is recorded before execution and cannot be
+repeated; legacy attempts remain A6API attempts. Fallback acceptance uses only
+the selected configured provider and retains failed primary receipts and charges.
+Ordinary jobs reject the selector and retain measured A6API-first admission.
+Successful native tool/continuation, exact identity and complete numeric usage
+are required before admitting a fallback. Source approval and caps are unchanged.
+
 This replaces active OpenHands execution on the Ubuntu PHPRetro host. Native
 Claude Code provides builder, independent reviewer and operational supervisor
 sessions. OpenHands receipts and Canvas volumes remain historical/rollback data.

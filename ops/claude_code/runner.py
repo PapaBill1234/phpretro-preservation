@@ -93,6 +93,8 @@ def main(receipt_path):
     bootstrap=(manifest.get('profile')=='claude-bootstrap' and manifest.get('role')=='builder' and not manifest.get('unit')
       and admission.bootstrap_ready(policy,runtime_policy.OPS,runtime_policy.fingerprint()))
     if policy.get('runtime')!='claude-code' or not (bootstrap or runtime_policy.ready(model)):return 75
+    selected_provider=manifest.get('bootstrap_provider')
+    if selected_provider is not None and (not bootstrap or selected_provider not in ('a6api','portdan') or selected_provider not in settings.get('provider_order',[])):return 75
     is_builder=manifest.get('role')=='builder'
     is_supervisor=manifest.get('profile')=='claude-supervisor' and manifest.get('role')=='reviewer' and not manifest.get('unit')
     private=receipt_path.parent/(rid+'-cli');private.mkdir(mode=0o700)
@@ -131,11 +133,12 @@ def main(receipt_path):
     try:
         secrets=gateway.credentials(policy['providers_file'])
         import provider_routing
-        # Only the reviewed, owned-STOP bootstrap may establish fresh primary
+        # Only the reviewed, owned-STOP bootstrap may establish fresh route
         # evidence. Requiring old route evidence here deadlocks acceptance after
         # its TTL expires. Ordinary jobs retain strict measured-route admission;
-        # bootstrap never admits an unverified Portdan fallback or changes a unit.
-        routes=['a6api'] if bootstrap else runtime_policy.verified_providers(model)
+        # An explicit fallback acceptance is isolated to that provider; ordinary
+        # jobs still require measured routes and never accept this selector.
+        routes=[selected_provider or 'a6api'] if bootstrap else runtime_policy.verified_providers(model)
         journal.secrets=tuple(provider_routing.credential(secrets,p,model) for p in routes)
         client=gateway.Gateway(policy,{**manifest,'_receipt_path':str(receipt_path)},model,total,checkpoint,journal,context,secrets,routes=routes)
         if box:box.prepare()

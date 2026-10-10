@@ -166,12 +166,18 @@ class GatewayTests(unittest.TestCase):
     def test_ordinary_jobs_cannot_use_bootstrap_to_bypass_expired_routes(self):
         self.check_runner_routes('gpt-6-luna',bootstrap=False,expected=[])
 
-    def check_runner_routes(self,model,bootstrap,expected):
+    def test_explicit_fallback_acceptance_uses_only_selected_private_route(self):
+        self.check_runner_routes('deepseek-v4.1-flash',bootstrap=True,expected=['portdan'],provider='portdan')
+
+    def test_ordinary_runner_cannot_select_unverified_fallback(self):
+        self.check_runner_routes('deepseek-v4.1-flash',bootstrap=False,expected=[],provider='portdan',denied=True)
+
+    def check_runner_routes(self,model,bootstrap,expected,provider=None,denied=False):
         rid=str(uuid.uuid4());path=self.root/(rid+'.json');usage=self.root/(rid+'.usage.json')
         path.write_text(json.dumps({'run_id':rid,'status':'running','role':'builder','model':model,
             'profile':'claude-bootstrap' if bootstrap else 'Synthetic','unit':'' if bootstrap else 'Synthetic',
-            'usage_path':str(usage),'prepared_at':time.time(),'timeout':30,'cwd':str(self.root)}))
-        secrets={'a6api_api_key':'synthetic-primary','portdan_api_key':'synthetic-unverified'}
+            'usage_path':str(usage),'prepared_at':time.time(),'timeout':30,'cwd':str(self.root),**({'bootstrap_provider':provider} if provider else {})}))
+        secrets={'a6api_api_key':'synthetic-primary','portdan':{'openai':'synthetic-unverified','deepseek':'synthetic-unverified'}}
         captured=[]
         def deny(*args,**kwargs):
             captured.append((kwargs['routes'],args[5].secrets))
@@ -187,11 +193,15 @@ class GatewayTests(unittest.TestCase):
              patch.object(runner.gateway,'Gateway',side_effect=deny), \
              patch.object(runner.sandbox,'Sandbox'),patch.object(runner.signal,'signal'), \
              contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(runner.main(path),1)
+            self.assertEqual(runner.main(path),75 if denied else 1)
+            if denied:
+                admitted.assert_not_called();self.assertEqual(captured,[])
+                self.assertEqual(json.loads(usage.read_text())['api_calls'],0)
+                return
             if bootstrap:admitted.assert_not_called()
             else:admitted.assert_called_once_with(model)
         self.assertEqual(captured[0][0],expected)
-        if bootstrap:self.assertIn('synthetic-primary',captured[0][1])
+        if bootstrap:self.assertIn('synthetic-unverified' if provider=='portdan' else 'synthetic-primary',captured[0][1])
         actual=json.loads(usage.read_text())
         self.assertEqual(actual['api_calls'],0)
         self.assertEqual(actual['conservative_tokens'],0)
