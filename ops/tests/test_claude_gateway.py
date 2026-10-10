@@ -1,4 +1,4 @@
-import copy,json,tempfile,time,unittest,uuid
+import contextlib,copy,io,json,tempfile,time,unittest,uuid
 from pathlib import Path
 from unittest.mock import patch
 import harness
@@ -111,5 +111,43 @@ class GatewayTests(unittest.TestCase):
         thought={'type':'reasoning','id':'rs_1','encrypted_content':'synthetic encrypted fixture'}
         value=gateway.responses_request(chat,{'call_1':[thought]})
         self.assertEqual(value['input'][0],thought);self.assertEqual(value['input'][-1]['type'],'function_call_output')
+
+    def test_reviewed_bootstrap_can_measure_expired_primary_without_admitting_fallback(self):
+        for model in ('gpt-6.1-sol','gpt-6-luna','deepseek-v4.1-flash'):
+            with self.subTest(model=model):
+                self.check_runner_routes(model,bootstrap=True,expected=['a6api'])
+
+    def test_ordinary_jobs_cannot_use_bootstrap_to_bypass_expired_routes(self):
+        self.check_runner_routes('gpt-6-luna',bootstrap=False,expected=[])
+
+    def check_runner_routes(self,model,bootstrap,expected):
+        rid=str(uuid.uuid4());path=self.root/(rid+'.json');usage=self.root/(rid+'.usage.json')
+        path.write_text(json.dumps({'run_id':rid,'status':'running','role':'builder','model':model,
+            'profile':'claude-bootstrap' if bootstrap else 'Synthetic','unit':'' if bootstrap else 'Synthetic',
+            'usage_path':str(usage),'prepared_at':time.time(),'timeout':30,'cwd':str(self.root)}))
+        secrets={'a6api_api_key':'synthetic-primary','portdan_api_key':'synthetic-unverified'}
+        captured=[]
+        def deny(*args,**kwargs):
+            captured.append((kwargs['routes'],args[5].secrets))
+            # No listener, transport, CLI or paid call. Stop at route selection.
+            raise integrity.IntegrityError('Synthetic stop before transport')
+        with patch.object(runner.runtime_policy,'load',return_value=self.data), \
+             patch.object(runner.runtime_policy,'model_settings',return_value=self.data['models'][model]), \
+             patch.object(runner.runtime_policy,'fingerprint',return_value='source'), \
+             patch.object(runner.admission,'bootstrap_ready',return_value=bootstrap), \
+             patch.object(runner.runtime_policy,'ready',return_value=not bootstrap), \
+             patch.object(runner.runtime_policy,'verified_providers',return_value=[]) as admitted, \
+             patch.object(runner.gateway,'credentials',return_value=secrets), \
+             patch.object(runner.gateway,'Gateway',side_effect=deny), \
+             patch.object(runner.sandbox,'Sandbox'),patch.object(runner.signal,'signal'), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(runner.main(path),1)
+            if bootstrap:admitted.assert_not_called()
+            else:admitted.assert_called_once_with(model)
+        self.assertEqual(captured[0][0],expected)
+        if bootstrap:self.assertIn('synthetic-primary',captured[0][1])
+        actual=json.loads(usage.read_text())
+        self.assertEqual(actual['api_calls'],0)
+        self.assertEqual(actual['conservative_tokens'],0)
 
 if __name__=='__main__':unittest.main()

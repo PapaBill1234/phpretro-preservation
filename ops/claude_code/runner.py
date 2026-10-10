@@ -130,8 +130,13 @@ def main(receipt_path):
     try:
         secrets=gateway.credentials(policy['providers_file'])
         import provider_routing
-        journal.secrets=tuple(provider_routing.credential(secrets,p,model) for p in runtime_policy.verified_providers(model))
-        client=gateway.Gateway(policy,{**manifest,'_receipt_path':str(receipt_path)},model,total,checkpoint,journal,context,secrets)
+        # Only the reviewed, owned-STOP bootstrap may establish fresh primary
+        # evidence. Requiring old route evidence here deadlocks acceptance after
+        # its TTL expires. Ordinary jobs retain strict measured-route admission;
+        # bootstrap never admits an unverified Portdan fallback or changes a unit.
+        routes=['a6api'] if bootstrap else runtime_policy.verified_providers(model)
+        journal.secrets=tuple(provider_routing.credential(secrets,p,model) for p in routes)
+        client=gateway.Gateway(policy,{**manifest,'_receipt_path':str(receipt_path)},model,total,checkpoint,journal,context,secrets,routes=routes)
         if box:box.prepare()
         prompt=Path(manifest['prompt_path']).read_text();context.data['brief_chars']=len(prompt);context.save()
         journal.add('brief',prompt)
