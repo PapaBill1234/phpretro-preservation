@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import harness
 import integrity
-from claude_code import activate, install_paused, rollback
+from claude_code import activate, install_paused, policy, rollback
 
 
 class CutoverTests(unittest.TestCase):
@@ -51,6 +51,66 @@ class CutoverTests(unittest.TestCase):
         self.assertTrue((self.ops / 'STOP').is_file())
         self.assertFalse((self.home / 'ENABLED').exists())
         self.assertEqual(json.loads((self.ops / 'state/units.state.json').read_text())['tokens_today'], 12)
+
+    def authorization(self, **changes):
+        row={'authorized_by':'user','operation':'paused-deploy-before-source-review',
+             'source_head':'head','implementation_sha256':'source','stop_mtime_ns':self.before_stop,
+             'created_at':time.time()-1,'expires_at':time.time()+3600,**changes}
+        self.write('claude-code-migration-authorization.json',row)
+        (self.ops/'state/claude-code-migration-authorization.json').chmod(0o600)
+        return row
+
+    def test_deployment_deferral_requires_exact_private_scoped_authorization(self):
+        self.assertFalse(policy.deployment_authorized(self.ops,'head','source'))
+        self.authorization()
+        self.assertTrue(policy.deployment_authorized(self.ops,'head','source'))
+        self.assertFalse(policy.deployment_authorized(self.ops,'other','source'))
+        self.assertFalse(policy.deployment_authorized(self.ops,'head','changed'))
+        for changes in ({'authorized_by':'script'},{'operation':'enable'}, {'source_head':'other'},
+            {'implementation_sha256':'changed'},{'stop_mtime_ns':0},{'expires_at':time.time()-1},
+            {'created_at':time.time()+10},{'expires_at':time.time()+14401},
+            {'created_at':True},{'expires_at':float('nan')}):
+            with self.subTest(changes=changes):
+                self.authorization(**changes)
+                self.assertFalse(policy.deployment_authorized(self.ops,'head','source'))
+        self.authorization()
+        self.write('maintenance-pause.json',{'owner':'later-user-stop','stop_mtime_ns':self.before_stop,'previous_stop':False})
+        self.assertFalse(policy.deployment_authorized(self.ops,'head','source'))
+        self.safe_state()
+
+    def test_deferred_installer_cannot_use_dirty_or_unpublished_source(self):
+        self.authorization()
+        with patch.object(install_paused,'checked',side_effect=['','head']):
+            install_paused.require_source('head',True)
+        for outputs in (['dirty'],['','unpublished']):
+            with patch.object(install_paused,'checked',side_effect=outputs), self.assertRaises(integrity.IntegrityError):
+                install_paused.require_source('head',True)
+        with patch.object(install_paused,'checked',side_effect=['','head']), self.assertRaises(integrity.IntegrityError):
+            install_paused.require_source('head',False)
+        self.write('claude-code-source-review.json',{'head':'head','verdict':'pass','independent':True})
+        with patch.object(install_paused,'checked',side_effect=['','head']):
+            install_paused.require_source('head',False)
+        self.safe_state()
+
+    def test_deferred_bootstrap_does_not_enable_normal_coding(self):
+        self.authorization()
+        self.write('claude-code-activation.json',{**self.previous,'source_review_deferred':True})
+        self.write('claude-code-validation.json',self.validation)
+        data={'image':'tools','review_policy':'temporary-two-family-user-override'}
+        with patch.object(policy,'authenticated',return_value=True), \
+             patch.object(policy,'version_matches',return_value=True), \
+             patch.object(policy.subprocess,'check_output',return_value='image'):
+            self.assertTrue(policy.bootstrap_ready(data,self.ops,'source'))
+            self.assertFalse(policy.bootstrap_ready(data,self.ops,'changed'))
+            active={**self.previous,'source_review_deferred':True,'authorized_by':'user',
+                    'enabled':True,'review_policy':data['review_policy']}
+            self.write('claude-code-activation.json',active)
+            self.assertFalse(policy.ready(data,self.ops,'source'))
+            self.assertFalse(policy.bootstrap_ready(data,self.ops,'source'))
+            self.write('claude-code-activation.json',{**self.previous,'source_review_deferred':True})
+            self.authorization(expires_at=time.time()-1)
+            self.assertFalse(policy.bootstrap_ready(data,self.ops,'source'))
+        self.safe_state()
 
     def test_install_rejects_expired_future_and_invalid_evidence_before_mutation(self):
         with patch.object(install_paused, 'checked', return_value='image'):

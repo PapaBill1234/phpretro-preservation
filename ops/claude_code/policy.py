@@ -42,22 +42,53 @@ def request_cost_ceiling(data,model):
     settings=data['models'][model]
     return (data['context_window_tokens']*max(settings[k] for k in ('input','cache_read','cache_write'))+data['max_output_tokens']*settings['output'])/1e6
 
+def source_reviewed(ops,head):
+    try:
+        review=json.loads((ops/'state/claude-code-source-review.json').read_text())
+        return review.get('head')==head and review.get('verdict')=='pass' and review.get('independent') is True
+    except (OSError,ValueError):return False
+
+
+def deployment_authorized(ops,head,fingerprint):
+    """One explicit user-directed paused deployment, never a source approval."""
+    try:
+        path=ops/'state/claude-code-migration-authorization.json'
+        if path.is_symlink() or not path.is_file():return False
+        if path.stat().st_mode & 0o077:return False
+        authorization=json.loads(path.read_text())
+        pause=json.loads((ops/'state/maintenance-pause.json').read_text())
+        stop=ops/'STOP';now=time.time()
+        created=authorization.get('created_at');expires=authorization.get('expires_at')
+        if (type(created) not in (int,float) or type(expires) not in (int,float) or
+            not math.isfinite(created) or not math.isfinite(expires) or
+            not created<=now<expires or not 0<expires-created<=14400):return False
+        return (authorization.get('authorized_by')=='user' and
+          authorization.get('operation')=='paused-deploy-before-source-review' and
+          authorization.get('source_head')==head and authorization.get('implementation_sha256')==fingerprint and
+          authorization.get('stop_mtime_ns')==pause.get('stop_mtime_ns') and
+          pause.get('owner')=='codex-claude-code-runtime-migration' and
+          pause.get('previous_stop') is False and not pause.get('resumed_at') and
+          stop.is_file() and stop.stat().st_mtime_ns==pause.get('stop_mtime_ns'))
+    except (OSError,ValueError,TypeError):return False
+
+
 def bootstrap_ready(data,ops,fingerprint):
     """Manual provider acceptance under the unchanged owned migration STOP.
 
-    This permits a charged maintenance receipt only after reviewed installation
-    and all six non-provider checks. It cannot dispatch units or clear STOP.
+    This permits a charged maintenance receipt after reviewed installation or
+    the explicit user-directed review deferral, with all six non-provider checks.
+    It cannot dispatch units or clear STOP.
     """
     try:
         stop=ops/'STOP';pause=json.loads((ops/'state/maintenance-pause.json').read_text())
         activation=json.loads((ops/'state/claude-code-activation.json').read_text())
-        review=json.loads((ops/'state/claude-code-source-review.json').read_text())
         evidence=json.loads((ops/'state/claude-code-validation.json').read_text())
         if (not stop.is_file() or pause.get('owner')!='codex-claude-code-runtime-migration' or
             pause.get('previous_stop') is not False or pause.get('resumed_at') or
             stop.stat().st_mtime_ns!=pause.get('stop_mtime_ns')):return False
         if activation.get('installed') is not True or activation.get('enabled') is not False:return False
-        if review.get('head')!=activation.get('source_head') or review.get('verdict')!='pass' or review.get('independent') is not True:return False
+        if not source_reviewed(ops,activation.get('source_head')):
+            if activation.get('source_review_deferred') is not True or not deployment_authorized(ops,activation.get('source_head'),fingerprint):return False
         if evidence.get('implementation_sha256')!=fingerprint or not all(evidence.get('checks',{}).get(k) is True
           for k in ('foundation','ops','frontend','isolation','lifecycle','resources')):return False
         if not 0<=time.time()-evidence.get('validated_at',0)<=172800:return False
@@ -72,6 +103,7 @@ def ready(data,ops,fingerprint,model=None):
         evidence=json.loads((ops/'state/claude-code-validation.json').read_text())
         if activation.get('authorized_by')!='user' or activation.get('enabled') is not True:return False
         if activation.get('review_policy')!=data['review_policy']:return False
+        if activation.get('source_review_deferred') is True and not source_reviewed(ops,activation.get('source_head')):return False
         if len({control.model_family(m) for m,v in data['models'].items() if v.get('automatic')})<data['required_review_families']:return False
         if evidence.get('implementation_sha256')!=fingerprint or evidence.get('passed') is not True:return False
         required=('foundation','ops','frontend','isolation','lifecycle','resources','provider')

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Reviewed native-Claude cutover, STOP retained; old runtimes remain rollback data."""
+"""Native-Claude cutover with explicit user-directed review deferral, STOP retained; old runtimes remain rollback data."""
 import argparse,hashlib,json,os,shutil,subprocess,sys,time
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import integrity as control,runtime_policy,worker
+from claude_code import policy
 ROOT=Path(__file__).resolve().parents[2];OPS=runtime_policy.OPS
 ACTIVE_BACKUP=None
 
@@ -20,21 +21,32 @@ def require_validation(validation):
     image=checked('docker','image','inspect','--format={{.Id}}',runtime_policy.load()['image'])
     if not image or validation.get('image_id')!=image:
         raise control.IntegrityError('Validated tool image changed before installation')
+def require_source(head,deferred):
+    if checked('git','-C',str(ROOT),'status','--porcelain'):
+        raise control.IntegrityError('Installation requires clean published source')
+    ref='origin/codex/claude-code-runtime' if deferred else 'origin/main'
+    if head!=checked('git','-C',str(ROOT),'rev-parse',ref):
+        raise control.IntegrityError('Installation source differs from published branch')
+    if deferred:
+        if not policy.deployment_authorized(OPS,head,runtime_policy.fingerprint()):
+            raise control.IntegrityError('Scoped user-directed paused deployment authorization required')
+    elif not policy.source_reviewed(OPS,head):
+        raise control.IntegrityError('Exact-head independent source review required')
+
+
 def main():
     global ACTIVE_BACKUP
-    parser=argparse.ArgumentParser();parser.add_argument('--doctor-manifest',type=Path,required=True);args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--doctor-manifest',type=Path,required=True)
+    parser.add_argument('--defer-source-review',action='store_true',help='Explicit scoped user-directed paused deployment; review remains pending')
+    args=parser.parse_args()
     os.umask(0o077)
     if not (OPS/'STOP').is_file():raise control.IntegrityError('STOP required')
     head=checked('git','-C',str(ROOT),'rev-parse','HEAD')
-    if head!=checked('git','-C',str(ROOT),'rev-parse','origin/main') or checked('git','-C',str(ROOT),'status','--porcelain'):
-        raise control.IntegrityError('Installation requires clean reviewed origin/main')
+    require_source(head,args.defer_source_review)
     validation=json.loads((OPS/'state/claude-code-validation.json').read_text())
     # Provider/auth may remain pending in a paused installation. Source,
     # lifecycle, browser and isolation must already have actual passing evidence.
     require_validation(validation)
-    review=json.loads((OPS/'state/claude-code-source-review.json').read_text())
-    if review.get('head')!=head or review.get('verdict')!='pass' or review.get('independent') is not True:
-        raise control.IntegrityError('Exact-head independent source review required')
     extension=json.loads(args.doctor_manifest.read_text());package=Path(extension['package']).resolve()
     for name,digest in extension['inputs'].items():
         path=ROOT/'ops/skill-doctor'/name
@@ -69,7 +81,7 @@ def main():
     shutil.move(str(base/'runtime'),str(backup/'doctor-runtime'))
     shutil.move(str(staged),str(base/'runtime'))
     shutil.copy2(base/'extension-manifest.json',backup/'doctor-manifest.json')
-    control.atomic_json(base/'extension-manifest.json',{**extension,'reviewed':True,'acceptance_complete':True,'source_head':head})
+    control.atomic_json(base/'extension-manifest.json',{**extension,'reviewed':not args.defer_source_review,'acceptance_complete':not args.defer_source_review,'source_head':head,'source_review_deferred':args.defer_source_review})
     for timer in ('phpretro-orchestrator.timer','phpretro-nightly.timer','phpretro-alerts.timer'):
         subprocess.run(['sudo','-n','systemctl','disable','--now',timer],check=True)
     for name in ('phpretro-orchestrator.service','phpretro-nightly.service','phpretro-alerts.service'):
@@ -110,7 +122,7 @@ def main():
         target.write_text('[Service]\nEnvironment=PHPRETRO_RUNTIME=claude-code\nEnvironment=PHPRETRO_REPO='+str(ROOT)+'\n'+extra)
     subprocess.run(['sudo','-n','systemctl','daemon-reload'],check=True)
     subprocess.run(['systemctl','--user','daemon-reload'],env=worker.bus_env(),check=True)
-    control.atomic_json(OPS/'state/claude-code-activation.json',{'installed':True,'enabled':False,'source_head':head,'backup':str(backup),'installed_at':time.time()})
+    control.atomic_json(OPS/'state/claude-code-activation.json',{'installed':True,'enabled':False,'source_head':head,'backup':str(backup),'installed_at':time.time(),'source_review_deferred':args.defer_source_review})
     subprocess.run(['systemctl','--user','start','phpretro-skill-doctor.service','phpretro-skill-doctor.timer','phpretro-skill-doctor-ui.service'],env=worker.bus_env(),check=True)
     subprocess.run(['systemctl','--user','restart','phpretro-dashboard.service','phpretro-access.service'],env=worker.bus_env(),check=True)
     print('Claude pipeline installed paused. STOP, charges, original caps and historical sessions retained.')

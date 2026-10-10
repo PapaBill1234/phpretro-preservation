@@ -6,7 +6,7 @@ sessions. OpenHands receipts and Canvas volumes remain historical/rollback data.
 
 The pinned binary is `/home/ubuntu/.local/bin/claude`, version
 `2.1.287 (Claude Code)`. Claude Code is the harness, not the model provider.
-Builders retain Luna → Sol → DeepSeek escalation; independent reviewers use a
+Builders retain Luna â†’ Sol â†’ DeepSeek escalation; independent reviewers use a
 separate model family. Sol 6.1 supervises. All routes prefer A6API then admitted
 Portdan fallback, using existing private Ubuntu credentials. No Anthropic login
 is needed. Managed sessions receive only an ephemeral authenticated loopback
@@ -105,3 +105,12 @@ Official references: [headless operation](https://code.claude.com/docs/en/headle
 [CLI flags](https://code.claude.com/docs/en/cli-reference),
 [gateway compatibility](https://code.claude.com/docs/en/llm-gateway),
 [custom models](https://code.claude.com/docs/en/model-config).
+
+The installer normally requires reviewed `origin/main`. An explicit
+`--defer-source-review` supports the user's deployment-before-review sequence
+only for a clean published migration head with a private, exact-source,
+four-hour authorization and the unchanged owned migration STOP. Installation
+and Doctor manifests record review as pending. The bounded provider acceptance
+can run while paused; ordinary coding activation still requires actual
+independent source review. This never substitutes for unit approval or changes
+any spending, token, provider or review-family limit.

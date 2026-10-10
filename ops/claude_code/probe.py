@@ -14,7 +14,7 @@ def main():
     parser=argparse.ArgumentParser();parser.add_argument('--run',action='store_true');args=parser.parse_args()
     if not args.run:parser.error('Explicit --run required')
     os.umask(0o077);ops=runtime_policy.OPS;data=runtime_policy.load();fingerprint=runtime_policy.fingerprint()
-    if not policy.bootstrap_ready(data,ops,fingerprint):raise control.IntegrityError('Reviewed paused installation, owned STOP and private provider credentials required')
+    if not policy.bootstrap_ready(data,ops,fingerprint):raise control.IntegrityError('Authorized paused installation, owned STOP and private provider credentials required')
     destination=ops/'state/claude-code-provider.json'
     if destination.is_file():
         old=json.loads(destination.read_text())
