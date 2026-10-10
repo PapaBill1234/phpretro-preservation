@@ -6,6 +6,8 @@ import integrity,request_accounting,worker
 from claude_code import gateway,runner
 
 class Evidence:
+    def __init__(self):self.data={}
+    def save(self):pass
     def add(self,*args,**kwargs):pass
     def request(self,*args):pass
 
@@ -149,5 +151,18 @@ class GatewayTests(unittest.TestCase):
         actual=json.loads(usage.read_text())
         self.assertEqual(actual['api_calls'],0)
         self.assertEqual(actual['conservative_tokens'],0)
+
+class ResponseDiagnosticTests(unittest.TestCase):
+    def test_response_diagnostics_keep_only_numeric_usage_and_known_shape(self):
+        raw={'model':'gpt-6.1-sol','status':'completed','output':[{'text':'private content'}],
+             'error':{'message':'private error'},'secret':'private key',
+             'usage':{'input_tokens':12,'output_tokens':3,'total_tokens':15,'private':'sensitive',
+               'input_tokens_details':{'cached_tokens':4,'secret':'sensitive'}}}
+        with patch.object(gateway.runtime_policy,'model_label_matches',return_value=True):
+            row=gateway.response_observation(raw,'gpt-6.1-sol')
+        self.assertEqual(row['usage']['input_tokens'],12)
+        self.assertTrue(row['identity_valid'])
+        self.assertNotIn('private',json.dumps(row));self.assertNotIn('sensitive',json.dumps(row))
+        self.assertNotIn('model',row)
 
 if __name__=='__main__':unittest.main()

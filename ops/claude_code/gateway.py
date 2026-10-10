@@ -162,6 +162,25 @@ def tool_block(identity,name,arguments,allowed):
     if not isinstance(args,dict):raise control.IntegrityError('Invalid tool arguments')
     return {'type':'tool_use','id':identity,'name':name,'input':args}
 
+def response_observation(raw,model):
+    """Numeric/shape diagnostics only: no content, arguments, keys or error text."""
+    if not isinstance(raw,dict):return {'response_object':False}
+    result={'response_object':True,'identity_valid':runtime_policy.model_label_matches(model,raw.get('model')),
+            'fields':[k for k in ('id','object','model','usage','output','status','error','choices') if k in raw]}
+    if raw.get('status') in ('completed','incomplete','failed','cancelled','queued','in_progress'):result['status']=raw['status']
+    value=raw.get('usage')
+    if isinstance(value,dict):
+        counters={}
+        for key in ('input_tokens','output_tokens','prompt_tokens','completion_tokens','total_tokens','prompt_cache_hit_tokens','prompt_cache_miss_tokens','cache_creation_input_tokens'):
+            if key in value:counters[key]=value[key] if type(value[key]) in (int,float) and __import__('math').isfinite(value[key]) else 'invalid'
+        for key in ('input_tokens_details','prompt_tokens_details','output_tokens_details','completion_tokens_details'):
+            if isinstance(value.get(key),dict):
+                counters[key]={k:v if type(v) in (int,float) and __import__('math').isfinite(v) else 'invalid'
+                  for k,v in value[key].items() if k in ('cached_tokens','reasoning_tokens')}
+        result['usage']=counters
+    return result
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):return None
 
@@ -249,6 +268,8 @@ class Gateway:
                 self.context.request(input_bound,input_bound,0)
                 endpoint=self.data['providers'][provider]['base_url']+('/responses' if mode=='responses' else '/chat/completions')
                 raw=self.invoke(endpoint,key,payload,max(.1,min(120,self.deadline-time.time())))
+                observed=self.context.data.setdefault('provider_response_observations',[])
+                if len(observed)<16:observed.append(response_observation(raw,self.model));self.context.save()
                 message,row,reported=output(raw,mode,self.model,allowed,self.reasoning,self.response_reasoning)
                 # Preserve actual observed usage even when it exceeds the estimate.
                 if row['total_tokens']>ceiling:

@@ -146,7 +146,7 @@ def main(receipt_path):
             current=protocol.Stream(sid,model,tools);calls+=1;client.arm()
             system='Choose one permitted operational action from the provided typed facts. Return the required JSON only. No tools are available. Never change budgets, credentials, STOP or review policy.' if is_supervisor else BUILDER_SYSTEM_PROMPT if is_builder else REVIEWER_SYSTEM_PROMPT
             args=command.command(policy,sid,mcp,system,resume=step>0,builder=is_builder,model=model)
-            env=command.environment(Path.home());env.update(client.environment())
+            env=command.environment(private);env.update(client.environment())
             invoke(args,env,private,prompt,current,deadline,cancel,update)
             outcome=current.outcome();final_text=current.result.get('result','') if current.result else ''
             if client.last:
@@ -173,6 +173,14 @@ def main(receipt_path):
             print(final_text[-16000:],flush=True)
     except InterruptedError:finished=False;rc=130
     except Exception as exc:
+        if isinstance(exc,control.IntegrityError):
+            # Fixed protocol guard labels only; never serialize an exception or native payload.
+            guards={'Unexpected Claude plugins','Unexpected Claude skills or commands','Unexpected Claude tools',
+              'Unexpected Claude model identity','Unexpected assistant model','Claude session changed',
+              'Native stream disagrees with trusted provider usage','One-request CLI contract exceeded',
+              'Multiple CLI requests in a one-request invocation','Claude supplied no final response'}
+            label=str(exc) if str(exc) in guards else 'Other integrity guard'
+            journal.add('provider_error',label)
         print(json.dumps({'status':'failed','error_type':type(exc).__name__}),flush=True);finished=False;rc=1
     finally:
         if client:client.close()
