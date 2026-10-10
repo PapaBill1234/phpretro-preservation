@@ -25,3 +25,13 @@ class ContextUsageTests(unittest.TestCase):
             self.assertEqual(len(r.data['requests']),128)
             r.data['tool_calls']=True
             with self.assertRaises(ValueError):c.summary(r.data)
+    def test_tool_free_review_is_complete_without_unused_execute(self):
+        with tempfile.TemporaryDirectory() as d:
+            r=c.Recorder(Path(d)/'report.json',enabled_tools=[])
+            r.request(100,100,20);r.finish(True)
+            s=c.summary(r.data)
+            self.assertEqual(s['usage_status'],'complete')
+            self.assertEqual(s['unused_tools'],[])
+            self.assertEqual(s['peak_tool_schema_tokens'],0)
+            r.data['tool_calls']=1
+            with self.assertRaises(ValueError):c.summary(r.data)
