@@ -16,8 +16,18 @@ import (
 	"github.com/PapaBill1234/phpretro-preservation/internal/session"
 )
 
-// New builds the HTTP handler using only synthetic in-memory read models.
+// New builds the explicit demo handler using synthetic in-memory read models.
 func New() http.Handler {
+	return newServer(profileFixtures{newFixtures()}, true)
+}
+
+// NewWithProfileStore injects a read-only public profile store without opening a database.
+// Other routes retain their synthetic demo models.
+func NewWithProfileStore(store profile.Store) http.Handler {
+	return newServer(store, false)
+}
+
+func newServer(store profile.Store, demo bool) http.Handler {
 	mux := http.NewServeMux()
 	fixtures := newFixtures()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -51,14 +61,7 @@ func New() http.Handler {
 		}
 		respond(w, map[string]any{"version": "articles.v1", "news": result.News}, nil)
 	})
-	mux.HandleFunc("GET /api/profile", func(w http.ResponseWriter, r *http.Request) {
-		p, err := (profile.Service{Store: profileFixtures{fixtures}}).ByID(1)
-		if err == nil {
-			respond(w, profilePayload(profile.NewView(p, r.URL.Query().Get("tab"))), nil)
-			return
-		}
-		respond(w, nil, err)
-	})
+	mux.HandleFunc("GET /api/profile", profileHandler(store, demo))
 	mux.HandleFunc("GET /api/auth/failed", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, authflow.FailedLoginResponse(), nil)
 	})
