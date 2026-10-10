@@ -7,7 +7,19 @@ import integrity as control,runtime_policy,worker
 ROOT=Path(__file__).resolve().parents[2];OPS=runtime_policy.OPS
 ACTIVE_BACKUP=None
 
-def checked(*args):return subprocess.check_output(args,text=True).strip()
+def checked(*args):return subprocess.check_output(args,text=True,timeout=30).strip()
+
+def require_validation(validation):
+    if validation.get('implementation_sha256')!=runtime_policy.fingerprint() or not all(
+        validation.get('checks',{}).get(k) is True for k in ('foundation','ops','frontend','isolation','lifecycle','resources')):
+        raise control.IntegrityError('Exact-source non-provider validation required')
+    for name in ('validated_at','vulnerability_snapshot_at'):
+        value=validation.get(name)
+        if type(value) not in (int,float) or not 0<=time.time()-value<=172800:
+            raise control.IntegrityError('Fresh source and vulnerability validation required')
+    image=checked('docker','image','inspect','--format={{.Id}}',runtime_policy.load()['image'])
+    if not image or validation.get('image_id')!=image:
+        raise control.IntegrityError('Validated tool image changed before installation')
 def main():
     global ACTIVE_BACKUP
     parser=argparse.ArgumentParser();parser.add_argument('--doctor-manifest',type=Path,required=True);args=parser.parse_args()
@@ -19,9 +31,7 @@ def main():
     validation=json.loads((OPS/'state/claude-code-validation.json').read_text())
     # Provider/auth may remain pending in a paused installation. Source,
     # lifecycle, browser and isolation must already have actual passing evidence.
-    if validation.get('implementation_sha256')!=runtime_policy.fingerprint() or not all(
-        validation.get('checks',{}).get(k) is True for k in ('foundation','ops','frontend','isolation','lifecycle','resources')):
-        raise control.IntegrityError('Exact-source non-provider validation required')
+    require_validation(validation)
     review=json.loads((OPS/'state/claude-code-source-review.json').read_text())
     if review.get('head')!=head or review.get('verdict')!='pass' or review.get('independent') is not True:
         raise control.IntegrityError('Exact-head independent source review required')
