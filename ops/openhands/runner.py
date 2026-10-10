@@ -20,6 +20,7 @@ import routing
 import request_accounting as requests
 import context_usage
 import session_journal
+import runtime_optimization
 
 REVIEWER_SYSTEM_PROMPT = """You are an independent, diff-only code reviewer.
 The user message supplies the complete unified diff, acceptance bullets and exact
@@ -103,8 +104,12 @@ def main(receipt_path):
     state = {"started": 0, "finished": 0, "depth": 0, "complete": False,
              "unknown_calls": 0, "pending": {}, "providers": [], "failed": set(), "recoverable": set()}
     is_reviewer = manifest["role"] == "reviewer"
+    efficiency = runtime_optimization.snapshot()
     context = context_usage.Recorder(receipt_path.with_suffix('.context.json'),
                                     enabled_tools=[] if is_reviewer else ['execute'])
+    context.data.update(optimization=efficiency,original_tool_output_chars=0,
+                        sent_tool_output_chars=0,truncated_observations=0,
+                        reported_reasoning_tokens=0,reasoning_reports_complete=True)
     journal = session_journal.Journal(receipt_path.with_suffix('.session.json'),
         [routing.credential(credentials,p,model) for p in routes])
     box = sandbox.Sandbox(rid, manifest["cwd"], writable=manifest["role"] == "builder",
@@ -126,6 +131,8 @@ def main(receipt_path):
                      num_retries=0, timeout=120, reasoning_effort="low", caching_prompt=False, log_completions=False,
                      input_cost_per_token=settings["input"] / 1e6,
                      output_cost_per_token=settings["output"] / 1e6)
+    if is_reviewer and model == 'deepseek-v4.1-flash' and efficiency['values']['reviewer-thinking']:
+        options.update(reasoning_effort=None,litellm_extra_body={'thinking':{'type':'disabled'}})
     clients = {p: LLM(**options, api_key=SecretStr(routing.credential(credentials, p, model)),
                       base_url=policy["providers"][p]["base_url"]) for p in routes}
     llm = BoundedLLM(**options, api_key=SecretStr(routing.credential(credentials, routes[0], model)),
@@ -154,6 +161,13 @@ def main(receipt_path):
         reported = str(getattr(raw, "model", ""))
         if not runtime_policy.model_label_matches(model, reported) or getattr(raw, "usage", None) is None:
             raise control.IntegrityError("provider model identity or usage unavailable")
+        details = getattr(raw.usage,'completion_tokens_details',None)
+        reported_reasoning = getattr(details,'reasoning_tokens',None)
+        if type(reported_reasoning) is int and reported_reasoning>=0:
+            context.data['reported_reasoning_tokens']+=reported_reasoning
+        else:
+            context.data['reasoning_reports_complete']=False
+        context.save()
 
     def checkpoint(complete=False):
         data = normalized_usage(llm.metrics, settings, started=state["started"],
@@ -231,11 +245,16 @@ def main(receipt_path):
         def __call__(self, action, conversation=None):
             context.tool(action.command)
             rc, output = box.execute(action.command, action.timeout)
+            sent_output = runtime_optimization.compact_output(output,
+                manifest['role']=='builder' and efficiency['values']['compact-tool-output'])
+            context.data['original_tool_output_chars']+=len(output)
+            context.data['sent_tool_output_chars']+=len(sent_output)
+            context.data['truncated_observations']+=int(sent_output!=output)
             context.data['tool_errors']+=int(rc!=0)
             context.save()
             journal.add('tool',action.command+'\n\n'+output,rc=rc)
             checkpoint(False)
-            return ExecuteObservation.from_text("exit=" + str(rc) + "\n" + output, is_error=rc != 0)
+            return ExecuteObservation.from_text("exit=" + str(rc) + "\n" + sent_output, is_error=rc != 0)
 
     class ExecuteTool(ToolDefinition):
         @classmethod

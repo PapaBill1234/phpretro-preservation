@@ -31,6 +31,20 @@ def ordered_files(path,pattern):
         except OSError:pass
     return [p for _,p in sorted(rows,reverse=True)]
 
+def optimization_metadata(raw):
+    if not isinstance(raw,dict):return None
+    keys=('compact-tool-output','reviewer-thinking')
+    values=raw.get('values');versions=raw.get('versions')
+    if not isinstance(values,dict) or not isinstance(versions,dict) or set(values)!=set(keys) or set(versions)!=set(keys):return None
+    if any(type(values[k]) is not bool for k in keys):return None
+    try:
+        revision=raw['revision']
+        if revision!='default' and str(uuid.UUID(revision))!=revision:return None
+        for v in versions.values():
+            if v is not None and str(uuid.UUID(v))!=v:return None
+    except (KeyError,ValueError,TypeError,AttributeError):return None
+    return {'revision':revision,'values':{k:values[k] for k in keys},'versions':{k:versions[k] for k in keys}}
+
 def native_sessions(home):
     rows=[]
     for path in ordered_files(home/'phpretro-codex/jobs','*/schema.json')[:500]:
@@ -148,16 +162,26 @@ def sessions(home=None,canvas=None):
         if observed:
             context_requests=[{k:r[k] for k in ('estimated_context_tokens','estimated_tool_schema_tokens','estimated_system_tokens')} for r in context['requests']]
         rows.append({'id':d['run_id'],'runtime':'openhands','unit':d.get('unit') or 'Unknown','unit_state':unit_states.get(d.get('unit'),'unknown'),'role':d.get('role') or 'Unknown','model':d.get('model') or 'Unknown',
-          'provider':usage.get('provider'),'status':'running' if running else d.get('status'),'rc':d.get('rc'),
+          'provider':usage.get('provider'),'status':'running' if running else 'failed' if d.get('rc') not in (None,0) else 'succeeded' if d.get('status')=='complete' and d.get('rc')==0 else 'incomplete',
+          'receipt_status':d.get('status'),'rc':d.get('rc'),
           'started':timestamp(d.get('ts_start')) or timestamp(d.get('prepared_at')),
           'ended':number(d.get('completed_at')),'tokens':number(usage.get('total_tokens')),
           'input':number(usage.get('input_tokens')),'output':number(usage.get('output_tokens')),
           'cached':number(usage.get('cache_read_tokens')),'requests':number(usage.get('api_calls')),
+          'cache_write':number(usage.get('cache_write_tokens')),'reasoning':number(usage.get('reasoning_tokens')),
+          'conservative_tokens':number(usage.get('conservative_tokens')),'unknown_requests':number(usage.get('unknown_api_calls')),
           'complete':usage.get('usage_complete') is True,
           'context':{k:number(observed.get(k)) for k in ('tool_calls','tool_errors','repeated_commands','events','brief_chars')},
           'context_complete':observed.get('usage_status')=='complete',
           'context_requests':context_requests,'unused_tools':observed.get('unused_tools',[]),
-          'journal_available':p.with_suffix('.session.json').is_file() and not p.with_suffix('.session.json').is_symlink()})
+          'journal_available':p.with_suffix('.session.json').is_file() and not p.with_suffix('.session.json').is_symlink(),
+          'optimization':optimization_metadata(context.get('optimization')),
+          'reported_reasoning_tokens':number(context.get('reported_reasoning_tokens')) if context.get('reasoning_reports_complete') is True else None,
+          'tool_output_chars':{k:number(context.get(k)) for k in ('original_tool_output_chars','sent_tool_output_chars','truncated_observations')},
+          'resources':[{'name':'System prompt','kind':'instructions','required':True,'tokens':context_requests[0]['estimated_system_tokens'] if context_requests else None},
+                       {'name':'Unit brief / full review diff and message envelope','kind':'instructions','required':True,'tokens':max(0,context_requests[0]['estimated_context_tokens']-context_requests[0]['estimated_system_tokens']-context_requests[0]['estimated_tool_schema_tokens']) if context_requests else None},
+                       {'name':'Execute schema','kind':'tool','required':d.get('role')=='builder','tokens':context_requests[0]['estimated_tool_schema_tokens'] if context_requests else None}],
+          'skills':{'activated':[],'invoked':[],'coverage':'The SDK runner disables automatic skill loading; unit instructions are supplied explicitly.'}})
         if len(rows)==500:break
     billing=read(state/'a6api-billing.json',{})
     if not isinstance(billing,dict):billing={}

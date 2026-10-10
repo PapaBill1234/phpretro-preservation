@@ -20,7 +20,7 @@ from litellm import ModelResponse
 from litellm.types.llms.openai import ResponsesAPIResponse
 
 
-def main(model, small_allowance=False, reviewer=False):
+def main(model, small_allowance=False, reviewer=False, optimized=False):
     nonce = "SDK_TRANSPORT_" + secrets.token_hex(12)
     reply = json.dumps({"verdict":"pass","findings":[]}) if reviewer else nonce
     calls, pending, tool_calls = [], [], []
@@ -29,6 +29,9 @@ def main(model, small_allowance=False, reviewer=False):
     runner.runtime_policy.verified_providers = lambda model: ["a6api", "portdan"]
     runner.provider_credentials = lambda path: {"a6api": "synthetic", "portdan": {"openai": "synthetic", "deepseek": "synthetic"}}
     runner.time.sleep = lambda _: None
+    runner.runtime_optimization.snapshot = lambda: {'revision':'default',
+        'values':{'reviewer-thinking':optimized,'compact-tool-output':optimized},
+        'versions':{'reviewer-thinking':None,'compact-tool-output':None}}
 
     class Box:
         def __init__(self, *args, **kwargs): pass
@@ -37,7 +40,7 @@ def main(model, small_allowance=False, reviewer=False):
         def export(self): pass
         def execute(self, command, timeout):
             tool_calls.append(command)
-            return 0, nonce
+            return 0, nonce+('x'*20000)+nonce if optimized else nonce
     runner.sandbox.Sandbox = Box
 
     with tempfile.TemporaryDirectory(prefix="phpretro-sdk-transport-") as td:
@@ -53,6 +56,9 @@ def main(model, small_allowance=False, reviewer=False):
                 payload = str(kwargs.get('instructions', '')) + str(kwargs.get('messages', kwargs.get('input', [])))
                 assert 'diff-only code reviewer' in str(payload), 'review contract missing on actual transport'
                 assert 'use ExecuteTool' not in str(payload), 'builder instructions leaked into reviewer'
+                if optimized and model.startswith('deepseek-'):
+                    assert kwargs.get('extra_body',{}).get('thinking')=={'type':'disabled'},'direct-review control missing on actual SDK transport'
+                    assert not kwargs.get('reasoning_effort'),'conflicting thinking effort on direct review'
             if not small_allowance and len(calls) in (2, 3):
                 raise TimeoutError()
             tool_turn = len(calls) == 1 and not reviewer
@@ -62,15 +68,22 @@ def main(model, small_allowance=False, reviewer=False):
                 if not tool_turn and not reviewer:
                     assert any(nonce in str(m.get("content")) for m in messages if m["role"] == "tool"), "actual tool output lost"
                     assert any(m.get("reasoning_content") == "synthetic reasoning" for m in messages if m["role"] == "assistant"), "DeepSeek reasoning dropped"
+                    if optimized:
+                        text=next(str(m.get('content')) for m in messages if m['role']=='tool')
+                        assert 'truncated' in text and len(text)<9000,'optimized observation not bounded'
                 message = {"role": "assistant", "content": reply if not tool_turn else None,
                            "reasoning_content": "synthetic reasoning"}
                 if tool_turn:
                     message["tool_calls"] = [{"id": "call_synthetic", "type": "function",
                                               "function": {"name": "execute", "arguments": arguments}}]
                 return ModelResponse(model=model, choices=[{"index": 0, "finish_reason": "tool_calls" if tool_turn else "stop", "message": message}],
-                                     usage={"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120})
+                                     usage={"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120,
+                                            "completion_tokens_details":{"reasoning_tokens":0 if optimized and reviewer else 10}})
             if not tool_turn and not reviewer:
                 assert any(nonce in str(m.get("output")) for m in kwargs["input"] if m.get("type") == "function_call_output"), "actual tool output lost"
+                if optimized:
+                    text=next(str(m['output']) for m in kwargs['input'] if m.get('type')=='function_call_output')
+                    assert 'truncated' in text and len(text)<9000,'optimized observation not bounded'
             output = ([{"type": "function_call", "id": "fc_synthetic", "call_id": "call_synthetic", "name": "execute", "arguments": arguments, "status": "completed"}]
                       if tool_turn else [{"type": "message", "id": "msg_synthetic", "role": "assistant", "status": "completed",
                                           "content": [{"type": "output_text", "text": reply, "annotations": []}]}])
@@ -121,8 +134,14 @@ def main(model, small_allowance=False, reviewer=False):
         assert history['tool_calls']==(0 if reviewer else 1) and history['tool_errors']==0 and history['usage_status']=='complete', history
         assert history['requests']==(1 if reviewer else 2 if small_allowance else 4) and history['unused_tools']==[],history
         assert nonce not in receipt.with_suffix('.context.json').read_text(), 'tool output leaked into metadata'
+        metadata=json.loads(receipt.with_suffix('.context.json').read_text())
+        assert metadata['optimization']['values']['compact-tool-output']==optimized
+        if optimized and not reviewer:
+            assert metadata['truncated_observations']==1 and metadata['original_tool_output_chars']>metadata['sent_tool_output_chars']
+        if optimized and reviewer and model.startswith('deepseek-'):
+            assert metadata['reasoning_reports_complete'] and metadata['reported_reasoning_tokens']==0
     print(json.dumps({"sdk_transport": "passed", "model": model, "small_allowance":small_allowance,
-                      "reviewer":reviewer,"http_calls": "synthetic-only"}))
+                      "reviewer":reviewer,"optimized":optimized,"http_calls": "synthetic-only"}))
 
 
 if __name__ == "__main__":
@@ -131,3 +150,5 @@ if __name__ == "__main__":
     main(ap.parse_args().model)
     main(ap.parse_args().model, small_allowance=True)
     main(ap.parse_args().model, small_allowance=True, reviewer=True)
+    main(ap.parse_args().model, small_allowance=True, optimized=True)
+    main(ap.parse_args().model, small_allowance=True, reviewer=True, optimized=True)
