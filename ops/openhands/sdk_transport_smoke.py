@@ -11,6 +11,7 @@ import secrets
 import tempfile
 import uuid
 import warnings
+from unittest.mock import patch
 
 os.environ.update(OPENHANDS_SUPPRESS_BANNER="1", OTEL_SDK_DISABLED="true")
 logging.disable(logging.CRITICAL)
@@ -51,9 +52,15 @@ def main(model, small_allowance=False, reviewer=False, optimized=False):
         profile_root=root/'phpretro-ops/state/runtime-optimization'
         profile_root.mkdir(mode=0o700,parents=True)
         runner.control.atomic_json(profile_root/'settings.json',profile)
+        host_context='PRIVATE_HOST_CONTEXT_'+secrets.token_hex(12)
+        (root/'SOUL.md').write_text(host_context)
+        host_skill=root/'.openhands/skills/private-host/SKILL.md'
+        host_skill.parent.mkdir(parents=True)
+        host_skill.write_text('---\nname: private-host\ndescription: '+host_context+'\n---\n'+host_context)
         usage = root / "usage.json"
 
         def synthetic(**kwargs):
+            assert host_context not in str(kwargs),'operator host context leaked into SDK transport'
             calls.append(kwargs["api_base"])
             pending.append(json.loads(usage.read_text())["conservative_tokens"])
             if reviewer:
@@ -101,10 +108,19 @@ def main(model, small_allowance=False, reviewer=False, optimized=False):
         prompt.write_text("Review this supplied diff and acceptance. Exact reviewed head: synthetic-head." if reviewer
                           else "Run the execute tool once and return its result.")
         receipt = root / "receipt.json"
-        receipt.write_text(json.dumps({"run_id": str(uuid.uuid4()), "status": "running", "model": model,
+        run_id=str(uuid.uuid4())
+        receipt.write_text(json.dumps({"run_id": run_id, "status": "running", "model": model,
                                       "role": "reviewer" if reviewer else "builder", "cwd": td, "allowed_paths": [], "reserved_tokens": 20000 if small_allowance else 300000,
                                       "prompt_path": str(prompt), "usage_path": str(usage)}))
-        assert runner.main(receipt) == 0, "actual SDK conversation failed"
+        sdk=importlib.import_module('openhands.sdk');real_agent=sdk.Agent;constructed=[]
+        def isolated_agent(*args,**kwargs):
+            expected=root/(run_id+'-sdk')
+            assert Path.home()==expected and Path(os.environ['OPENHANDS_PERSISTENCE_DIR'])==expected,'operator HOME was not isolated before SDK construction'
+            constructed.append(True)
+            return real_agent(*args,**kwargs)
+        with patch.object(sdk,'Agent',new=isolated_agent):
+            assert runner.main(receipt) == 0, "actual SDK conversation failed"
+        assert constructed,'actual SDK Agent construction was not observed'
         journal=json.loads(receipt.with_suffix('.session.json').read_text())
         assert journal['schema']=='phpretro.session-journal.v1'
         assert reviewer or any(e['kind']=='tool' for e in journal['events']), 'tool timeline missing'
