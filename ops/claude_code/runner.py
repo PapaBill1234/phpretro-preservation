@@ -26,6 +26,11 @@ execute tool. Read AGENTS.md there. All reads, edits and checks use execute.
 No host filesystem, credentials, network, publication, hooks or subagents are
 available. Do not change protected files or files outside the supplied ownership.
 Finish with a concise description of changes and checks.'''
+BOOTSTRAP_SYSTEM_PROMPT='''Perform only the supplied bounded harness capability check.
+This is not a coding unit. Follow its exact tool-call count and completion marker.
+Do not inspect repository files or run setup, instruction discovery or extra tools.
+After the requested tool succeeds, finish as requested. The same restrictions
+apply when resuming with the retained tool result. No host access or publication.'''
 
 def zero(sid,model,ceiling):
     return {'runtime':'claude-code','usage_schema':protocol.SCHEMA,'request_token_ceiling':ceiling,
@@ -147,7 +152,7 @@ def main(receipt_path):
         for step in range(policy['max_iterations']):
             if cancel.exists() or time.time()>=deadline:raise InterruptedError()
             current=protocol.Stream(sid,model,tools);calls+=1;client.arm()
-            system='Choose one permitted operational action from the provided typed facts. Return the required JSON only. No tools are available. Never change budgets, credentials, STOP or review policy.' if is_supervisor else BUILDER_SYSTEM_PROMPT if is_builder else REVIEWER_SYSTEM_PROMPT
+            system='Choose one permitted operational action from the provided typed facts. Return the required JSON only. No tools are available. Never change budgets, credentials, STOP or review policy.' if is_supervisor else BOOTSTRAP_SYSTEM_PROMPT if bootstrap else BUILDER_SYSTEM_PROMPT if is_builder else REVIEWER_SYSTEM_PROMPT
             args=command.command(policy,sid,mcp,system,resume=step>0,builder=is_builder,model=model)
             env=command.environment(private);env.update(client.environment())
             invoke(args,env,private,prompt,current,deadline,cancel,update)
@@ -169,7 +174,8 @@ def main(receipt_path):
                     raise control.IntegrityError('Claude supplied no final response')
                 finished=True;rc=0;break
             if outcome!='continue' or not is_builder:break
-            prompt='Continue the same unit using the retained tool result. Do not restart or expand its scope.'
+            prompt=('Continue the same capability check using the retained tool result. Follow the original brief; if its required tool succeeded, finish with its required marker without additional tools.'
+              if bootstrap else 'Continue the same unit using the retained tool result. Do not restart or expand its scope.')
         if finished:
             if box:box.export()
             # Last result is held separately; native cumulative cost is never recharged.

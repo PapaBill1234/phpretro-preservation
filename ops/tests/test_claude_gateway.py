@@ -209,13 +209,13 @@ class GatewayTests(unittest.TestCase):
         self.assertFalse(usage_policy.continuation_allowed(self.data,self.row))
 
     def test_actual_runner_continues_same_session_and_exports_only_admitted_conflicts(self):
-        for transport_unknown in (False,True):
-            with self.subTest(transport_unknown=transport_unknown):
+        for transport_unknown,bootstrap in ((False,False),(False,True),(True,False),(True,True)):
+            with self.subTest(transport_unknown=transport_unknown,bootstrap=bootstrap):
                 rid=str(uuid.uuid4());path=self.root/(rid+'.json');usage=path.with_suffix('.usage.json')
                 prompt=self.root/'brief.txt';prompt.write_text('Synthetic unit')
                 model=usage_policy.MODEL
                 path.write_text(json.dumps({'run_id':rid,'status':'running','role':'builder','model':model,
-                  'profile':'Synthetic','unit':'Synthetic','usage_path':str(usage),'prompt_path':str(prompt),
+                  'profile':'claude-bootstrap' if bootstrap else 'Synthetic','unit':'' if bootstrap else 'Synthetic','usage_path':str(usage),'prompt_path':str(prompt),
                   'prepared_at':time.time(),'timeout':30,'cwd':str(self.root),'reserved_tokens':300000,
                   'reserved_cost_estimate':1,'allowed_paths':['example.py']}))
                 clients=[];physical=[];sessions=[];real_gateway=gateway.Gateway
@@ -232,6 +232,14 @@ class GatewayTests(unittest.TestCase):
                     instance=real_gateway(*args,**kwargs,invoke=upstream);clients.append(instance);return instance
                 def native(args,env,cwd,brief,stream,deadline,cancel,update):
                     sessions.append(stream.sid)
+                    system=args[args.index('--system-prompt')+1]
+                    if bootstrap:
+                        self.assertNotIn('Read AGENTS.md',system)
+                        self.assertIn('capability check',system)
+                        if len(sessions)>1:self.assertIn('without additional tools',brief)
+                    else:
+                        self.assertIn('Read AGENTS.md',system)
+                        if len(sessions)>1:self.assertIn('same unit',brief)
                     message=clients[0].call({'model':model,'max_tokens':4096,
                       'messages':[{'role':'user','content':'Synthetic fixture'}],
                       'tools':[{'name':'mcp__phpretro__execute','input_schema':{'type':'object'}}]})
@@ -248,6 +256,7 @@ class GatewayTests(unittest.TestCase):
                     return 0
                 secrets={'a6api_api_key':'synthetic-primary','portdan':{'deepseek':'synthetic-fallback'}}
                 with patch.object(runner.runtime_policy,'fingerprint',return_value='source'), \
+                     patch.object(runner.admission,'bootstrap_ready',return_value=bootstrap), \
                      patch.object(runner.runtime_policy,'ready',return_value=True), \
                      patch.object(runner.runtime_policy,'verified_providers',return_value=['a6api','portdan']), \
                      patch.object(runner.gateway,'credentials',return_value=secrets), \

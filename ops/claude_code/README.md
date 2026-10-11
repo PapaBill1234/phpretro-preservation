@@ -158,6 +158,12 @@ to the desktop viewer. Completed windows remain visible for two minutes;
 retained sessions and history remain available in Doctor.
 ## Explicit DeepSeek accounting override
 
+Provider acceptance uses a dedicated capability-check system prompt and retained
+test brief on resume. It does not inherit the normal builder's repository-reading
+directive. Ordinary coding builders still read /repo/AGENTS.md and retain their
+original ownership rules. The one-tool/no-error acceptance check remains strict;
+failed runs, their charges and their actual tool errors are never rewritten.
+
 Billing completeness covers inclusive input, output, cache read and cache write
 counters, physical-attempt holds and their reconciliation. It does not assert
 that the provider supplied a reasoning-token breakdown within its output total.
