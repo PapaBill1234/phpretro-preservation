@@ -46,7 +46,7 @@ class TerminalTests(unittest.TestCase):
  def test_real_invocation_markers_only_not_file_catalog(self):
   with tempfile.TemporaryDirectory() as t:
    home=Path(t);sid=str(uuid.uuid4());root=home/'.claude/projects/project';root.mkdir(parents=True)
-   (root/(sid+'.jsonl')).write_text(json.dumps({'type':'user','uuid':str(uuid.uuid4()),'message':{'content':'<command-name>/doctor</command-name>'}})+'\n')
+   (root/(sid+'.jsonl')).write_text(json.dumps({'type':'user','uuid':str(uuid.uuid4()),'message':{'content':'<command-message>doctor</command-message><command-name>/doctor</command-name>'}})+'\n')
    context=context_usage.Recorder(home/'context.json',list(interactive.TOOLS))
    interactive.transcript_observations(home,sid,context)
    self.assertEqual(context.data['native_interactive']['invoked'],['doctor'])
@@ -119,7 +119,7 @@ class TerminalTests(unittest.TestCase):
  def test_malformed_transcript_containers_do_not_break_accounting_observer(self):
   with tempfile.TemporaryDirectory() as t:
    home=Path(t);sid=str(uuid.uuid4());root=home/'.claude/projects/project';root.mkdir(parents=True)
-   values=[None,[],{'type':'user','uuid':'u','message':None},{'message':{'content':[{'type':'tool_use','name':'Skill','input':None}]}},{'message':{'content':'<command-name>/doctor</command-name>'}}]
+   values=[None,[],{'type':'user','uuid':'u','message':None},{'message':{'content':[{'type':'tool_use','name':'Skill','input':None}]}},{'type':'user','message':{'content':'<command-message>doctor</command-message><command-name>/doctor</command-name>'}},{'type':'assistant','message':{'content':'<command-message>quoted</command-message><command-name>/quoted</command-name>'}}]
    (root/(sid+'.jsonl')).write_text('\n'.join(json.dumps(v) for v in values))
    context=context_usage.Recorder(home/'context.json',list(interactive.TOOLS));journal=session_journal.Journal(home/'session.json')
    interactive.transcript_observations(home,sid,context,journal)
@@ -148,7 +148,32 @@ class TerminalTests(unittest.TestCase):
    self.assertFalse(interactive.native_resume(home,sid,True,0))
    with self.assertRaises(integrity.IntegrityError):interactive.native_resume(home,sid,True,100)
    root=home/'.claude/projects/project';root.mkdir(parents=True);(root/(sid+'.jsonl')).write_text('{}')
+   interactive.save_continuation(home,sid,{})
    self.assertTrue(interactive.native_resume(home,sid,True,100))
+
+ def test_private_provider_continuation_is_bound_to_uuid_and_reloaded(self):
+  with tempfile.TemporaryDirectory() as t:
+   home=Path(t);sid=str(uuid.uuid4());value={'call_fixture':[{'type':'reasoning','id':'rs_fixture','encrypted_content':'private-fixture','summary':[]}]}
+   interactive.save_continuation(home,sid,value)
+   self.assertEqual(interactive.load_continuation(home,sid,required=True),value)
+   with self.assertRaises(integrity.IntegrityError):interactive.load_continuation(home,str(uuid.uuid4()),required=True)
+   (home/'provider-continuation.json').chmod(0o644)
+   with self.assertRaises(integrity.IntegrityError):interactive.load_continuation(home,sid)
+
+ def test_installer_restores_every_replaced_file_and_symlink_on_failure(self):
+  with patch.dict(os.environ,{}):
+   from claude_code import install_terminal
+  with tempfile.TemporaryDirectory() as t:
+   root=Path(t);backup=root/'backup';backup.mkdir();raw=root/'raw';raw.write_text('native')
+   cli=root/'claude';cli.symlink_to(raw);report=root/'report';report.write_text('old report');desktop=root/'desktop';desktop.write_text('old desktop')
+   original=install_terminal.control.atomic_text
+   def fail(path,text,*args,**kwargs):
+    if path==desktop:raise OSError('fixture install failure')
+    return original(path,text,*args,**kwargs)
+   with patch.object(install_terminal.control,'atomic_text',side_effect=fail):
+    with self.assertRaises(OSError):install_terminal.replace_files([(cli,'new cli',0o755),(report,'new report',0o755),(desktop,'new desktop',0o755)],backup)
+   self.assertTrue(cli.is_symlink());self.assertEqual(cli.resolve(),raw)
+   self.assertEqual(report.read_text(),'old report');self.assertEqual(desktop.read_text(),'old desktop')
 
  def test_unmanaged_native_history_in_terminal_profiles_remains_unknown(self):
   from claude_code import native_sessions

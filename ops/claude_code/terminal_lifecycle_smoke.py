@@ -17,9 +17,11 @@ def child(folder,sid=None,mode=""):
  orchestrator.billing.summary=lambda _: {'fresh':True,'day':orchestrator.now()[:10],'account_day_billed_usd':0.1,'account_balance_usd':100}
  gateway.credentials=lambda *a:{'a6api_api_key':'synthetic-only'}
  calls=[]
+ prior=interactive.load_continuation(interactive.BASE/'terminal-home'/sid,sid) if sid else {}
  def upstream(endpoint,key,body,timeout):
   assert key=='synthetic-only';calls.append(body)
-  items=[{'type':'function_call','call_id':'fixture_'+str(uuid.uuid4())+'_'+str(len(calls)),'name':'Bash','arguments':json.dumps({'command':'phpretro-doctor'})}] if len(calls)==1 else [{'type':'message','content':[{'type':'output_text','text':'TERMINAL_LIFECYCLE_OK'}]}]
+  if prior or len(calls)>1:assert any(item.get('type')=='reasoning' and item.get('encrypted_content')=='private-fixture-encrypted' for item in body['input'])
+  items=[{'type':'reasoning','id':'rs_'+str(uuid.uuid4()),'encrypted_content':'private-fixture-encrypted','summary':[]},{'type':'function_call','call_id':'fixture_'+str(uuid.uuid4())+'_'+str(len(calls)),'name':'Bash','arguments':json.dumps({'command':'phpretro-doctor'})}] if len(calls)==1 else [{'type':'message','content':[{'type':'output_text','text':'TERMINAL_LIFECYCLE_OK'}]}]
   return {'status':'completed','model':interactive.MODEL,'output':items,'usage':{'input_tokens':100,'output_tokens':10,'total_tokens':110,'input_tokens_details':{'cached_tokens':0}}}
  Original=interactive.InteractiveGateway
  class Synthetic(Original):
@@ -68,7 +70,7 @@ def child(folder,sid=None,mode=""):
  assert all(row['role']=='interactive' for row in rows)
  assert all(row['journal_available'] for row in rows if row['id'] not in recovered)
  assert all(not row['journal_available'] for row in rows if row['id'] in recovered)  # Seeded missing history remains unknown.
- print(json.dumps({'passed':True,'receipts':len(records),'native_session_id':native,'charged_tokens':used,'reservations':len(state['reservations']),'physical_fixture_requests':len(calls),'live_provider_calls':0}),flush=True)
+ print(json.dumps({'passed':True,'receipts':len(records),'native_session_id':native,'charged_tokens':used,'reservations':len(state['reservations']),'physical_fixture_requests':len(calls),'reasoning_continuation_observed':True,'live_provider_calls':0}),flush=True)
 
 def run():
  with tempfile.TemporaryDirectory(prefix='phpretro-terminal-lifecycle-') as folder:

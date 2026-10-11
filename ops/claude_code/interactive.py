@@ -82,7 +82,40 @@ def native_resume(home,sid,recorded,charged):
     root=home/'.claude/projects'
     history=any(not p.is_symlink() and not p.parent.is_symlink() and p.is_file() for p in root.glob('*/'+sid+'.jsonl'))
     if recorded and charged and not history:raise control.IntegrityError('Charged conversation transcript unavailable; preserve its allowance')
+    load_continuation(home,sid,required=bool(charged))
     return recorded and history
+
+def checked_reasoning(value):
+    if not isinstance(value,dict) or len(value)>256:raise control.IntegrityError('Invalid continuation map')
+    for call,items in value.items():
+        if not isinstance(call,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,200}',call) or not isinstance(items,list) or len(items)>16:
+            raise control.IntegrityError('Invalid continuation call')
+        for item in items:
+            if not isinstance(item,dict) or item.get('type')!='reasoning' or set(item)-{'type','id','summary','encrypted_content','status'}:
+                raise control.IntegrityError('Invalid continuation item')
+            if 'id' in item and not isinstance(item['id'],str):raise control.IntegrityError('Invalid continuation identity')
+            if item.get('encrypted_content') is not None and not isinstance(item['encrypted_content'],str):raise control.IntegrityError('Invalid continuation ciphertext')
+            if 'summary' in item and not isinstance(item['summary'],list):raise control.IntegrityError('Invalid continuation summary')
+    if len(json.dumps(value).encode())>2_000_000:raise control.IntegrityError('Continuation bound exceeded')
+    return value
+
+def load_continuation(home,sid,required=False):
+    path=home/'provider-continuation.json'
+    if path.is_symlink():raise control.IntegrityError('Continuation symlink denied')
+    if not path.exists():
+        if required:raise control.IntegrityError('Charged provider continuation unavailable; preserve its allowance')
+        return {}
+    if path.stat().st_uid!=os.getuid() or path.stat().st_mode & 0o077 or path.stat().st_size>2_100_000:
+        raise control.IntegrityError('Private bounded continuation required')
+    value=json.loads(path.read_text())
+    if not isinstance(value,dict) or value.get('schema')!='phpretro.claude-continuation.v1' or value.get('session_id')!=sid or value.get('model')!=MODEL:
+        raise control.IntegrityError('Continuation session binding changed')
+    return checked_reasoning(value.get('reasoning'))
+
+def save_continuation(home,sid,value):
+    path=home/'provider-continuation.json'
+    if path.is_symlink():raise control.IntegrityError('Continuation symlink denied')
+    control.atomic_json(path,{'schema':'phpretro.claude-continuation.v1','session_id':sid,'model':MODEL,'reasoning':checked_reasoning(value)})
 
 def prior_usage(ops,sid):
     total=0;found=False
@@ -101,10 +134,20 @@ def prior_usage(ops,sid):
     return found,total
 
 class InteractiveGateway(gateway.Gateway):
-    def __init__(self,*args,**kwargs):
-        super().__init__(*args,**kwargs);self.halted=False;self.seen_tools=set()
+    def __init__(self,data,manifest,model,total,checkpoint,journal,context,secret_source,invoke=gateway.transport,routes=None):
+        continuation_home=Path(manifest.get('profile_home',Path(manifest['_receipt_path']).parent))
+        reasoning=load_continuation(continuation_home,total['session_id'])
+        super().__init__(data,manifest,model,total,checkpoint,journal,context,secret_source,invoke=invoke,routes=routes)
+        self.halted=False;self.seen_tools=set()
         import request_accounting
         self.total.update(usage_schema=request_accounting.INTERACTIVE_SCHEMA,request_token_ceiling=request_accounting.INTERACTIVE_CEILING,interactive_token_budget=self.manifest['reserved_tokens'])
+        self.continuation_home=continuation_home
+        self.response_reasoning=reasoning
+        original=self.checkpoint
+        def durable():
+            save_continuation(self.continuation_home,self.total['session_id'],self.response_reasoning)
+            original()
+        self.checkpoint=durable
     def cancelled(self):
         if self.halted:raise InterruptedError('Human terminal closed')
         super().cancelled()
@@ -171,8 +214,9 @@ def transcript_observations(home,sid,context,journal=None):
                     name=inputs.get('skill','') if isinstance(inputs,dict) else ''
                     if isinstance(name,str) and re.fullmatch(r'[a-zA-Z0-9:_-]{1,80}',name):invoked.add(name)
                 text=part.get('text','')
-                if isinstance(text,str):
-                    invoked.update(re.findall(r'<command-name>/([a-zA-Z0-9:_-]{1,80})</command-name>',text))
+                if event.get('type')=='user' and isinstance(text,str):
+                    commands=set(re.findall(r'<command-message>([a-zA-Z0-9:_-]{1,80})</command-message>',text))
+                    invoked.update(commands & set(re.findall(r'<command-name>/([a-zA-Z0-9:_-]{1,80})</command-name>',text)))
     context.data['native_event_ids']=sorted(observed)[:512]
     context.data['native_interactive']={'slash_commands_enabled':True,'tools':list(TOOLS),'invoked':sorted(invoked)}
     context.save()

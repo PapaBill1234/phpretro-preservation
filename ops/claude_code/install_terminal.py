@@ -22,6 +22,32 @@ change pipeline STOP, caps, receipts/charges, review approval or auto-enable Dee
 Scan/embeddings/optimization controls. Do not publish or message others.
 """
 
+def snapshot(path,backup,index):
+    if path.is_symlink():return {'path':str(path),'kind':'symlink','target':os.readlink(path)}
+    if not path.exists():return {'path':str(path),'kind':'absent'}
+    if not path.is_file() or path.stat().st_size>2_000_000:raise control.IntegrityError('Bounded launcher file required')
+    blob=backup/(str(index)+'.bin');blob.write_bytes(path.read_bytes());blob.chmod(0o600)
+    return {'path':str(path),'kind':'file','blob':str(blob),'mode':path.stat().st_mode & 0o777}
+
+def restore(records):
+    for rec in reversed(records):
+        path=Path(rec['path'])
+        if path.is_symlink() or path.is_file():path.unlink()
+        if rec['kind']=='symlink':path.symlink_to(rec['target'])
+        elif rec['kind']=='file':
+            path.write_bytes(Path(rec['blob']).read_bytes());path.chmod(rec['mode'])
+
+def replace_files(payloads,backup):
+    records=[snapshot(path,backup,i) for i,(path,_,_) in enumerate(payloads)]
+    control.atomic_json(backup/'previous-files.json',records)
+    try:
+        for path,text,mode in payloads:
+            if path.is_symlink():path.unlink()
+            control.atomic_text(path,text);path.chmod(mode)
+    except BaseException:
+        restore(records);control.atomic_json(backup/'rollback.json',{'restored':True,'at':time.time()});raise
+
+
 def install():
     os.umask(0o077)
     if not runtime_policy.ready(interactive.MODEL):raise control.IntegrityError('Normal reviewed active runtime required')
@@ -40,16 +66,17 @@ def install():
     if (interactive.PROJECT/'CLAUDE.md').is_symlink():raise control.IntegrityError('Human instructions symlink is not allowed')
     if (interactive.PROJECT/'CLAUDE.md').exists() and (interactive.PROJECT/'CLAUDE.md').read_text()!=GUIDANCE:
         raise control.IntegrityError('Existing human project instructions differ; retain them')
-    (interactive.PROJECT/'CLAUDE.md').write_text(GUIDANCE)
     backup=interactive.BASE/'terminal-installations'/str(time.time_ns());backup.mkdir(parents=True,mode=0o700)
-    control.atomic_json(backup/'previous-launcher.json',{'path':str(cli),'target':str(cli.resolve()) if cli.is_symlink() else None,'text':None if cli.is_symlink() else cli.read_text()})
-    if cli.is_symlink():cli.unlink()
-    control.atomic_text(cli,expected);cli.chmod(0o755)
     report=Path.home()/'.local/bin/phpretro-doctor'
-    control.atomic_text(report,'#!/bin/sh\nexport PHPRETRO_RUNTIME=claude-code\nexec /usr/bin/python3 '+str(Path(__file__).with_name('doctor_report.py'))+' "$@"\n');report.chmod(0o755)
     desktop=Path.home()/'Desktop/Claude-Code-Sol-Chat.desktop'
-    control.atomic_text(desktop,'[Desktop Entry]\nType=Application\nName=Claude Code Sol Chat\nComment=PHPRetro Sol 6.1 via A6API, native doctor and saved sessions\nExec='+str(cli)+'\nIcon=utilities-terminal\nTerminal=true\nCategories=Development;\n');desktop.chmod(0o755)
-    control.atomic_json(interactive.BASE/'terminal-installation.json',{'installed_at':time.time(),'source_head':subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD'],text=True).strip(),'implementation_sha256':runtime_policy.fingerprint(),'project':str(interactive.PROJECT),'backup':str(backup)})
+    desktop.parent.mkdir(mode=0o700,parents=True,exist_ok=True)
+    manifest={'installed_at':time.time(),'source_head':subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD'],text=True).strip(),'implementation_sha256':runtime_policy.fingerprint(),'project':str(interactive.PROJECT),'backup':str(backup)}
+    replace_files([
+      (interactive.PROJECT/'CLAUDE.md',GUIDANCE,0o600),
+      (cli,expected,0o755),
+      (report,'#!/bin/sh\nexport PHPRETRO_RUNTIME=claude-code\nexec /usr/bin/python3 '+str(Path(__file__).with_name('doctor_report.py'))+' "$@"\n',0o755),
+      (desktop,'[Desktop Entry]\nType=Application\nName=Claude Code Sol Chat\nComment=PHPRetro Sol 6.1 via A6API, native doctor and saved sessions\nExec='+str(cli)+'\nIcon=utilities-terminal\nTerminal=true\nCategories=Development;\n',0o755),
+      (interactive.BASE/'terminal-installation.json',json.dumps(manifest)+'\n',0o600)],backup)
     print('Ubuntu claude and Claude Code Sol Chat installed. Existing headless commands retain their pinned contract.')
 
 if __name__=='__main__':install()
