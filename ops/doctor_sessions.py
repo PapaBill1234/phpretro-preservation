@@ -94,7 +94,7 @@ def journal(identity,home=None):
         if not isinstance(row,dict) or row.get('kind') not in session_journal.KINDS:continue
         item={'kind':row['kind'],'at':number(row.get('at')),'text':session_journal.redact(str(row.get('text',''))[:4000])}
         for key in ('rc','request','provider'):
-            if type(row.get(key)) is int or key=='provider' and row.get(key) in ('a6api','portdan'):item[key]=row[key]
+            if type(row.get(key)) is int or key=='provider' and row.get(key) in ('a6api','portdan','anthropic'):item[key]=row[key]
         safe.append(item)
     return {'events':safe,'complete':data.get('complete') is True,'truncated':data.get('truncated') is True}
 
@@ -120,7 +120,7 @@ def findings(rows,state,billing,canvas):
         if row.get('unused_tools'):add('unused-tool','info','No Execute calls in an observed run','The completed observed session recorded zero Execute calls.',row,'Review the schema overhead for this role. Keep the tool available when later work needs it.')
     collected=number(billing.get('collected_at'))
     if collected is None or time.time()-collected>900:add('billing-stale','med','A6API billing collection is stale','Latest account-call evidence is missing or more than fifteen minutes old.','' or None,'Restart the read-only billing collector; do not change charges or budgets.')
-    if canvas and not canvas.get('available'):add('canvas-unavailable','med','OpenHands Web UI session evidence is unavailable','The local read-only Canvas metadata request failed. Retained SDK sessions remain available.')
+    if canvas and not canvas.get('available') and not canvas.get('retired'):add('canvas-unavailable','med','OpenHands Web UI session evidence is unavailable','The local read-only Canvas metadata request failed. Retained SDK sessions remain available.')
     reservations=state.get('reservations',{}) if isinstance(state,dict) else {}
     known={s['id'] for s in rows}
     if isinstance(reservations,dict):
@@ -146,14 +146,14 @@ def sessions(home=None,canvas=None):
         if p.name.count('.')!=1:continue
         d=read(p,{})
         if not isinstance(d,dict):continue
-        if d.get('runtime')!='openhands' or not isinstance(d.get('run_id'),str) or not 0<len(d['run_id'])<=80:continue
+        if d.get('runtime') not in ('openhands','claude-code') or not isinstance(d.get('run_id'),str) or not 0<len(d['run_id'])<=80:continue
         if any(d.get(k) is not None and not isinstance(d[k],str) for k in ('unit','role','model')):continue
         usage=d.get('usage') or {}; context=read(p.with_suffix('.context.json'),{})
         running=d['run_id'] in reservations
         if running:
             path=Path(d.get('usage_path') if isinstance(d.get('usage_path'),str) else '').resolve()
             live=read(path,{}) if path.is_relative_to((home/'phpretro-ops/logs').resolve()) and path.name.endswith('.usage.json') else {}
-            if isinstance(live,dict) and live.get('session_id')==d['run_id']:usage=live
+            if isinstance(live,dict) and (live.get('session_id')==d['run_id'] or d.get('runtime')=='claude-code' and live.get('runtime')=='claude-code'):usage=live
         if not isinstance(usage,dict):usage={}
         if not isinstance(context,dict):context={}
         try:observed=context_usage.summary(context)
@@ -161,13 +161,13 @@ def sessions(home=None,canvas=None):
         context_requests=[]
         if observed:
             context_requests=[{k:r[k] for k in ('estimated_context_tokens','estimated_tool_schema_tokens','estimated_system_tokens')} for r in context['requests']]
-        rows.append({'id':d['run_id'],'runtime':'openhands','unit':d.get('unit') or 'Unknown','unit_state':unit_states.get(d.get('unit'),'unknown'),'role':d.get('role') or 'Unknown','model':d.get('model') or 'Unknown',
+        rows.append({'id':d['run_id'],'runtime':d['runtime'],'native_session_id':usage.get('session_id') if d['runtime']=='claude-code' else None,'unit':d.get('unit') or 'Operations' if d.get('profile')=='claude-supervisor' else d.get('unit') or 'Unknown','unit_state':unit_states.get(d.get('unit'),'unknown'),'role':'supervisor' if d.get('profile')=='claude-supervisor' else d.get('role') or 'Unknown','model':d.get('model') or 'Unknown',
           'provider':usage.get('provider'),'status':'running' if running else 'failed' if d.get('rc') not in (None,0) else 'succeeded' if d.get('status')=='complete' and d.get('rc')==0 else 'incomplete',
           'receipt_status':d.get('status'),'rc':d.get('rc'),
           'started':timestamp(d.get('ts_start')) or timestamp(d.get('prepared_at')),
           'ended':number(d.get('completed_at')),'tokens':number(usage.get('total_tokens')),
           'input':number(usage.get('input_tokens')),'output':number(usage.get('output_tokens')),
-          'cached':number(usage.get('cache_read_tokens')),'requests':number(usage.get('api_calls')),
+          'cached':number(usage.get('cache_read_tokens')),'cache_write':number(usage.get('cache_write_tokens')),'requests':number(usage.get('api_calls')),
           'cache_write':number(usage.get('cache_write_tokens')),'reasoning':number(usage.get('reasoning_tokens')),
           'conservative_tokens':number(usage.get('conservative_tokens')),'unknown_requests':number(usage.get('unknown_api_calls')),
           'complete':usage.get('usage_complete') is True,
@@ -181,7 +181,7 @@ def sessions(home=None,canvas=None):
           'resources':[{'name':'System prompt','kind':'instructions','required':True,'tokens':context_requests[0]['estimated_system_tokens'] if context_requests else None},
                        {'name':'Unit brief / full review diff and message envelope','kind':'instructions','required':True,'tokens':max(0,context_requests[0]['estimated_context_tokens']-context_requests[0]['estimated_system_tokens']-context_requests[0]['estimated_tool_schema_tokens']) if context_requests else None},
                        {'name':'Execute schema','kind':'tool','required':d.get('role')=='builder','tokens':context_requests[0]['estimated_tool_schema_tokens'] if context_requests else None}],
-          'skills':{'activated':[],'invoked':[],'coverage':'The SDK runner disables automatic skill loading; unit instructions are supplied explicitly.'}})
+          'skills':{'activated':[],'invoked':[],'coverage':'Claude pipeline disables automatic host skills/memory/hooks; repository instructions are read through isolated tools. Native full prompt coverage is unavailable.' if d['runtime']=='claude-code' else 'The SDK runner disables automatic skill loading; unit instructions are supplied explicitly.'}})
         if len(rows)==500:break
     billing=read(state/'a6api-billing.json',{})
     if not isinstance(billing,dict):billing={}
@@ -189,12 +189,17 @@ def sessions(home=None,canvas=None):
     if not isinstance(calls,list):calls=[]
     safe_calls=[{k:(str(r.get(k,''))[:100] if k in ('request_id','model') else number(r.get(k))) for k in ('request_id','created_at','model','input_tokens_including_cache','cache_read_tokens','output_tokens','billed_usd')} for r in calls[:2000] if isinstance(r,dict)]
     rows+=native_sessions(home)
+    from claude_code import native_sessions as claude_native
+    rows+=claude_native.collect(home,{r.get('native_session_id') for r in rows if r.get('native_session_id')})
     if canvas:rows+=canvas.get('sessions',[])
     rows.sort(key=lambda r:r.get('started') or 0,reverse=True)
     supervisor=read(state/'codex-supervisor.json',{});supervisor=supervisor if isinstance(supervisor,dict) else {}
-    runtimes=[{'id':'openhands','label':'OpenHands SDK builders and reviewers','state':'paused' if (home/'phpretro-ops/STOP').exists() else 'STOP absent; controller admission applies',
+    activation=read(state/'claude-code-activation.json',{});activation=activation if isinstance(activation,dict) else {}
+    runtimes=[{'id':'claude-code','label':'Claude Code builders and reviewers','state':'paused' if (home/'phpretro-ops/STOP').exists() else 'enabled; admission applies' if activation.get('enabled') is True else 'not activated',
+               'sessions':sum(r['runtime']=='claude-code' for r in rows),'source':'Native CLI session identity, controller receipts, strict final usage and bounded redacted timelines'},
+              {'id':'openhands','label':'OpenHands SDK builders and reviewers (historical)','state':'retired' if activation.get('installed') else 'paused' if (home/'phpretro-ops/STOP').exists() else 'STOP absent; controller admission applies',
                'sessions':sum(r['runtime']=='openhands' for r in rows),'source':'Controller receipts, usage checkpoints, context observers and private event journals'},
-              {'id':'openhands-ui','label':'OpenHands Web UI','state':'available' if canvas and canvas.get('available') else 'unavailable' if canvas else 'not collected',
+              {'id':'openhands-ui','label':'OpenHands Web UI','state':'retired' if canvas and canvas.get('retired') else 'available' if canvas and canvas.get('available') else 'unavailable' if canvas else 'not collected',
                'sessions':sum(r['runtime']=='openhands-ui' for r in rows),'source':'Dedicated Canvas API metadata; full conversation viewer linked separately'},
               {'id':'codex','label':'Sol 6.1 native supervisor','state':supervisor.get('mode','disabled'),
                'sessions':sum(r['runtime']=='codex' for r in rows),'source':'Real native CLI jobs and retained subscription usage; actual Codex history is mounted read-only'},

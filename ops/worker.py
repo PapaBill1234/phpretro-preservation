@@ -52,7 +52,7 @@ def launch_child(path):
     if not alive(manifest.get("worker_pid"), manifest.get("worker_identity")):
         return 130
     os.chdir(manifest["cwd"])
-    if manifest.get("runtime") != "openhands":
+    if manifest.get("runtime") not in ("openhands", "claude-code"):
         os.environ["HERMES_HOME"] = manifest["profile_home"]
     command = manifest["command"]
     if manifest.get("unit_name"):
@@ -69,6 +69,11 @@ def launch_child(path):
             "--property=TimeoutStopSec=" + str(manifest["grace"]),
             "--setenv=HOME=" + str(Path.home()),
             "--setenv=PATH=" + os.environ.get("PATH", "/usr/bin:/bin"),
+            # The user manager does not inherit the controller environment.
+            # Forward only the selected non-secret runtime metadata, never keys.
+            *(["--setenv=PHPRETRO_RUNTIME=" + manifest["runtime"],
+               "--setenv=PHPRETRO_OPS=" + str(path.resolve().parent.parent.parent)]
+              if manifest.get("runtime") in ("openhands", "claude-code") else []),
             "--", sys.executable,
             str(Path(__file__).resolve()), "--exec", str(path.resolve())]
         os.environ.update(bus_env())
@@ -106,7 +111,7 @@ def exec_service(path):
             or not alive(manifest.get("worker_pid"), manifest.get("worker_identity"))):
         return 130
     os.chdir(manifest["cwd"])
-    if manifest.get("runtime") != "openhands":
+    if manifest.get("runtime") not in ("openhands", "claude-code"):
         os.environ["HERMES_HOME"] = manifest["profile_home"]
     command = manifest["command"]
     os.execvpe(command[0], command, os.environ)
@@ -186,15 +191,15 @@ def usage_snapshot(path, db, marker, runtime="hermes"):
                 v = raw.get(k)
                 if isinstance(v, (int, float)) and not isinstance(v, bool) and __import__("math").isfinite(v) and v >= 0:
                     data[k] = v
-            for k in ("cost_status", "model", "provider", "session_id", "runtime"):
+            for k in ("cost_status", "model", "reported_model", "provider", "session_id", "runtime"):
                 v = raw.get(k)
                 if isinstance(v, str) and __import__("re").fullmatch(r"[A-Za-z0-9_.:/-]{1,120}", v):
                     data[k] = v
             data.update(accounting_source="openhands-usage" if runtime == "openhands" else "usage-file",
-                        usage_complete=raw.get("usage_complete") is True if runtime == "openhands" else True,
+                        usage_complete=raw.get("usage_complete") is True if runtime in ("openhands", "claude-code") else True,
                         input_includes_cache=False)
-            if runtime == "openhands":
-                data["runtime"] = "openhands"
+            if runtime in ("openhands", "claude-code"):
+                data["runtime"] = runtime
                 for key in request_accounting.FIELDS:
                     if key in raw:
                         data[key] = raw[key]
@@ -205,9 +210,9 @@ def usage_snapshot(path, db, marker, runtime="hermes"):
             return data
     except (OSError, ValueError, KeyError, control.IntegrityError):
         pass
-    if runtime == "openhands" or not db.is_file() or not marker:
+    if runtime in ("openhands", "claude-code") or not db.is_file() or not marker:
         return {"accounting_source": "unknown", "usage_complete": False,
-                **({"runtime": "openhands"} if runtime == "openhands" else {})}
+                **({"runtime": runtime} if runtime in ("openhands", "claude-code") else {})}
     con = None
     try:
         # immutable=1 hides WAL updates and must not be used on the live DB.
@@ -364,7 +369,7 @@ def supervise(path):
         stop(proc, manifest["grace"])
         if manifest.get("unit_name"):
             stop_unit(checked_unit(manifest["unit_name"], manifest["run_id"]))
-        if manifest.get("runtime") == "openhands":
+        if manifest.get("runtime") in ("openhands", "claude-code"):
             import sandbox
             sandbox.cleanup(manifest["run_id"])
         if rc is None and proc.returncode != 0 and time.monotonic() >= deadline:

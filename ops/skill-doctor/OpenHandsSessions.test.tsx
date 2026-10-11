@@ -14,7 +14,7 @@ it('renders runtime sessions, model filters and separate billed calls with parti
  expect(screen.getByText('F61 · builder')).toBeTruthy();
  fireEvent.click(screen.getByRole('button',{name:'Reload sessions'}));
  await waitFor(()=>expect(fetch).toHaveBeenCalledTimes(2));
- expect(fetch.mock.calls[0][0]).toBe('/api/openhands-sessions');
+ expect(fetch.mock.calls[0][0]).toBe('/api/runtime-sessions');
 });
 it('surfaces authentication/API failure instead of saying there are no sessions',async()=>{
  vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:401}));render(<OpenHandsSessions/>);

@@ -62,11 +62,15 @@ def skill_doctor_asset(data,prefix=b'/skill-doctor'):
 def doctor_bootstrap(payload,agent_view,home=None):
  home=Path(home or Path.home())
  if agent_view:
-  project=home/'phpretro-skill-doctor/agents';payload['projectDir']=str(project)
+  native=os.environ.get('PHPRETRO_RUNTIME')=='claude-code'
+  project=home/('phpretro-skill-doctor/claude-agents' if native else 'phpretro-skill-doctor/agents');payload['projectDir']=str(project)
   # The upstream server was launched for the preservation checkout. Its project
   # detections cannot be reused for the separate agent audit workshop.
   agents=[{**a,'projectDetected':False,'recommended':False} for a in payload.get('detectedAgents',[]) if a.get('globalDetected') and a.get('platform')!='openhands']
   if (project/'.openhands/skills').is_dir():agents.append({'platform':'openhands','displayName':'OpenHands','projectDetected':True,'globalDetected':True,'recommended':True})
+  if native and (project/'.claude/skills').is_dir():
+   agents=[a for a in agents if a.get('platform')!='claude']
+   agents.append({'platform':'claude','displayName':'Claude Code','projectDetected':True,'globalDetected':False,'recommended':True})
   if (home/'phpretro-codex/cli/node_modules/.bin/codex').exists() and not any(a['platform']=='codex' for a in agents):
    agents.append({'platform':'codex','displayName':'Codex','projectDetected':False,'globalDetected':True,'recommended':False})
   payload['detectedAgents']=agents
@@ -130,9 +134,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
   if path=='/api/access/status':
    self.send(200,{'public_url':public_url(),'provider':'A6API','endpoint':'https://api.a6api.com/v1','credential_configured':(ROOT/'secrets/a6api.env').exists(),'workspace':str(ROOT),'desktop':'enabled'}); return
   if path=='/login': self.send(303,b'',headers={'Location':'/'}); return
-  if path in ('/skill-doctor/api/openhands-sessions','/agent-doctor/api/openhands-sessions','/skill-doctor/api/runtime-journal','/agent-doctor/api/runtime-journal'):
+  if path in ('/skill-doctor/api/openhands-sessions','/agent-doctor/api/openhands-sessions','/skill-doctor/api/runtime-sessions','/agent-doctor/api/runtime-sessions','/skill-doctor/api/runtime-journal','/agent-doctor/api/runtime-journal'):
    import sys
-   module_dir=str(Path.home()/'phpretro-preservation/ops')
+   module_dir=str(Path(os.environ.get('PHPRETRO_REPO',Path.home()/'phpretro-preservation'))/'ops')
    if module_dir not in sys.path:sys.path.insert(0,module_dir)
    from doctor_sessions import sessions,journal
    if path.endswith('/runtime-journal'):
@@ -172,7 +176,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
   if not self.authenticated(): self.send(401,{'error':'Sign in required'}); return
   if path in ('/skill-doctor/api/runtime-optimization','/agent-doctor/api/runtime-optimization'):
    import sys
-   module_dir=str(Path.home()/'phpretro-preservation/ops')
+   module_dir=str(Path(os.environ.get('PHPRETRO_REPO',Path.home()/'phpretro-preservation'))/'ops')
    if module_dir not in sys.path:sys.path.insert(0,module_dir)
    try:
     from runtime_optimization import dispatch
@@ -205,6 +209,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
  do_DELETE=do_PUT
  def proxy(self):
   port,upstream_path,openhands=backend_route(self.path)
+  if openhands and os.environ.get('PHPRETRO_RUNTIME')=='claude-code':
+   self.send(410,{'error':'OpenHands retired; use the Claude Code dashboard and agent sessions'});return
   if self.headers.get('Upgrade','').lower()=='websocket': self.websocket(port,upstream_path); return
   try:
    n=int(self.headers.get('Content-Length','0'))

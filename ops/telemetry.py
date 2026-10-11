@@ -481,10 +481,10 @@ def build_run(*, ts_start: str, ts_end: str, role: str, model: str,
     usage = usage or {}
     norm = parse_usage(usage)
     prices = load_prices()
-    if usage.get("runtime") == "openhands":
+    if usage.get("runtime") in ("openhands", "claude-code"):
         import runtime_policy
         prices = runtime_policy.load()["models"]
-    est = norm.get("provider_cost_estimate") if norm.get("usage_complete") is not False else None
+    est = norm.get("provider_cost_estimate") if norm.get("usage_complete") is not False and usage.get("cost_status") != "unknown-price" else None
     cost_source = "usage-file" if est is not None else "none"
     if est is None and usage.get("cost_status") != "unknown-price":
         estimate_usage = dict(usage)
@@ -492,7 +492,7 @@ def build_run(*, ts_start: str, ts_end: str, role: str, model: str,
             estimate_usage["model"] = model
         est = estimate_cost(estimate_usage, prices)
         if est is not None:
-            cost_source = "runtime-policy" if usage.get("runtime") == "openhands" else "prices.yaml"
+            cost_source = "runtime-policy" if usage.get("runtime") in ("openhands", "claude-code") else "prices.yaml"
     rec = {
         "ts_start": ts_start,
         "ts_end": ts_end,
@@ -513,7 +513,7 @@ def build_run(*, ts_start: str, ts_end: str, role: str, model: str,
         "api_calls": norm["api_calls"],
         "cost_estimate": est,
         "cost_source": cost_source,
-        "cost_unit": "USD (provider estimate)" if cost_source == "usage-file" else "A6API price-table units (uncalibrated)" if cost_source in ("prices.yaml", "runtime-policy") else "unknown",
+        "cost_unit": "USD provider quote; not a matched invoice" if usage.get('runtime')=='claude-code' else "USD (provider estimate)" if cost_source == "usage-file" else "A6API price-table units (uncalibrated)" if cost_source in ("prices.yaml", "runtime-policy") else "unknown",
         "rc": _int_or_none(rc),
         "outcome": outcome if outcome in OUTCOMES else "other",
         "flags": flags or {},

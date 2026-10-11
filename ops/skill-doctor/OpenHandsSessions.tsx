@@ -14,7 +14,7 @@ export function OpenHandsSessions({report:external,error:externalError='',reload
   return()=>controller.abort();
  },[session?.id,session?.journal_available,report?.collected_at]);
  const options=(key:'runtime'|'role'|'model'|'status')=>[...new Set(report?.sessions.map(s=>s[key]||'openhands'))].sort();
- return <section className="runtime-sessions"><h2>Agent sessions and provider evidence</h2><p>OpenHands SDK builders and reviewers, interactive Canvas conversations and real native supervisor jobs keep their own runtime identity.</p>
+ return <section className="runtime-sessions"><h2>Agent sessions and provider evidence</h2><p>Claude Code agents, historical OpenHands runs and native supervisor jobs retain their actual runtime and session identity.</p>
  <button className="button" onClick={reload}>Reload sessions</button>{error&&<p role="alert">{error} Previously loaded evidence may be stale.</p>}
  <div className="runtime-filters"><label className="field">Runtime<select aria-label="Runtime" value={runtime} onChange={e=>setRuntime(e.target.value)}><option value="all">All runtimes</option>{options('runtime').map(r=><option key={r}>{r}</option>)}</select></label>
  <label className="field">Role<select aria-label="Role" value={role} onChange={e=>setRole(e.target.value)}><option value="all">All roles</option>{options('role').map(r=><option key={r}>{r}</option>)}</select></label>

@@ -1,0 +1,19 @@
+[Unit]
+Description=PHPRetro native Claude Code operational supervision
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/phpretro-preservation
+Environment=HOME=/home/ubuntu
+Environment=PHPRETRO_RUNTIME=claude-code
+Environment=PHPRETRO_REPO=/home/ubuntu/phpretro-preservation
+Environment=PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 /home/ubuntu/phpretro-preservation/ops/claude_code/supervisor.py
+TimeoutStartSec=300
+KillMode=control-group
+MemoryMax=600M
+TasksMax=96
+UMask=0077
+StandardOutput=null
+StandardError=null
