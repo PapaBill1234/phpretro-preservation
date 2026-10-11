@@ -8,7 +8,7 @@ import json,subprocess,sys,tempfile,time,uuid
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import integrity,request_accounting,context_usage,worker,sandbox,runtime_policy
-from claude_code import command,gateway,protocol,runner,observations
+from claude_code import command,gateway,protocol,runner,observations,usage_policy
 
 class Evidence:
     def add(self,*args,**kwargs):pass
@@ -43,8 +43,12 @@ def case(data,model,builder=False,failure=None):
                 assert len(results)==1 and results[0]['tool_call_id']==assistant[0]['tool_calls'][0]['id']
             message={'content':'fixture complete'}
             if tool:message={'content':None,'reasoning_content':'retained synthetic reasoning','tool_calls':[{'id':'call_fixture','function':{'name':'mcp__phpretro__execute','arguments':'{"command":"echo fixture"}'}}]}
+            usage={'prompt_tokens':35,'completion_tokens':4,'total_tokens':39,'prompt_cache_hit_tokens':7,'prompt_cache_miss_tokens':28,'completion_tokens_details':{'reasoning_tokens':0}}
+            if failure=='usage-conflict':
+                usage={'prompt_tokens':486,'completion_tokens':88,'total_tokens':633,
+                  'prompt_cache_hit_tokens':0,'prompt_cache_miss_tokens':545,'completion_tokens_details':{'reasoning_tokens':30}}
             return {'model':reported,'choices':[{'finish_reason':'tool_calls' if tool else 'stop','message':message}],
-              'usage':{'prompt_tokens':35,'completion_tokens':4,'total_tokens':39,'prompt_cache_hit_tokens':7,'prompt_cache_miss_tokens':28,'completion_tokens_details':{'reasoning_tokens':0}}}
+              'usage':usage}
         client=gateway.Gateway(data,manifest,model,total,lambda:writes.append(dict(total)),Evidence(),context,
           {'a6api_api_key':'synthetic-primary','portdan':{'openai':'synthetic-fallback','deepseek':'synthetic-fallback'}},invoke=fake,routes=['a6api','portdan'])
         box=None
@@ -90,7 +94,12 @@ runpy.run_path(sys.argv[0],run_name='__main__')
                     assert len(calls)==1 and not total['usage_complete'];break
                 native=stream.usage(64096)
                 assert client.last and native['usage_complete'],(result.returncode,stream.error,client.error)
-                assert native['total_tokens']==39 and native['input_tokens']==28 and native['cache_read_tokens']==7
+                if failure=='usage-conflict':
+                    assert native['total_tokens']==633 and native['input_tokens']==545 and native['cache_read_tokens']==0
+                    assert usage_policy.continuation_allowed(data,total)
+                    assert total['usage_conflict_calls']==step+1 and not total['usage_complete']
+                    assert total['conservative_tokens']==64096*(step+1) and total['total_tokens']==0
+                else:assert native['total_tokens']==39 and native['input_tokens']==28 and native['cache_read_tokens']==7
                 assert stream.outcome()==('continue' if builder and step==0 else 'success')
             assert request_accounting.bounded_tokens(total,total['total_tokens'])==total['conservative_tokens']
             assert any(w['unknown_api_calls']>0 for w in writes),'No durable pretransport hold'
@@ -120,8 +129,13 @@ runpy.run_path(sys.argv[0],run_name='__main__')
                 observations.record(receipt,'synthetic-adapter-source',total,context.data)
                 record['completed_at']=time.time();integrity.atomic_json(receipt,record)
                 proof=observations.recent(root,'synthetic-adapter-source',data['models'])
-                assert proof['a6api'][model]['run_id']==rid
-                assert 'portdan' not in proof
+                if failure=='usage-conflict':
+                    assert proof=={},'Estimated wire counters became measured route proof'
+                    assert record['usage']['usage_conflict_calls']==2
+                    assert record['usage']['conservative_tokens']==128192
+                else:
+                    assert proof['a6api'][model]['run_id']==rid
+                    assert 'portdan' not in proof
             if failure=='fallback':
                 assert [c['provider'] for c in calls]==['a6api','portdan']
                 assert total['unknown_api_calls']==1 and total['conservative_tokens']==64096+39
@@ -140,5 +154,8 @@ def main():
     for failure in ('fallback','identity'):
         try:checks.append(case(data,'gpt-6.1-sol',failure=failure))
         except Exception as exc:checks.append({'case':failure,'passed':False,'error_type':type(exc).__name__,'detail':str(exc)[:120]})
+    for builder in (False,True):
+        try:checks.append(case(data,usage_policy.MODEL,builder,failure='usage-conflict'))
+        except Exception as exc:checks.append({'case':'usage-conflict','builder':builder,'passed':False,'error_type':type(exc).__name__,'detail':str(exc)[:120]})
     passed=all(c['passed'] for c in checks);print(json.dumps({'passed':passed,'checks':checks}));return 0 if passed else 1
 if __name__=='__main__':raise SystemExit(main())

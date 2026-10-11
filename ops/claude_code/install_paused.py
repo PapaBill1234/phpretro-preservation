@@ -28,7 +28,8 @@ def require_source(head,deferred):
     if head!=checked('git','-C',str(ROOT),'rev-parse',ref):
         raise control.IntegrityError('Installation source differs from published branch')
     if deferred:
-        if not policy.deployment_authorized(OPS,head,runtime_policy.fingerprint()):
+        if not (policy.deployment_authorized(OPS,head,runtime_policy.fingerprint()) or
+                policy.accounting_override_deployment_authorized(OPS,head,runtime_policy.fingerprint())):
             raise control.IntegrityError('Scoped user-directed paused deployment authorization required')
     elif not policy.source_reviewed(OPS,head):
         raise control.IntegrityError('Exact-head independent source review required')

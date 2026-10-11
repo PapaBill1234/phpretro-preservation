@@ -3,7 +3,7 @@ import copy,json,tempfile,time,unittest,uuid
 from pathlib import Path
 from unittest.mock import patch
 import harness,worker,runtime_policy
-from claude_code import observations,runner,validate
+from claude_code import observations,runner,validate,usage_policy,policy
 
 
 class ObservationTests(unittest.TestCase):
@@ -76,6 +76,7 @@ class ObservationTests(unittest.TestCase):
         observations.record(self.path,'source',{**self.usage,'usage_complete':False},self.context)
         self.assertFalse(route.exists())
     def test_runtime_routes_include_only_real_current_source_receipts(self):
+        self.settings[usage_policy.MODEL]['usage_conflict_policy']='strict'
         data={'runtime':'claude-code','models':self.settings}
         with patch.object(runtime_policy,'OPS',self.ops),patch.object(runtime_policy,'fingerprint',return_value='source'),\
              patch.object(runtime_policy,'load',return_value=data),patch.object(runtime_policy.canary,'operator_route',return_value=False),\
@@ -84,6 +85,25 @@ class ObservationTests(unittest.TestCase):
             self.assertEqual(runtime_policy.verified_providers('deepseek-v4.1-flash',{'provider_models':{}}),[])
             with patch.object(runtime_policy,'fingerprint',return_value='different-source'):
                 self.assertEqual(runtime_policy.verified_providers(self.model,{'provider_models':{}}),[])
+
+    def test_deepseek_user_admission_is_separate_from_measured_proof_and_failed_fallback(self):
+        data={'runtime':'claude-code','models':self.settings,'cli_version':'native-version'}
+        with patch.object(runtime_policy,'OPS',self.ops),patch.object(runtime_policy,'fingerprint',return_value='source'),\
+             patch.object(runtime_policy,'load',return_value=data),patch.object(runtime_policy.canary,'operator_route',return_value=False):
+            self.assertEqual(runtime_policy.verified_providers(usage_policy.MODEL,{'provider_models':{}}),['a6api'])
+            models,routes=validate.provider_evidence(self.ops,'source',data,{})
+        row=models[usage_policy.MODEL]
+        self.assertFalse(row['tool_calls']);self.assertFalse(row['usage']);self.assertTrue(row['operator_admitted'])
+        self.assertTrue(usage_policy.model_admitted(data,usage_policy.MODEL,row))
+        self.assertFalse(usage_policy.model_admitted(data,'gpt-6.1-sol',{}))
+        self.assertNotIn(usage_policy.MODEL,routes.get('a6api',{}))
+        self.assertNotIn('portdan',routes)
+        self.assertFalse(usage_policy.operator_route(data,'portdan',usage_policy.MODEL))
+        for model,value in (('gpt-6-luna',usage_policy.POLICY),(usage_policy.MODEL,'anything')):
+            full=json.loads((Path(__file__).parents[1]/'claude_code/policy.json').read_text())
+            full['models'][model]['usage_conflict_policy']=value
+            path=self.ops/'policy.json';self.write(path,full)
+            with self.assertRaises(Exception):policy.load(path)
     def test_validator_renews_observed_model_and_keeps_missing_models_pending(self):
         data={'models':self.settings,'cli_version':'native-version'}
         expired={'implementation_sha256':'source','completed_at':self.now-86401,

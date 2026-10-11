@@ -46,6 +46,7 @@
     },
     "deepseek-v4.1-flash": {
       "automatic": true,
+      "usage_conflict_policy": "user-authorized-conservative",
       "api_mode": "chat",
       "input_includes_cache": true,
       "input": 0.0516,

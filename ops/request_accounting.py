@@ -8,7 +8,7 @@ MAX_INPUT = 60000
 MAX_OUTPUT = 4096
 CALL_CEILING = MAX_INPUT + MAX_OUTPUT
 CEILINGS = {"phpretro.bounded-usage.v1": 69632, "phpretro.bounded-usage.v2": CALL_CEILING, SCHEMA: CALL_CEILING}
-FIELDS = ("usage_schema", "request_token_ceiling", "completed_api_calls", "unknown_api_calls", "usage_known_calls", "unknown_request_ceilings")
+FIELDS = ("usage_schema", "request_token_ceiling", "completed_api_calls", "unknown_api_calls", "usage_known_calls", "unknown_request_ceilings", "usage_conflict_calls", "usage_conflict_policy")
 
 
 def next_ceiling(remaining):
@@ -29,6 +29,11 @@ def bounded_tokens(data, observed):
             started=control.nonnegative(data.get('api_calls'),'gateway calls')
             known=control.nonnegative(data.get('completed_api_calls'),'gateway known calls')
             unknown=control.nonnegative(data.get('unknown_api_calls'),'gateway unknown calls')
+            if 'usage_conflict_calls' in data or 'usage_conflict_policy' in data:
+                conflicts=control.nonnegative(data.get('usage_conflict_calls'),'gateway conflict calls')
+                if (not 0<conflicts<=unknown or data.get('model')!='deepseek-v4.1-flash'
+                    or data.get('usage_conflict_policy')!='user-authorized-conservative'):
+                    raise control.IntegrityError('Invalid gateway conflict admission')
             pending=data.get('unknown_request_ceilings')
             if not isinstance(pending,list) or len(pending)!=unknown:raise control.IntegrityError('Missing physical request holds')
             if any(type(v) is not int or not MAX_OUTPUT<v<=CALL_CEILING for v in pending):raise control.IntegrityError('Invalid physical request hold')

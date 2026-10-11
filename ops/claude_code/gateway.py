@@ -8,6 +8,7 @@ import http.server,json,secrets,stat,threading,time,urllib.error,urllib.request,
 from pathlib import Path
 import integrity as control,request_accounting as bounds,runtime_policy
 import provider_routing as routing
+from claude_code import usage_policy
 
 SCHEMA='phpretro.claude-gateway-usage.v2'
 BUDGET_GUARDS={'Remaining original token hold cannot cover request',
@@ -138,10 +139,49 @@ def usage(raw,mode):
     return {'input_tokens':prompt-read-write,'output_tokens':output,'cache_read_tokens':read,
       'cache_write_tokens':write,'total_tokens':total,'reasoning_tokens':reported}
 
-def output(raw,mode,model,allowed,chat_reasoning,response_reasoning):
+COUNTER_CONFLICTS={'Cache hit/miss counters disagree','Cache representations disagree',
+                  'Cache counters exceed inclusive input','Provider total disagrees'}
+
+def compatible_usage(raw,mode,allow_conflict=False):
+    try:return usage(raw,mode)
+    except control.IntegrityError as exc:
+        if not allow_conflict or mode!='chat' or str(exc) not in COUNTER_CONFLICTS:raise
+        conflict=str(exc)
+    # Validate every supplied counter even when the first disagreement masked
+    # a later malformed field. These are wire estimates, never actual charges.
+    prompt=control.nonnegative(raw.get('prompt_tokens'),'provider input')
+    output_tokens=control.nonnegative(raw.get('completion_tokens'),'provider output')
+    if not prompt or not output_tokens:raise control.IntegrityError('Completed provider response has empty usage')
+    candidates=[prompt];reads=[]
+    details=raw.get('prompt_tokens_details')
+    if details is not None and not isinstance(details,dict):raise control.IntegrityError('Invalid cache details')
+    if isinstance(details,dict) and 'cached_tokens' in details:
+        reads.append(control.nonnegative(details['cached_tokens'],'provider cached input'))
+    if 'prompt_cache_hit_tokens' in raw or 'prompt_cache_miss_tokens' in raw:
+        hit=control.nonnegative(raw.get('prompt_cache_hit_tokens'),'provider cache hit')
+        miss=control.nonnegative(raw.get('prompt_cache_miss_tokens'),'provider cache miss')
+        reads.append(hit);candidates.append(hit+miss)
+    if not reads:raise control.IntegrityError('Cache coverage missing')
+    write=control.nonnegative(raw.get('cache_creation_input_tokens',0),'provider cache write')
+    candidates.extend(read+write for read in reads)
+    if 'total_tokens' in raw:
+        candidates.append(control.nonnegative(raw['total_tokens'],'provider total')-output_tokens)
+    reasoning=raw.get('completion_tokens_details',{})
+    if not isinstance(reasoning,dict):raise control.IntegrityError('Invalid reasoning details')
+    reported=reasoning.get('reasoning_tokens')
+    if reported is not None and control.nonnegative(reported,'provider reasoning')>output_tokens:
+        raise control.IntegrityError('Reasoning exceeds output')
+    estimated_input=max(candidates)
+    # Cache attribution is uncertain, so expose the upper input estimate as
+    # uncached only to the CLI. The full pretransport hold stays in the receipt.
+    return {'input_tokens':estimated_input,'output_tokens':output_tokens,'cache_read_tokens':0,
+      'cache_write_tokens':0,'total_tokens':estimated_input+output_tokens,'reasoning_tokens':reported,
+      'usage_conflict':conflict}
+
+def output(raw,mode,model,allowed,chat_reasoning,response_reasoning,allow_conflict=False):
     reported=raw.get('model')
     if not runtime_policy.model_label_matches(model,reported):raise control.IntegrityError('Provider model identity mismatch')
-    value=usage(raw.get('usage'),mode);content=[];stop='end_turn'
+    value=compatible_usage(raw.get('usage'),mode,allow_conflict and model==usage_policy.MODEL);content=[];stop='end_turn'
     if mode=='responses':
         if raw.get('status')!='completed':raise control.IntegrityError('Incomplete provider response')
         items=raw.get('output')
@@ -329,11 +369,23 @@ class Gateway:
                     raise
                 observed=self.context.data.setdefault('provider_response_observations',[])
                 if len(observed)<16:observed.append(response_observation(raw,self.model));self.context.save()
-                message,row,reported=output(raw,mode,self.model,allowed,self.reasoning,self.response_reasoning)
+                message,row,reported=output(raw,mode,self.model,allowed,self.reasoning,self.response_reasoning,
+                  allow_conflict=usage_policy.enabled(self.data,self.model))
                 # Preserve actual observed usage even when it exceeds the estimate.
                 if row['total_tokens']>ceiling:
                     self.total['conservative_tokens']+=row['total_tokens']-ceiling;self.checkpoint()
                     raise control.IntegrityError('Provider exceeded bounded request allowance')
+                if row.get('usage_conflict'):
+                    if row['output_tokens']>bounds.MAX_OUTPUT or row['input_tokens']>ceiling-bounds.MAX_OUTPUT:
+                        raise control.IntegrityError('Provider reported usage beyond actual request bounds')
+                    self.total['usage_conflict_policy']=usage_policy.POLICY
+                    self.total['usage_conflict_calls']=self.total.get('usage_conflict_calls',0)+1
+                    self.total['reported_model']=reported
+                    self.total['cost_status']='unknown-price' if self.unknown_price else 'conservative-bound'
+                    self.journal.add('provider_request','DeepSeek numeric conflict admitted; original hold retained',
+                      request=self.total['api_calls'],guard=row['usage_conflict'])
+                    self.last={'usage':row,'provider':provider,'reported_model':reported};self.checkpoint()
+                    return message
                 for k in ('input_tokens','output_tokens','cache_read_tokens','cache_write_tokens','total_tokens'):self.total[k]+=row[k]
                 self.total['unknown_api_calls']-=1;self.total['unknown_request_ceilings'].pop()
                 self.total['completed_api_calls']+=1;self.total['usage_known_calls']+=1
@@ -343,7 +395,7 @@ class Gateway:
                 if priced:self.quote_spent+=actual_quote-quote
                 if not self.unknown_price:self.total['estimated_cost_usd']=self.quote_spent
                 self.total['usage_complete']=self.total['unknown_api_calls']==0
-                self.total['cost_status']='unknown-price' if self.unknown_price else 'quoted-estimate'
+                self.total['cost_status']='unknown-price' if self.unknown_price else 'conservative-bound' if self.total.get('usage_conflict_calls') else 'quoted-estimate'
                 if row['output_tokens']>bounds.MAX_OUTPUT or row['input_tokens']+row['cache_read_tokens']+row['cache_write_tokens']>ceiling-bounds.MAX_OUTPUT:
                     self.checkpoint();raise control.IntegrityError('Provider reported usage beyond actual request bounds')
                 self.total['reported_model']=reported

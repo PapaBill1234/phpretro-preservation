@@ -120,6 +120,7 @@ def route_passed(row):
 
 
 def verified_providers(model, checked=None):
+    data=load()
     if checked is None:
         try:
             checked = json.loads((OPS / "state" / ("claude-code-validation.json" if load().get("runtime")=="claude-code" else "openhands-validation.json")).read_text())
@@ -134,8 +135,12 @@ def verified_providers(model, checked=None):
     if load().get('runtime')=='claude-code':
         from claude_code import observations
         evidence=observations.merge(OPS,fingerprint(),load()['models'],evidence)
+    def operator_admitted(provider):
+        if data.get('runtime')!='claude-code':return False
+        from claude_code import usage_policy
+        return usage_policy.operator_route(data,provider,model)
     return [p for p in model_settings(model)["provider_order"]
-            if route_passed(evidence.get(p, {}).get(model, {})) or canary.operator_route(p, model)]
+            if route_passed(evidence.get(p, {}).get(model, {})) or canary.operator_route(p, model) or operator_admitted(p)]
 
 
 def model_settings(model):

@@ -2,6 +2,7 @@
 import json,math,subprocess,time
 from pathlib import Path
 import integrity as control
+from claude_code import usage_policy
 ROOT=Path(__file__).resolve().parents[2]
 
 def load(path):
@@ -15,7 +16,10 @@ def load(path):
     if data.get('context_window_tokens')!=60000 or data.get('max_output_tokens')!=4096:raise control.IntegrityError('Unvalidated request bounds')
     if data.get('providers')!={'a6api':{'base_url':'https://api.a6api.com/v1'},'portdan':{'base_url':'https://portdan.com/v1'}}:
         raise control.IntegrityError('Unexpected provider endpoint')
-    for settings in data['models'].values():
+    for model,settings in data['models'].items():
+        exception=settings.get('usage_conflict_policy','strict')
+        if exception!='strict' and (model!=usage_policy.MODEL or exception!=usage_policy.POLICY):
+            raise control.IntegrityError('Invalid model usage exception')
         if not settings.get('automatic'):continue
         if settings.get('provider_order')!=['a6api','portdan'] or settings.get('input_includes_cache') is not True:
             raise control.IntegrityError('Unvalidated provider route/accounting')
@@ -84,6 +88,32 @@ def deployment_authorized(ops,head,fingerprint):
     except (OSError,ValueError,TypeError):return False
 
 
+def accounting_override_deployment_authorized(ops,head,fingerprint):
+    """Fresh human-directed repair installation only; no paid bootstrap grant.
+
+    The expired migration/review authorization is neither edited nor extended.
+    This separate operation binds the prior paused installation and new source.
+    """
+    try:
+        path=ops/'state/claude-code-accounting-override-deployment.json'
+        if path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o077:return False
+        grant=json.loads(path.read_text());pause=json.loads((ops/'state/maintenance-pause.json').read_text())
+        installed=json.loads((ops/'state/claude-code-activation.json').read_text());stop=ops/'STOP'
+        created=grant.get('created_at');expires=grant.get('expires_at');now=time.time()
+        if (type(created) not in (int,float) or type(expires) not in (int,float) or
+            not math.isfinite(created) or not math.isfinite(expires) or
+            not created<=now<expires or not 0<expires-created<=14400):return False
+        return (grant.get('authorized_by')=='user' and
+          grant.get('operation')=='paused-deploy-deepseek-accounting-override' and
+          grant.get('source_head')==head and grant.get('implementation_sha256')==fingerprint and
+          grant.get('previous_source_head')==installed.get('source_head') and
+          installed.get('installed') is True and installed.get('enabled') is False and
+          grant.get('stop_mtime_ns')==pause.get('stop_mtime_ns') and
+          pause.get('owner')=='codex-claude-code-runtime-migration' and
+          pause.get('previous_stop') is False and not pause.get('resumed_at') and
+          stop.is_file() and stop.stat().st_mtime_ns==pause.get('stop_mtime_ns'))
+    except (OSError,ValueError,TypeError):return False
+
 def bootstrap_ready(data,ops,fingerprint):
     """Manual provider acceptance under the unchanged owned migration STOP.
 
@@ -127,8 +157,7 @@ def ready(data,ops,fingerprint,model=None):
         image=subprocess.check_output(['docker','image','inspect','--format={{.Id}}',data['image']],
                  text=True,stderr=subprocess.DEVNULL,timeout=10).strip()
         if not image or evidence.get('image_id')!=image:return False
-        if model and evidence.get('models',{}).get(model,{}).get('tool_calls') is not True:return False
-        if model and evidence.get('models',{}).get(model,{}).get('usage') is not True:return False
+        if model and not usage_policy.model_admitted(data,model,evidence.get('models',{}).get(model,{})):return False
         if model:
             import runtime_policy
             if not runtime_policy.verified_providers(model):return False

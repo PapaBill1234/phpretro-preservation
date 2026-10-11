@@ -3,13 +3,13 @@
 
 Each invocation admits ONE request, then exits. Resume retains session, original
 receipt, deadline, reservation and cumulative counters. Unknown usage stops the
-run; it never triggers another request or invents a successful completion.
+run except explicitly admitted DeepSeek numeric conflicts with full holds retained.
 """
 import json,os,selectors,signal,subprocess,sys,time,uuid
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import integrity as control,runtime_policy,sandbox,context_usage,session_journal
-from claude_code import command,policy as admission,protocol,gateway
+from claude_code import command,policy as admission,protocol,gateway,usage_policy
 
 REVIEWER_SYSTEM_PROMPT='''You are an independent diff-only code reviewer.
 The user supplies the complete unified diff, acceptance bullets and exact Git
@@ -160,7 +160,7 @@ def main(receipt_path):
                 rc=75 if client.error_guard in gateway.BUDGET_GUARDS else 1
                 break
             current=None
-            if not total['usage_complete']:
+            if not usage_policy.continuation_allowed(policy,total):
                 journal.add('provider_error','Earlier physical attempt has unknown usage; safe stop',request=total['api_calls'])
                 print(json.dumps({'status':'provider unavailable','error_type':'usage_incomplete'}),flush=True)
                 break

@@ -4,7 +4,7 @@ import argparse,json,os,subprocess,sys,time
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import integrity as control,runtime_policy,sandbox
-from claude_code import policy,observations
+from claude_code import policy,observations,usage_policy
 ROOT=Path(__file__).resolve().parents[2];OPS=runtime_policy.OPS
 
 def provider_evidence(ops,fingerprint,data,provider):
@@ -22,6 +22,10 @@ def provider_evidence(ops,fingerprint,data,provider):
     models={m:{**models.get(m,{}),'tool_calls':any(row.get(m,{}).get('tool_calls') is True for row in provider_models.values()),
       'usage':any(row.get(m,{}).get('usage') is True for row in provider_models.values())}
       for m,v in data['models'].items() if v.get('automatic')}
+    for model,row in models.items():
+        if usage_policy.operator_route(data,'a6api',model):
+            row['operator_admitted']=True
+            row['admission_basis']='user-authorized-conservative'
     return models,provider_models
 
 
@@ -67,7 +71,7 @@ def main():
     else:checks['frontend']=False
     provider=json.loads(args.provider_evidence.read_text()) if args.provider_evidence else {}
     models,provider_models=provider_evidence(OPS,fingerprint,data,provider)
-    checks['provider']=bool(models) and policy.authenticated(data) and all(row['tool_calls'] and row['usage'] for row in models.values())
+    checks['provider']=bool(models) and policy.authenticated(data) and all(usage_policy.model_admitted(data,m,row) for m,row in models.items())
     if fingerprint!=runtime_policy.fingerprint():raise control.IntegrityError('Source changed during validation')
     evidence={'schema':'phpretro.claude-validation.v1','implementation_sha256':fingerprint,'checks':checks,'passed':all(checks.values()),
       'validated_at':time.time(),'vulnerability_snapshot_at':snapshot_at,'models':models,'provider_models':provider_models,

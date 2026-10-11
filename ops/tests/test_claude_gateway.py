@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 import harness
 import integrity,request_accounting,worker
-from claude_code import gateway,runner
+from claude_code import gateway,runner,usage_policy
 
 class Evidence:
     def __init__(self):self.data={}
@@ -15,6 +15,7 @@ class GatewayTests(unittest.TestCase):
     def setUp(self):
         self.folder=tempfile.TemporaryDirectory();self.root=Path(self.folder.name)
         self.data=json.loads((Path(__file__).parents[1]/'claude_code/policy.json').read_text())
+        loaded=patch.object(gateway.runtime_policy,'load',return_value=self.data);loaded.start();self.addCleanup(loaded.stop)
         self.row=runner.zero(str(uuid.uuid4()),'gpt-6.1-sol',64096)
         self.row.update(usage_schema=gateway.SCHEMA,unknown_request_ceilings=[])
         self.manifest={'_receipt_path':str(self.root/'receipt.json'),'role':'reviewer','prepared_at':time.time(),
@@ -50,6 +51,7 @@ class GatewayTests(unittest.TestCase):
 
     def test_observed_deepseek_alias_does_not_waive_conflicting_usage(self):
         model='deepseek-v4.1-flash';alias='cb/deepseek-v4.1-flash'
+        self.data['models'][model]['usage_conflict_policy']='strict'
         raw={'model':alias,'choices':[{'finish_reason':'stop','message':{'content':'ok'}}],
           'usage':{'prompt_tokens':486,'completion_tokens':137,'total_tokens':682,
             'prompt_cache_hit_tokens':0,'prompt_cache_miss_tokens':545}}
@@ -66,6 +68,127 @@ class GatewayTests(unittest.TestCase):
         diagnostic=client.context.data['provider_response_observations'][0]
         self.assertEqual(diagnostic['reported_model'],alias)
         self.assertTrue(diagnostic['identity_valid'])
+
+    def conflicting_response(self):
+        return {'model':'cb/deepseek-v4.1-flash','choices':[{'finish_reason':'stop','message':{'content':'ok'}}],
+          'usage':{'prompt_tokens':486,'completion_tokens':88,'total_tokens':633,
+                   'prompt_cache_hit_tokens':0,'prompt_cache_miss_tokens':545,
+                   'completion_tokens_details':{'reasoning_tokens':30}}}
+
+    def test_user_override_retains_unknown_holds_raw_counters_and_worker_metadata(self):
+        raw=self.conflicting_response();client=self.start(invoke=lambda *args:raw,routes=['a6api'],model=usage_policy.MODEL)
+        for call in range(2):
+            client.arm();wire=client.call(self.body)
+            self.assertEqual(wire['usage']['input_tokens'],545)
+            self.assertEqual(wire['usage']['output_tokens'],88)
+            self.assertEqual(self.row['usage_conflict_calls'],call+1)
+            self.assertTrue(usage_policy.continuation_allowed(self.data,self.row))
+        self.assertFalse(self.row['usage_complete']);self.assertEqual(self.row['total_tokens'],0)
+        self.assertEqual(self.row['conservative_tokens'],128192)
+        self.assertEqual(self.row['unknown_request_ceilings'],[64096,64096])
+        self.assertEqual(self.row['usage_known_calls'],0)
+        self.assertGreater(self.row['estimated_cost_usd'],0)
+        self.assertEqual(client.context.data['provider_response_observations'][0]['usage'],raw['usage'])
+        path=self.root/'usage.json';path.write_text(json.dumps(self.row))
+        projected=worker.usage_snapshot(path,self.root/'absent.db','',runtime='claude-code')
+        self.assertEqual(projected['usage_conflict_calls'],2)
+        self.assertEqual(projected['usage_conflict_policy'],usage_policy.POLICY)
+        self.assertFalse(projected['usage_complete'])
+        self.assertEqual(request_accounting.bounded_tokens(projected,0),128192)
+        for changes in ({'usage_conflict_calls':3},{'usage_conflict_calls':True},{'conservative_tokens':0},
+                        {'model':'gpt-6-luna'},{'usage_complete':True}):
+            with self.subTest(changes=changes),self.assertRaises(integrity.IntegrityError):
+                request_accounting.bounded_tokens({**projected,**changes},0)
+
+    def test_numeric_exception_cannot_hide_later_invalid_fields_or_output(self):
+        raw=self.conflicting_response()
+        for changes in ({'completion_tokens':True},{'total_tokens':'633'},{'prompt_cache_miss_tokens':None},
+                        {'prompt_tokens_details':{'cached_tokens':False}},
+                        {'cache_creation_input_tokens':-1},{'completion_tokens_details':{'reasoning_tokens':89}}):
+            with self.subTest(changes=changes),self.assertRaises(integrity.IntegrityError):
+                gateway.compatible_usage({**raw['usage'],**changes},'chat',True)
+        for value in ({**raw,'model':'wrong-model'},{**raw,'choices':[]},
+                      {**raw,'choices':[{'finish_reason':'length','message':{'content':'truncated'}}]}):
+            with self.subTest(value=value),self.assertRaises(integrity.IntegrityError):
+                gateway.output(value,'chat',usage_policy.MODEL,set(),{},{},True)
+        with self.assertRaises(integrity.IntegrityError):
+            gateway.output({**raw,'model':'gpt-6-luna'},'chat','gpt-6-luna',set(),{},{},True)
+
+    def test_override_cannot_admit_other_unknown_attempts_or_exceed_original_caps(self):
+        raw=self.conflicting_response();client=self.start(invoke=lambda *args:raw,routes=['a6api'],model=usage_policy.MODEL)
+        client.call(self.body)
+        self.assertTrue(usage_policy.continuation_allowed(self.data,self.row))
+        self.row['unknown_api_calls']+=1;self.row['api_calls']+=1
+        self.row['unknown_request_ceilings'].append(64096);self.row['conservative_tokens']+=64096
+        self.assertFalse(usage_policy.continuation_allowed(self.data,self.row))
+        self.manifest['reserved_tokens']=self.row['conservative_tokens']+4499
+        client.arm()
+        with self.assertRaisesRegex(integrity.IntegrityError,'Remaining original token hold'):
+            client.call(self.body)
+        self.assertEqual(self.row['api_calls'],2)
+
+    def test_conflicting_response_with_oversize_usage_is_not_forwarded(self):
+        raw=self.conflicting_response();raw['usage']['prompt_cache_miss_tokens']=70000
+        client=self.start(invoke=lambda *args:raw,routes=['a6api'],model=usage_policy.MODEL)
+        with self.assertRaises(integrity.IntegrityError):client.call(self.body)
+        self.assertNotIn('usage_conflict_calls',self.row)
+        self.assertFalse(usage_policy.continuation_allowed(self.data,self.row))
+
+    def test_actual_runner_continues_same_session_and_exports_only_admitted_conflicts(self):
+        for transport_unknown in (False,True):
+            with self.subTest(transport_unknown=transport_unknown):
+                rid=str(uuid.uuid4());path=self.root/(rid+'.json');usage=path.with_suffix('.usage.json')
+                prompt=self.root/'brief.txt';prompt.write_text('Synthetic unit')
+                model=usage_policy.MODEL
+                path.write_text(json.dumps({'run_id':rid,'status':'running','role':'builder','model':model,
+                  'profile':'Synthetic','unit':'Synthetic','usage_path':str(usage),'prompt_path':str(prompt),
+                  'prepared_at':time.time(),'timeout':30,'cwd':str(self.root),'reserved_tokens':300000,
+                  'reserved_cost_estimate':1,'allowed_paths':['example.py']}))
+                clients=[];physical=[];sessions=[];real_gateway=gateway.Gateway
+                def upstream(*args):
+                    physical.append('request')
+                    if transport_unknown and len(physical)==1:raise gateway.ProviderError(429)
+                    raw=self.conflicting_response()
+                    if len(sessions)==1:
+                        raw['choices']=[{'finish_reason':'tool_calls','message':{'content':None,
+                          'tool_calls':[{'id':'fixture_call','function':{'name':'mcp__phpretro__execute',
+                          'arguments':'{"command":"echo fixture"}'}}]}}]
+                    return raw
+                def client(*args,**kwargs):
+                    instance=real_gateway(*args,**kwargs,invoke=upstream);clients.append(instance);return instance
+                def native(args,env,cwd,brief,stream,deadline,cancel,update):
+                    sessions.append(stream.sid)
+                    message=clients[0].call({'model':model,'max_tokens':4096,
+                      'messages':[{'role':'user','content':'Synthetic fixture'}],
+                      'tools':[{'name':'mcp__phpretro__execute','input_schema':{'type':'object'}}]})
+                    first=len(sessions)==1
+                    events=[{'type':'system','subtype':'init','session_id':stream.sid,'model':model,
+                             'tools':['mcp__phpretro__execute'],'skills':[],'slash_commands':[],'plugins':[]},
+                            {'type':'assistant','session_id':stream.sid,'message':message}]
+                    if first:events.append({'type':'user','session_id':stream.sid,'message':{'content':[
+                      {'type':'tool_result','tool_use_id':'fixture_call','content':'fixture','is_error':False}]}})
+                    events.append({'type':'result','session_id':stream.sid,
+                      'subtype':'error_max_turns' if first else 'success','is_error':first,
+                      'num_turns':2 if first else 1,'usage':message['usage'],'result':'Synthetic complete'})
+                    for event in events:stream.accept(event);update(event)
+                    return 0
+                secrets={'a6api_api_key':'synthetic-primary','portdan':{'deepseek':'synthetic-fallback'}}
+                with patch.object(runner.runtime_policy,'fingerprint',return_value='source'), \
+                     patch.object(runner.runtime_policy,'ready',return_value=True), \
+                     patch.object(runner.runtime_policy,'verified_providers',return_value=['a6api','portdan']), \
+                     patch.object(runner.gateway,'credentials',return_value=secrets), \
+                     patch.object(runner.gateway,'Gateway',side_effect=client),patch.object(runner,'invoke',side_effect=native), \
+                     patch.object(runner.sandbox,'Sandbox') as sandboxed,patch.object(runner.signal,'signal'), \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(runner.main(path),1 if transport_unknown else 0)
+                    if transport_unknown:sandboxed.return_value.export.assert_not_called()
+                    else:sandboxed.return_value.export.assert_called_once()
+                row=json.loads(usage.read_text())
+                self.assertFalse(row['usage_complete']);self.assertEqual(row['conservative_tokens'],128192)
+                self.assertEqual(row['usage_conflict_calls'],1 if transport_unknown else 2)
+                self.assertEqual(len(sessions),1 if transport_unknown else 2)
+                self.assertEqual(len(set(sessions)),1)
+                self.assertEqual(row['total_tokens'],0)
     def test_all_supplied_cache_representations_must_agree(self):
         raw={'prompt_tokens':35,'completion_tokens':4,'total_tokens':39,'prompt_tokens_details':{'cached_tokens':7},
              'prompt_cache_hit_tokens':7,'prompt_cache_miss_tokens':28}

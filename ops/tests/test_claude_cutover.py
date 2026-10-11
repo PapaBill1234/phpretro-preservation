@@ -93,6 +93,27 @@ class CutoverTests(unittest.TestCase):
             install_paused.require_source('head',False)
         self.safe_state()
 
+    def test_new_accounting_repair_grant_does_not_extend_old_grant_or_allow_paid_bootstrap(self):
+        self.authorization(expires_at=time.time()-1)
+        old=(self.ops/'state/claude-code-migration-authorization.json').read_bytes()
+        self.write('claude-code-accounting-override-deployment.json',{
+          'authorized_by':'user','operation':'paused-deploy-deepseek-accounting-override',
+          'source_head':'new-head','previous_source_head':'head','implementation_sha256':'source',
+          'stop_mtime_ns':self.before_stop,'created_at':time.time()-1,'expires_at':time.time()+3600})
+        path=self.ops/'state/claude-code-accounting-override-deployment.json';path.chmod(0o600)
+        self.assertTrue(policy.accounting_override_deployment_authorized(self.ops,'new-head','source'))
+        with patch.object(install_paused,'checked',side_effect=['','new-head']):
+            install_paused.require_source('new-head',True)
+        self.assertFalse(policy.deployment_authorized(self.ops,'new-head','source'))
+        self.write('claude-code-activation.json',{**self.previous,'source_head':'new-head',
+          'source_review_deferred':True,'implementation_sha256':'source'})
+        self.write('claude-code-validation.json',self.validation)
+        with patch.object(policy,'installed_source_matches',return_value=True):
+            self.assertFalse(policy.bootstrap_ready({'image':'tools'},self.ops,'source'))
+        self.assertEqual(old,(self.ops/'state/claude-code-migration-authorization.json').read_bytes())
+        self.assertFalse(policy.accounting_override_deployment_authorized(self.ops,'new-head','source'))
+        self.safe_state()
+
     def test_deferred_bootstrap_does_not_enable_normal_coding(self):
         self.authorization()
         self.write('claude-code-activation.json',{**self.previous,'source_review_deferred':True})

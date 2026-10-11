@@ -142,3 +142,22 @@ journal and show the original run identity and exit status. Closing a window
 does not stop or duplicate its builder. No inference credentials are passed
 to the desktop viewer. Completed windows remain visible for two minutes;
 retained sessions and history remain available in Doctor.
+## Explicit DeepSeek accounting override
+
+The user has admitted A6API DeepSeek despite contradictory numeric usage.
+Its model-specific `usage_conflict_policy=user-authorized-conservative` permits
+cache/total counter disagreements only. Exact model identity, valid output,
+tool ownership, request bounds and original reservations remain required.
+Raw numeric counters stay in private receipt context. The CLI receives an
+upper input estimate with uncertain cache attribution; these wire counters are
+not written as measured usage. Every affected physical request retains its
+full original token and spending hold. Receipts retain `usage_complete=false`,
+`usage_conflict_calls` and the policy label through worker projection.
+Continuation requires every unknown attempt to be such an admitted response;
+unknown transport failures still stop. Numeric corruption and excessive bounds
+still fail. Valid counters keep normal accounting.
+
+User route admission is separate from measured tool/usage observations and does
+not verify Portdan. Independent source/unit review, CI, STOP and original budgets
+are unaffected. A new private, source-bound paused repair installation record is
+separate from the expired migration grant and cannot authorize paid bootstrap.

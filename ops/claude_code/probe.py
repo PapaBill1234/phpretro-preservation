@@ -8,7 +8,7 @@ import argparse,fcntl,json,os,sys,time
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import integrity as control,orchestrator as controller,runtime_policy,worker
-from claude_code import policy
+from claude_code import policy,usage_policy
 
 def model_plan(data,fingerprint,old,selected=None,provider='a6api'):
     automatic=[model for model,settings in data['models'].items() if settings.get('automatic')]
@@ -77,16 +77,18 @@ def main():
             rid=usage.get('run_id');context=controller.read_json(ops/'state/receipts'/(str(rid)+'.context.json'),{})
             tool_ok=context.get('tool_calls')==1 and context.get('tool_errors')==0
             provider=usage.get('provider','').removeprefix('custom:')
-            ok=rc==0 and usage.get('usage_complete') is True and tool_ok and usage.get('model')==model and provider==args.provider
-            row={'tool_calls':tool_ok,'usage':ok,'cli_version':data['cli_version'],'native_session_id':usage.get('session_id'),'run_id':rid,'rc':rc,'provider':args.provider}
+            completed=usage.get('usage_complete') is True
+            ok=rc==0 and usage_policy.continuation_allowed(data,usage) and tool_ok and usage.get('model')==model and provider==args.provider
+            row={'tool_calls':tool_ok,'usage':ok and completed,'accounting_admitted':ok and not completed,
+              'cli_version':data['cli_version'],'native_session_id':usage.get('session_id'),'run_id':rid,'rc':rc,'provider':args.provider}
             evidence['route_attempts'][route]=row
             if ok or evidence['models'].get(model,{}).get('usage') is not True:evidence['models'][model]=row
-            if ok and provider in ('a6api','portdan'):
+            if ok and completed and provider in ('a6api','portdan'):
                 evidence['provider_models'].setdefault(provider,{})[model]={'tool_calls':True,'usage':True,'reported_model':usage.get('reported_model'),'checked_at':time.time()}
             evidence['completed_at']=time.time();control.atomic_json(destination,evidence)
             if not ok:complete=False;break  # No unchanged retry and no repeated paid acceptance.
         if runtime_policy.fingerprint()!=fingerprint:raise control.IntegrityError('Source changed during provider acceptance')
-        all_passed=all(evidence['models'].get(model,{}).get('usage') is True for model,settings in data['models'].items() if settings.get('automatic'))
+        all_passed=all(usage_policy.model_admitted(data,model,evidence['models'].get(model,{})) for model,settings in data['models'].items() if settings.get('automatic'))
         print(json.dumps({'passed':complete,'all_models_passed':all_passed,'selected_models':models,'models':list(evidence['models']),'tokens':charged,'STOP':(ops/'STOP').is_file()}))
         return 0 if complete else 1
 if __name__=='__main__':raise SystemExit(main())
