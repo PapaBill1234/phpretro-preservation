@@ -127,7 +127,7 @@ def usage(raw,mode):
     details=usage_details(raw,'input_tokens_details' if mode=='responses' else 'prompt_tokens_details',mode)
     reasoning=usage_details(raw,'output_tokens_details' if mode=='responses' else 'completion_tokens_details',mode)
     reported=reasoning.get('reasoning_tokens')
-    if 'reasoning_tokens' in reasoning and not (reported is None and mode=='chat'):
+    if mode=='responses' or ('reasoning_tokens' in reasoning and reported is not None):
         if control.nonnegative(reported,'provider reasoning')>output:raise control.IntegrityError('Reasoning exceeds output')
     reads=[]
     if 'cached_tokens' in details and not (details['cached_tokens'] is None and mode=='chat'):

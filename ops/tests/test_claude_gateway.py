@@ -27,7 +27,7 @@ class GatewayTests(unittest.TestCase):
         self.folder.cleanup()
     def response(self,model='gpt-6.1-sol'):
         return {'model':model,'status':'completed','output':[{'type':'message','content':[{'type':'output_text','text':'ok'}]}],
-          'usage':{'input_tokens':35,'output_tokens':4,'total_tokens':39,'input_tokens_details':{'cached_tokens':7}}}
+          'usage':{'input_tokens':35,'output_tokens':4,'total_tokens':39,'input_tokens_details':{'cached_tokens':7},'output_tokens_details':{'reasoning_tokens':0}}}
     def start(self,invoke=None,routes=None,model='gpt-6.1-sol'):
         def fake(endpoint,key,body,timeout):
             self.assertEqual(self.writes[-1]['unknown_api_calls'],len(self.calls)+1)
@@ -66,6 +66,21 @@ class GatewayTests(unittest.TestCase):
         for value in (None,{'reasoning_tokens':None},'invalid'):
             with self.assertRaises(integrity.IntegrityError):
                 gateway.usage({**self.response()['usage'],'output_tokens_details':value},'responses')
+
+    def test_responses_missing_reasoning_never_becomes_complete_usage(self):
+        for details in ('absent',{}, {'reasoning_tokens':None}, {'reasoning_tokens':True}, {'reasoning_tokens':'0'}):
+            if self.client:self.client.close();self.client=None
+            self.row=runner.zero(str(uuid.uuid4()),'gpt-6.1-sol',64096)
+            self.row.update(usage_schema=gateway.SCHEMA,unknown_request_ceilings=[])
+            raw=self.response()
+            if details=='absent':raw['usage'].pop('output_tokens_details')
+            else:raw['usage']['output_tokens_details']=details
+            with self.subTest(details=details):
+                client=self.start(invoke=lambda *args:raw,routes=['a6api'])
+                with self.assertRaises(integrity.IntegrityError):client.call(self.body)
+                self.assertFalse(self.row['usage_complete'])
+                self.assertEqual(self.row['unknown_api_calls'],1)
+                self.assertEqual(self.row['conservative_tokens'],64096)
 
     def test_observed_deepseek_alias_does_not_waive_conflicting_usage(self):
         model='deepseek-v4.1-flash';alias='cb/deepseek-v4.1-flash'
