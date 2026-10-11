@@ -60,6 +60,30 @@ def initialize(home,project):
           'projects':{str(project):{'hasTrustDialogAccepted':True}}})
     return config
 
+def validate_project(project,source):
+    project=Path(project);source=Path(source).resolve()
+    if not project.is_dir() or project.is_symlink() or any(p.is_symlink() for p in project.parents) or project.resolve()==source:
+        raise control.IntegrityError('Human checkout path is not independent')
+    def git(path,*args):return subprocess.check_output(['/usr/bin/git','-C',str(path),*args],text=True,stderr=subprocess.DEVNULL,timeout=20).strip()
+    try:
+        if Path(git(project,'rev-parse','--show-toplevel')).resolve()!=project.resolve():raise ValueError()
+        if git(project,'symbolic-ref','--short','HEAD')!='codex/claude-human-terminal':raise ValueError()
+        common=lambda path:(path/Path(git(path,'rev-parse','--git-common-dir'))).resolve()
+        if common(project)!=common(source):raise ValueError()
+        metadata=project/'.git'
+        if not metadata.is_file() or metadata.is_symlink():raise ValueError()
+        records=git(source,'worktree','list','--porcelain').split('\n\n')
+        if not any(record.splitlines()[0]=='worktree '+str(project.resolve()) and 'branch refs/heads/codex/claude-human-terminal' in record.splitlines() for record in records):raise ValueError()
+    except (OSError,ValueError,subprocess.CalledProcessError,subprocess.TimeoutExpired):
+        raise control.IntegrityError('Expected registered human project worktree required') from None
+    return project
+
+def native_resume(home,sid,recorded,charged):
+    root=home/'.claude/projects'
+    history=any(not p.is_symlink() and not p.parent.is_symlink() and p.is_file() for p in root.glob('*/'+sid+'.jsonl'))
+    if recorded and charged and not history:raise control.IntegrityError('Charged conversation transcript unavailable; preserve its allowance')
+    return recorded and history
+
 def prior_usage(ops,sid):
     total=0;found=False
     for p in (ops/'state/receipts').glob('*.json'):
@@ -81,6 +105,9 @@ class InteractiveGateway(gateway.Gateway):
         super().__init__(*args,**kwargs);self.halted=False;self.seen_tools=set()
         import request_accounting
         self.total.update(usage_schema=request_accounting.INTERACTIVE_SCHEMA,request_token_ceiling=request_accounting.INTERACTIVE_CEILING,interactive_token_budget=self.manifest['reserved_tokens'])
+    def cancelled(self):
+        if self.halted:raise InterruptedError('Human terminal closed')
+        super().cancelled()
     def call(self,body):
         # Serialize the whole multi-turn wrapper; the underlying lock retains the
         # one-request financial admission/physical-attempt durability contract.
@@ -169,7 +196,7 @@ def settle(path,rec,total,rc):
 def launch(sid=None,prompt=None,print_mode=False,output_format="text"):
     import threading,orchestrator
     if not print_mode and not sys.stdin.isatty():raise control.IntegrityError('Use an Ubuntu terminal or ssh -t')
-    if not PROJECT.is_dir():raise control.IntegrityError('Project terminal checkout is not installed')
+    validate_project(PROJECT,Path(__file__).resolve().parents[2])
     if sid:identity(sid)
     requested_resume=sid is not None
     sid=sid or str(uuid.uuid4());home=BASE/'terminal-home'/sid
@@ -182,6 +209,7 @@ def launch(sid=None,prompt=None,print_mode=False,output_format="text"):
         if state.get('reservations'):raise control.IntegrityError('Wait for the existing paid worker to finish')
         resume,used=prior_usage(runtime_policy.OPS,sid)
         if requested_resume and not resume:raise control.IntegrityError('Unknown managed conversation; do not adopt another session')
+        resume=native_resume(home,sid,resume,used)
         limit=min(CONVERSATION_CAP-used,orchestrator.PER_UNIT_TOKEN_CAP)
         if limit<=runner.admission.request_ceiling(runtime_policy.load()):raise control.IntegrityError('Conversation allowance exhausted; prior charges retained')
         rid=orchestrator.admit_paid(state,None,'interactive',limit=limit)
@@ -191,12 +219,14 @@ def launch(sid=None,prompt=None,print_mode=False,output_format="text"):
           status='running',profile_home=str(home),cwd=str(PROJECT),usage_path=str(usage),
           prepared_at=time.time(),timeout=SESSION_SECONDS,grace=10,
           worker_pid=os.getpid(),worker_identity=worker.process_identity(os.getpid()))
+        import request_accounting
+        total=runner.zero(sid,MODEL,request_accounting.INTERACTIVE_CEILING)
+        total.update(usage_schema=request_accounting.INTERACTIVE_SCHEMA,interactive_token_budget=rec['reserved_tokens'],unknown_request_ceilings=[],provider='unlaunched:gateway',cost_status='quoted-estimate')
+        control.atomic_json(usage,total)  # Identity-bound zero before any native/provider launch.
         control.atomic_json(path,rec)
     lease=worker.claim(path)
     if lease is None:raise control.IntegrityError('Interactive receipt already owned')
-    policy=runtime_policy.load();ceiling=runner.admission.request_ceiling(policy)
-    total=runner.zero(sid,MODEL,ceiling)
-    total.update(usage_schema=gateway.SCHEMA,unknown_request_ceilings=[],provider='unlaunched:gateway',cost_status='quoted-estimate')
+    policy=runtime_policy.load()
     def checkpoint():control.atomic_json(usage,total)
     context=context_usage.Recorder(path.with_suffix('.context.json'),list(TOOLS))
     journal=session_journal.Journal(path.with_suffix('.session.json'))
@@ -226,9 +256,11 @@ def launch(sid=None,prompt=None,print_mode=False,output_format="text"):
     finally:
         drained=False
         try:
+            if client:client.halted=True
+            worker.cancel_launch(path,rec)  # Durable denial before stopping tools/server.
             if child:worker.stop(child,10)
             drained=True
-            if client:client.halted=True;client.close()
+            if client:client.close()
         finally:
             try:
                 if not print_mode:

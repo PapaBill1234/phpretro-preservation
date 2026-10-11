@@ -32,9 +32,12 @@ def install():
         if cli.resolve()!=interactive.RAW.resolve():raise control.IntegrityError('Unexpected Claude launcher; retain it')
     elif not cli.is_file() or cli.read_text()!=expected:raise control.IntegrityError('Unexpected Claude launcher; retain it')
     source=Path(__file__).resolve().parents[2]
+    if interactive.PROJECT.is_symlink() or any(p.is_symlink() for p in interactive.PROJECT.parents):raise control.IntegrityError('Human project symlink is not allowed')
     if not interactive.PROJECT.exists():
         interactive.PROJECT.parent.mkdir(mode=0o700,parents=True,exist_ok=True)
         subprocess.run(['git','-C',str(source),'worktree','add','-b','codex/claude-human-terminal',str(interactive.PROJECT),'HEAD'],check=True)
+    interactive.validate_project(interactive.PROJECT,source)
+    if (interactive.PROJECT/'CLAUDE.md').is_symlink():raise control.IntegrityError('Human instructions symlink is not allowed')
     if (interactive.PROJECT/'CLAUDE.md').exists() and (interactive.PROJECT/'CLAUDE.md').read_text()!=GUIDANCE:
         raise control.IntegrityError('Existing human project instructions differ; retain them')
     (interactive.PROJECT/'CLAUDE.md').write_text(GUIDANCE)

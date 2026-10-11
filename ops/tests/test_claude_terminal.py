@@ -77,9 +77,11 @@ class TerminalTests(unittest.TestCase):
     client.call(body);client.call(body)
     self.assertEqual(total['api_calls'],2);self.assertEqual(total['total_tokens'],24)
     self.assertFalse(snapshots[0]['usage_complete']);self.assertGreater(snapshots[0]['conservative_tokens'],64096)
-    client.invoke=lambda *a:(_ for _ in ()).throw(gateway.ProviderError(401))
+    def exiting(*args):
+     client.halted=True;raise gateway.ProviderError(503)
+    client.invoke=exiting
     with self.assertRaises(Exception):client.call(body)
-    self.assertTrue(client.halted);count=total['api_calls']
+    self.assertTrue(client.halted);count=total['api_calls'];self.assertEqual(count,3)
     with self.assertRaises(integrity.IntegrityError):client.call(body)
     self.assertEqual(total['api_calls'],count);self.assertGreater(total['conservative_tokens'],24)
    finally:client.close()
@@ -122,6 +124,31 @@ class TerminalTests(unittest.TestCase):
    context=context_usage.Recorder(home/'context.json',list(interactive.TOOLS));journal=session_journal.Journal(home/'session.json')
    interactive.transcript_observations(home,sid,context,journal)
    self.assertEqual(context.data['native_interactive']['invoked'],['doctor'])
+
+ def test_halted_terminal_denies_routing_retry_before_another_physical_attempt(self):
+  client=object.__new__(interactive.InteractiveGateway);client.halted=True
+  with self.assertRaises(InterruptedError):client.cancelled()
+
+ def test_human_checkout_must_be_a_registered_separate_project_worktree(self):
+  import subprocess
+  with tempfile.TemporaryDirectory() as t:
+   root=Path(t)/'repo';root.mkdir();project=Path(t)/'human';other=Path(t)/'other';other.mkdir()
+   subprocess.run(['git','init','-q',str(root)],check=True)
+   subprocess.run(['git','-C',str(root),'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','--allow-empty','-qm','fixture'],check=True)
+   subprocess.run(['git','-C',str(root),'worktree','add','-qb','codex/claude-human-terminal',str(project),'HEAD'],check=True)
+   self.assertEqual(interactive.validate_project(project,root),project)
+   for wrong in (root,other):
+    with self.assertRaises(integrity.IntegrityError):interactive.validate_project(wrong,root)
+   link=Path(t)/'linked';link.symlink_to(project,target_is_directory=True)
+   with self.assertRaises(integrity.IntegrityError):interactive.validate_project(link,root)
+
+ def test_prelaunch_recovery_can_start_same_uuid_but_missing_charged_history_is_denied(self):
+  with tempfile.TemporaryDirectory() as t:
+   home=Path(t);sid=str(uuid.uuid4())
+   self.assertFalse(interactive.native_resume(home,sid,True,0))
+   with self.assertRaises(integrity.IntegrityError):interactive.native_resume(home,sid,True,100)
+   root=home/'.claude/projects/project';root.mkdir(parents=True);(root/(sid+'.jsonl')).write_text('{}')
+   self.assertTrue(interactive.native_resume(home,sid,True,100))
 
  def test_unmanaged_native_history_in_terminal_profiles_remains_unknown(self):
   from claude_code import native_sessions
