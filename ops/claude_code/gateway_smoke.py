@@ -81,7 +81,7 @@ runpy.run_path(sys.argv[0],run_name='__main__')
             for step in range(2 if builder else 1):
                 client.arm();stream=protocol.Stream(sid,model,['mcp__phpretro__execute'] if builder else [])
                 env=command.environment(root);env.update(client.environment(),CLAUDE_CONFIG_DIR=str(root/'config'))
-                result=subprocess.run(command.command(data,sid,mcp,'Fixture system',model=model,builder=builder,resume=step>0),
+                result=subprocess.run(command.command(data,sid,mcp,runner.BOOTSTRAP_SYSTEM_PROMPT if builder else 'Fixture system',model=model,builder=builder,resume=step>0),
                   input='Fixture task' if not step else 'Continue',env=env,cwd=root,capture_output=True,text=True,timeout=40)
                 for line in result.stdout.splitlines():
                     event=json.loads(line);stream.accept(event)
