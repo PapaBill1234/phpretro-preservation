@@ -67,20 +67,34 @@ class GatewayTests(unittest.TestCase):
             with self.assertRaises(integrity.IntegrityError):
                 gateway.usage({**self.response()['usage'],'output_tokens_details':value},'responses')
 
-    def test_responses_missing_reasoning_never_becomes_complete_usage(self):
-        for details in ('absent',{}, {'reasoning_tokens':None}, {'reasoning_tokens':True}, {'reasoning_tokens':'0'}):
+    def test_supplied_responses_reasoning_details_must_be_valid(self):
+        for details in (None,{}, {'reasoning_tokens':None}, {'reasoning_tokens':True}, {'reasoning_tokens':'0'}):
             if self.client:self.client.close();self.client=None
             self.row=runner.zero(str(uuid.uuid4()),'gpt-6.1-sol',64096)
             self.row.update(usage_schema=gateway.SCHEMA,unknown_request_ceilings=[])
             raw=self.response()
-            if details=='absent':raw['usage'].pop('output_tokens_details')
-            else:raw['usage']['output_tokens_details']=details
+            raw['usage']['output_tokens_details']=details
             with self.subTest(details=details):
                 client=self.start(invoke=lambda *args:raw,routes=['a6api'])
                 with self.assertRaises(integrity.IntegrityError):client.call(self.body)
                 self.assertFalse(self.row['usage_complete'])
                 self.assertEqual(self.row['unknown_api_calls'],1)
                 self.assertEqual(self.row['conservative_tokens'],64096)
+
+    def test_observed_a6api_sol_billing_does_not_invent_missing_reasoning(self):
+        raw=self.response()
+        raw['usage']={'input_tokens':253,'output_tokens':102,'total_tokens':355,
+          'input_tokens_details':{'cached_tokens':249},'cache_creation_input_tokens':1}
+        client=self.start(invoke=lambda *args:raw,routes=['a6api'])
+        message=client.call(self.body)
+        self.assertTrue(self.row['usage_complete'])
+        self.assertEqual(self.row['unknown_api_calls'],0)
+        self.assertEqual(self.row['conservative_tokens'],355)
+        self.assertEqual((self.row['input_tokens'],self.row['output_tokens'],self.row['cache_read_tokens'],self.row['cache_write_tokens']),(3,102,249,1))
+        self.assertIsNone(client.last['usage']['reasoning_tokens'])
+        self.assertFalse(client.last['usage']['reasoning_breakdown_complete'])
+        self.assertEqual(client.context.data['provider_response_observations'][0]['reasoning_breakdown_status'],'unavailable')
+        self.assertEqual(sum(message['usage'].values()),355)
 
     def test_observed_deepseek_alias_does_not_waive_conflicting_usage(self):
         model='deepseek-v4.1-flash';alias='cb/deepseek-v4.1-flash'

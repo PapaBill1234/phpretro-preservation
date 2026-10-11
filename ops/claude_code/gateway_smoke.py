@@ -31,7 +31,9 @@ def case(data,model,builder=False,failure=None):
                       else 'cb/deepseek-v4.1-flash' if model=='deepseek-v4.1-flash' else model)
             if settings['api_mode']=='responses':
                 items=[{'type':'function_call','call_id':'call_fixture','name':'mcp__phpretro__execute','arguments':'{"command":"echo fixture"}'}] if tool else [{'type':'message','content':[{'type':'output_text','text':'fixture complete'}]}]
-                return {'status':'completed','model':reported,'output':items,'usage':{'input_tokens':35,'output_tokens':4,'total_tokens':39,'input_tokens_details':{'cached_tokens':7},'output_tokens_details':{'reasoning_tokens':0}}}
+                usage={'input_tokens':35,'output_tokens':4,'total_tokens':39,'input_tokens_details':{'cached_tokens':7},'output_tokens_details':{'reasoning_tokens':0}}
+                if failure=='reasoning-unavailable':usage.pop('output_tokens_details')
+                return {'status':'completed','model':reported,'output':items,'usage':usage}
             # Match the actual DeepSeek protocol contract, including the native
             # CLI's resumed tool message, rather than accepting every payload.
             assert 'tool_choice' not in body
@@ -100,6 +102,10 @@ runpy.run_path(sys.argv[0],run_name='__main__')
                     assert total['usage_conflict_calls']==step+1 and not total['usage_complete']
                     assert total['conservative_tokens']==64096*(step+1) and total['total_tokens']==0
                 else:assert native['total_tokens']==39 and native['input_tokens']==28 and native['cache_read_tokens']==7
+                if failure=='reasoning-unavailable':
+                    assert client.last['usage']['reasoning_tokens'] is None
+                    assert client.last['usage']['reasoning_breakdown_complete'] is False
+                    assert context.data['provider_response_observations'][-1]['reasoning_breakdown_status']=='unavailable'
                 assert stream.outcome()==('continue' if builder and step==0 else 'success')
             assert request_accounting.bounded_tokens(total,total['total_tokens'])==total['conservative_tokens']
             assert any(w['unknown_api_calls']>0 for w in writes),'No durable pretransport hold'
@@ -157,5 +163,7 @@ def main():
     for builder in (False,True):
         try:checks.append(case(data,usage_policy.MODEL,builder,failure='usage-conflict'))
         except Exception as exc:checks.append({'case':'usage-conflict','builder':builder,'passed':False,'error_type':type(exc).__name__,'detail':str(exc)[:120]})
+    try:checks.append(case(data,'gpt-6.1-sol',True,failure='reasoning-unavailable'))
+    except Exception as exc:checks.append({'case':'reasoning-unavailable','builder':True,'passed':False,'error_type':type(exc).__name__,'detail':str(exc)[:120]})
     passed=all(c['passed'] for c in checks);print(json.dumps({'passed':passed,'checks':checks}));return 0 if passed else 1
 if __name__=='__main__':raise SystemExit(main())

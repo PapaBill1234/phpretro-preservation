@@ -158,6 +158,16 @@ to the desktop viewer. Completed windows remain visible for two minutes;
 retained sessions and history remain available in Doctor.
 ## Explicit DeepSeek accounting override
 
+Billing completeness covers inclusive input, output, cache read and cache write
+counters, physical-attempt holds and their reconciliation. It does not assert
+that the provider supplied a reasoning-token breakdown within its output total.
+The observed A6API Sol Responses envelope omits that breakdown while supplying
+valid billing totals. Omission is retained as `reasoning_tokens=null` and
+`reasoning_breakdown_complete=false`; metadata records it as unavailable. No
+zero reasoning count is invented. Supplied Responses detail objects still need
+a valid nonnegative integer reasoning counter; malformed/null/empty supplied
+details fail. Input/output/cache counters, totals, identity and bounds stay strict.
+
 The user has admitted A6API DeepSeek despite contradictory numeric usage.
 Its model-specific `usage_conflict_policy=user-authorized-conservative` permits
 cache/total counter disagreements only. Exact model identity, valid output,
