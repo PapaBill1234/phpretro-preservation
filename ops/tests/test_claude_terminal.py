@@ -175,6 +175,20 @@ class TerminalTests(unittest.TestCase):
    self.assertTrue(cli.is_symlink());self.assertEqual(cli.resolve(),raw)
    self.assertEqual(report.read_text(),'old report');self.assertEqual(desktop.read_text(),'old desktop')
 
+ def test_message_only_reasoning_replays_in_order_and_repeated_text_keeps_each_turn(self):
+  thought=lambda i:[{'type':'reasoning','id':'rs_'+str(i),'encrypted_content':'fixture_'+str(i),'summary':[]}]
+  remembered={};history=[]
+  for i in (1,2):
+   raw={'model':interactive.MODEL,'status':'completed','usage':{'input_tokens':10,'output_tokens':2,'total_tokens':12,'input_tokens_details':{'cached_tokens':0}},'output':thought(i)+[{'type':'message','content':[{'type':'output_text','text':'OK'}]}]}
+   gateway.output(raw,'responses',interactive.MODEL,[],{},remembered,response_history=history)
+   history.append({'role':'assistant','content':'OK'})
+   history.append({'role':'user','content':'Next'})
+  replay=gateway.responses_request({'model':interactive.MODEL,'messages':history},remembered)['input']
+  self.assertEqual([r['encrypted_content'] for r in replay if r.get('type')=='reasoning'],['fixture_1','fixture_2'])
+  self.assertEqual(replay[0]['type'],'reasoning');self.assertEqual(replay[1]['role'],'assistant')
+  worker_retained={};gateway.output(raw,'responses',interactive.MODEL,[],{},worker_retained)
+  self.assertEqual(worker_retained,{})
+
  def test_unmanaged_native_history_in_terminal_profiles_remains_unknown(self):
   from claude_code import native_sessions
   with tempfile.TemporaryDirectory() as t:

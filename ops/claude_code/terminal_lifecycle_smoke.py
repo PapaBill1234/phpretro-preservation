@@ -21,7 +21,8 @@ def child(folder,sid=None,mode=""):
  def upstream(endpoint,key,body,timeout):
   assert key=='synthetic-only';calls.append(body)
   if prior or len(calls)>1:assert any(item.get('type')=='reasoning' and item.get('encrypted_content')=='private-fixture-encrypted' for item in body['input'])
-  items=[{'type':'reasoning','id':'rs_'+str(uuid.uuid4()),'encrypted_content':'private-fixture-encrypted','summary':[]},{'type':'function_call','call_id':'fixture_'+str(uuid.uuid4())+'_'+str(len(calls)),'name':'Bash','arguments':json.dumps({'command':'phpretro-doctor'})}] if len(calls)==1 else [{'type':'message','content':[{'type':'output_text','text':'TERMINAL_LIFECYCLE_OK'}]}]
+  if prior and len(calls)==1:assert any(item.get('type')=='reasoning' and item.get('encrypted_content')=='private-fixture-final-encrypted' for item in body['input'])
+  items=[{'type':'reasoning','id':'rs_'+str(uuid.uuid4()),'encrypted_content':'private-fixture-encrypted','summary':[]},{'type':'function_call','call_id':'fixture_'+str(uuid.uuid4())+'_'+str(len(calls)),'name':'Bash','arguments':json.dumps({'command':'phpretro-doctor'})}] if len(calls)==1 else [{'type':'reasoning','id':'rs_final_'+str(uuid.uuid4()),'encrypted_content':'private-fixture-final-encrypted','summary':[]},{'type':'message','content':[{'type':'output_text','text':'TERMINAL_LIFECYCLE_OK'}]}]
   return {'status':'completed','model':interactive.MODEL,'output':items,'usage':{'input_tokens':100,'output_tokens':10,'total_tokens':110,'input_tokens_details':{'cached_tokens':0}}}
  Original=interactive.InteractiveGateway
  class Synthetic(Original):

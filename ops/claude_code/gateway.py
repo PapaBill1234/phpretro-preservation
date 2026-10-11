@@ -4,7 +4,7 @@ No public listener, database, prompt logs or provider credentials in subprocesse
 The CLI gets an ephemeral loopback capability, and every physical upstream call
 is durably reserved before transport. Unsupported content fails before transport.
 """
-import http.server,json,secrets,stat,threading,time,urllib.error,urllib.request,uuid
+import hashlib,http.server,json,secrets,stat,threading,time,urllib.error,urllib.request,uuid
 from pathlib import Path
 import integrity as control,request_accounting as bounds,runtime_policy
 import provider_routing as routing
@@ -88,18 +88,26 @@ def chat_request(body,model,reasoning,approved_tools=None,allow_system_messages=
         if not model.startswith('deepseek-'):request['tool_choice']='auto'
     return request
 
+def message_reasoning_key(content,occurrence):
+    return 'message_'+hashlib.sha256(content.encode()).hexdigest()+'_'+str(occurrence)
+
+
 def responses_request(chat,retained,effort="low"):
-    inputs=[]
+    inputs=[];occurrences={}
     for row in chat['messages']:
         if row['role']=='tool':inputs.append({'type':'function_call_output','call_id':row['tool_call_id'],'output':row['content']})
         else:
-            if row['content']:inputs.append({'role':row['role'],'content':row['content']})
-            calls=row.get('tool_calls',[])
             seen=set()
-            for call in calls:
-                for item in retained.get(call['id'],[]):
+            def remember(items):
+                for item in items:
                     identity=item.get('id')
                     if identity not in seen:inputs.append(item);seen.add(identity)
+            if row['role']=='assistant' and row['content']:
+                content=row['content'];occurrences[content]=occurrences.get(content,0)+1
+                remember(retained.get(message_reasoning_key(content,occurrences[content]),[]))
+            if row['content']:inputs.append({'role':row['role'],'content':row['content']})
+            for call in row.get('tool_calls',[]):
+                remember(retained.get(call['id'],[]))
                 inputs.append({'type':'function_call','call_id':call['id'],'name':call['function']['name'],'arguments':call['function']['arguments']})
     result={'model':chat['model'],'input':inputs,'max_output_tokens':bounds.MAX_OUTPUT,
       'store':False,'stream':False,'reasoning':{'effort':effort},'include':['reasoning.encrypted_content']}
@@ -107,6 +115,7 @@ def responses_request(chat,retained,effort="low"):
         result['tools']=[{'type':'function',**t['function']} for t in chat['tools']]
         result['tool_choice']='auto'
     return result
+
 
 def usage_details(raw,key,mode):
     if key not in raw:return {}
@@ -210,7 +219,7 @@ def conflict_usage_snapshot(raw,mode):
                 snapshot[key][field]=None if value is None and mode=='chat' else control.nonnegative(value,'observed '+field)
     return snapshot
 
-def output(raw,mode,model,allowed,chat_reasoning,response_reasoning,allow_conflict=False):
+def output(raw,mode,model,allowed,chat_reasoning,response_reasoning,allow_conflict=False,response_history=None):
     reported=raw.get('model')
     if not runtime_policy.model_label_matches(model,reported):raise control.IntegrityError('Provider model identity mismatch')
     value=compatible_usage(raw.get('usage'),mode,allow_conflict and model==usage_policy.MODEL);content=[];stop='end_turn'
@@ -229,6 +238,11 @@ def output(raw,mode,model,allowed,chat_reasoning,response_reasoning,allow_confli
                 content.append(tool_block(item.get('call_id'),item.get('name'),item.get('arguments'),allowed));stop='tool_use'
                 response_reasoning[item['call_id']]=thought
             elif kind!='reasoning':raise control.IntegrityError('Unsupported provider output item')
+        if thought and response_history is not None:
+            message_text='\n'.join(part['text'] for part in content if part['type']=='text')
+            if message_text:
+                occurrence=1+sum(row.get('role')=='assistant' and row.get('content')==message_text for row in response_history)
+                response_reasoning[message_reasoning_key(message_text,occurrence)]=thought
     else:
         choices=raw.get('choices')
         if not isinstance(choices,list) or len(choices)!=1:raise control.IntegrityError('Unexpected provider choices')
@@ -410,7 +424,8 @@ class Gateway:
                 observed=self.context.data.setdefault('provider_response_observations',[])
                 if len(observed)<16:observed.append(response_observation(raw,self.model));self.context.save()
                 message,row,reported=output(raw,mode,self.model,allowed,self.reasoning,self.response_reasoning,
-                  allow_conflict=usage_policy.enabled(self.data,self.model))
+                  allow_conflict=usage_policy.enabled(self.data,self.model),
+                  response_history=chat['messages'] if interactive else None)
                 # Preserve actual observed usage even when it exceeds the estimate.
                 if row['total_tokens']>ceiling:
                     self.total['conservative_tokens']+=row['total_tokens']-ceiling;self.checkpoint()
