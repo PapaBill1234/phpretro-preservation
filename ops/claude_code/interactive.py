@@ -79,6 +79,8 @@ def prior_usage(ops,sid):
 class InteractiveGateway(gateway.Gateway):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs);self.halted=False;self.seen_tools=set()
+        import request_accounting
+        self.total.update(usage_schema=request_accounting.INTERACTIVE_SCHEMA,request_token_ceiling=request_accounting.INTERACTIVE_CEILING,interactive_token_budget=self.manifest['reserved_tokens'])
     def call(self,body):
         # Serialize the whole multi-turn wrapper; the underlying lock retains the
         # one-request financial admission/physical-attempt durability contract.
@@ -121,9 +123,14 @@ def transcript_observations(home,sid,context,journal=None):
     invoked=set();observed=set(context.data.get('native_event_ids',[]));root=home/'.claude/projects'
     for p in root.glob('*/'+sid+'.jsonl'):
         if p.is_symlink() or p.parent.is_symlink() or p.stat().st_size>8_000_000:continue
-        for line in p.read_text().splitlines():
+        try:lines=p.read_text().splitlines()
+        except (OSError,UnicodeError):continue
+        for line in lines:
             try:event=json.loads(line)
             except ValueError:continue
+            if not isinstance(event,dict):continue
+            message=event.get('message',{})
+            if not isinstance(message,dict):continue
             if journal and event.get('type')=='user' and isinstance(event.get('uuid'),str) and event['uuid'] not in observed:
                 content=event.get('message',{}).get('content',[])
                 chunks=[p.get('text','') for p in content if isinstance(p,dict) and p.get('type')=='text'] if isinstance(content,list) else [content] if isinstance(content,str) else []
@@ -133,7 +140,8 @@ def transcript_observations(home,sid,context,journal=None):
             for part in parts if isinstance(parts,list) else []:
                 if not isinstance(part,dict):continue
                 if part.get('type')=='tool_use' and part.get('name')=='Skill':
-                    name=part.get('input',{}).get('skill','')
+                    inputs=part.get('input',{})
+                    name=inputs.get('skill','') if isinstance(inputs,dict) else ''
                     if isinstance(name,str) and re.fullmatch(r'[a-zA-Z0-9:_-]{1,80}',name):invoked.add(name)
                 text=part.get('text','')
                 if isinstance(text,str):
@@ -169,6 +177,7 @@ def launch(sid=None,prompt=None,print_mode=False,output_format="text"):
     with (runtime_policy.OPS/'locks/orchestrator.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         if not runtime_policy.ready(MODEL):raise control.IntegrityError('Reviewed Sol runtime admission is not ready')
+        orchestrator.settle_worker_receipts()
         state=orchestrator.load_state()
         if state.get('reservations'):raise control.IntegrityError('Wait for the existing paid worker to finish')
         resume,used=prior_usage(runtime_policy.OPS,sid)
@@ -215,19 +224,27 @@ def launch(sid=None,prompt=None,print_mode=False,output_format="text"):
             time.sleep(.5)
         rc=child.wait(timeout=10)
     finally:
-        if child:worker.stop(child,10)
-        if not print_mode:os.tcsetpgrp(sys.stdin.fileno(),foreground)
-        signal.signal(signal.SIGTTOU,previous)
-        signal.signal(signal.SIGTERM,prior_term)
-        if client:
-            client.halted=True
-            client.close()
-            with client.interactive_lock:checkpoint()  # All physical requests drained before settlement.
-        else:checkpoint()
-        transcript_observations(home,sid,context,journal);context.finish(False)
-        journal.add('result','Terminal closed',rc=rc);journal.finish(rc==0)
-        try:settle(path,rec,total,rc)
-        finally:lease.close()
+        drained=False
+        try:
+            if child:worker.stop(child,10)
+            drained=True
+            if client:client.halted=True;client.close()
+        finally:
+            try:
+                if not print_mode:
+                    try:os.tcsetpgrp(sys.stdin.fileno(),foreground)
+                    except OSError:pass  # The terminal may have disconnected.
+                signal.signal(signal.SIGTTOU,previous)
+                signal.signal(signal.SIGTERM,prior_term)
+                if drained:
+                    if client:
+                        with client.interactive_lock:checkpoint()
+                    else:checkpoint()
+                    try:
+                        transcript_observations(home,sid,context,journal);context.finish(False)
+                        journal.add('result','Terminal closed',rc=rc);journal.finish(rc==0)
+                    finally:settle(path,rec,total,rc)
+            finally:lease.close()
     print('Saved in Doctor. Resume with: claude --resume '+sid,file=sys.stderr if print_mode else sys.stdout,flush=True)
     return rc
 
@@ -246,8 +263,12 @@ def main(argv=None):
     os.environ['PHPRETRO_RUNTIME']='claude-code'
     os.environ['PHPRETRO_REPO']=str(Path(__file__).resolve().parents[2])
     try:return launch(args.resume,args.prompt,args.print_mode,args.output_format)
-    except (control.IntegrityError,orchestrator_error(),BlockingIOError,ValueError,InterruptedError,KeyboardInterrupt):
+    except (control.IntegrityError,orchestrator_error(),orchestrator_busy_error(),BlockingIOError,ValueError,InterruptedError,KeyboardInterrupt):
         print('PHPRetro terminal admission failed. Existing state, receipts and charges retained.',file=sys.stderr);return 75
+
+def orchestrator_busy_error():
+    import orchestrator
+    return orchestrator.WorkerBusy
 
 def orchestrator_error():
     import orchestrator

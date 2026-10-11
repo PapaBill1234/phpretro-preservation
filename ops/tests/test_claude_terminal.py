@@ -102,6 +102,27 @@ class TerminalTests(unittest.TestCase):
    self.assertEqual(interactive.main(['-p','--output-format','json','hello']),0)
   launch.assert_called_once_with(None,'hello',True,'json')
 
+ def test_large_unknown_physical_hold_is_projected_and_charged_only_for_interactive(self):
+  import request_accounting,worker
+  with tempfile.TemporaryDirectory() as t:
+   sid=str(uuid.uuid4());row=runner.zero(sid,interactive.MODEL,request_accounting.INTERACTIVE_CEILING)
+   row.update(usage_schema=request_accounting.INTERACTIVE_SCHEMA,interactive_token_budget=200000,api_calls=1,unknown_api_calls=1,unknown_request_ceilings=[100000],conservative_tokens=100000,usage_complete=False)
+   self.assertEqual(request_accounting.bounded_tokens(row,0),100000)
+   path=Path(t)/'usage.json';path.write_text(json.dumps(row))
+   projected=worker.usage_snapshot(path,Path(t)/'missing','marker','claude-code')
+   self.assertEqual(request_accounting.bounded_tokens(projected,0),100000)
+   for override in ({'usage_schema':gateway.SCHEMA,'request_token_ceiling':64096},{'model':'gpt-6-luna'},{'interactive_token_budget':99999}):
+    with self.assertRaises(integrity.IntegrityError):request_accounting.bounded_tokens({**row,**override},0)
+
+ def test_malformed_transcript_containers_do_not_break_accounting_observer(self):
+  with tempfile.TemporaryDirectory() as t:
+   home=Path(t);sid=str(uuid.uuid4());root=home/'.claude/projects/project';root.mkdir(parents=True)
+   values=[None,[],{'type':'user','uuid':'u','message':None},{'message':{'content':[{'type':'tool_use','name':'Skill','input':None}]}},{'message':{'content':'<command-name>/doctor</command-name>'}}]
+   (root/(sid+'.jsonl')).write_text('\n'.join(json.dumps(v) for v in values))
+   context=context_usage.Recorder(home/'context.json',list(interactive.TOOLS));journal=session_journal.Journal(home/'session.json')
+   interactive.transcript_observations(home,sid,context,journal)
+   self.assertEqual(context.data['native_interactive']['invoked'],['doctor'])
+
  def test_unmanaged_native_history_in_terminal_profiles_remains_unknown(self):
   from claude_code import native_sessions
   with tempfile.TemporaryDirectory() as t:
