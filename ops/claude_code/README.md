@@ -1,5 +1,19 @@
 # Native Claude Code runtime
 
+Admitted DeepSeek numeric conflicts retain a private per-physical-request
+`RUN.usage-conflict-N.json` evidence file with the original recognized numeric
+counters, provider/model identity and original hold. This is separate from the
+bounded diagnostic sample, and persistence must succeed before continuation.
+Unknown fields and provider text are excluded. Unknown usage remains incomplete
+and conservatively charged; historical charges are retained.
+
+Malformed non-null usage detail objects are rejected even when another cache
+representation is present. Chat Completions' optional null detail objects and
+reasoning fields follow the [official Chat usage schema](https://github.com/openai/openai-python/blob/main/src/openai/types/completion_usage.py)
+and remain unknown; null is never invented as zero. Cache coverage still needs
+valid numeric evidence, and supplied Responses details require valid objects
+and numeric counters.
+
 Manual route acceptance accepts `probe.py --run --model deepseek-v4.1-flash
 --provider portdan` only under the owned, authorized migration pause. Each
 source/model/provider combination is recorded before execution and cannot be

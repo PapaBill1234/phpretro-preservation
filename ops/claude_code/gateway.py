@@ -103,6 +103,16 @@ def responses_request(chat,retained):
         result['tool_choice']='auto'
     return result
 
+def usage_details(raw,key,mode):
+    if key not in raw:return {}
+    value=raw[key]
+    # Chat schema: github.com/openai/openai-python/blob/main/src/openai/types/completion_usage.py
+    # Chat Completions' official schema permits unavailable detail objects.
+    # Responses details are numeric objects when present. Unknown is not zero.
+    if value is None and mode=='chat':return {}
+    if not isinstance(value,dict):raise control.IntegrityError('Invalid usage details')
+    return value
+
 def usage(raw,mode):
     """Numeric inclusive OpenAI counters -> exclusive Anthropic wire counters.
 
@@ -114,9 +124,13 @@ def usage(raw,mode):
     input_key,output_key=('input_tokens','output_tokens') if mode=='responses' else ('prompt_tokens','completion_tokens')
     prompt=control.nonnegative(raw.get(input_key),'provider input')
     output=control.nonnegative(raw.get(output_key),'provider output')
-    details=raw.get('input_tokens_details' if mode=='responses' else 'prompt_tokens_details')
+    details=usage_details(raw,'input_tokens_details' if mode=='responses' else 'prompt_tokens_details',mode)
+    reasoning=usage_details(raw,'output_tokens_details' if mode=='responses' else 'completion_tokens_details',mode)
+    reported=reasoning.get('reasoning_tokens')
+    if 'reasoning_tokens' in reasoning and not (reported is None and mode=='chat'):
+        if control.nonnegative(reported,'provider reasoning')>output:raise control.IntegrityError('Reasoning exceeds output')
     reads=[]
-    if isinstance(details,dict) and 'cached_tokens' in details:
+    if 'cached_tokens' in details and not (details['cached_tokens'] is None and mode=='chat'):
         reads.append(control.nonnegative(details['cached_tokens'],'provider cached input'))
     if 'prompt_cache_hit_tokens' in raw or 'prompt_cache_miss_tokens' in raw:
         hit=control.nonnegative(raw.get('prompt_cache_hit_tokens'),'provider cache hit')
@@ -132,10 +146,6 @@ def usage(raw,mode):
     total=prompt+output
     if 'total_tokens' in raw and control.nonnegative(raw['total_tokens'],'provider total')!=total:
         raise control.IntegrityError('Provider total disagrees')
-    reasoning=raw.get('output_tokens_details' if mode=='responses' else 'completion_tokens_details',{})
-    reported=reasoning.get('reasoning_tokens') if isinstance(reasoning,dict) else None
-    if reported is not None and control.nonnegative(reported,'provider reasoning')>output:
-        raise control.IntegrityError('Reasoning exceeds output')
     return {'input_tokens':prompt-read-write,'output_tokens':output,'cache_read_tokens':read,
       'cache_write_tokens':write,'total_tokens':total,'reasoning_tokens':reported}
 
@@ -153,9 +163,8 @@ def compatible_usage(raw,mode,allow_conflict=False):
     output_tokens=control.nonnegative(raw.get('completion_tokens'),'provider output')
     if not prompt or not output_tokens:raise control.IntegrityError('Completed provider response has empty usage')
     candidates=[prompt];reads=[]
-    details=raw.get('prompt_tokens_details')
-    if details is not None and not isinstance(details,dict):raise control.IntegrityError('Invalid cache details')
-    if isinstance(details,dict) and 'cached_tokens' in details:
+    details=usage_details(raw,'prompt_tokens_details','chat')
+    if 'cached_tokens' in details and details['cached_tokens'] is not None:
         reads.append(control.nonnegative(details['cached_tokens'],'provider cached input'))
     if 'prompt_cache_hit_tokens' in raw or 'prompt_cache_miss_tokens' in raw:
         hit=control.nonnegative(raw.get('prompt_cache_hit_tokens'),'provider cache hit')
@@ -166,8 +175,7 @@ def compatible_usage(raw,mode,allow_conflict=False):
     candidates.extend(read+write for read in reads)
     if 'total_tokens' in raw:
         candidates.append(control.nonnegative(raw['total_tokens'],'provider total')-output_tokens)
-    reasoning=raw.get('completion_tokens_details',{})
-    if not isinstance(reasoning,dict):raise control.IntegrityError('Invalid reasoning details')
+    reasoning=usage_details(raw,'completion_tokens_details','chat')
     reported=reasoning.get('reasoning_tokens')
     if reported is not None and control.nonnegative(reported,'provider reasoning')>output_tokens:
         raise control.IntegrityError('Reasoning exceeds output')
@@ -177,6 +185,23 @@ def compatible_usage(raw,mode,allow_conflict=False):
     return {'input_tokens':estimated_input,'output_tokens':output_tokens,'cache_read_tokens':0,
       'cache_write_tokens':0,'total_tokens':estimated_input+output_tokens,'reasoning_tokens':reported,
       'usage_conflict':conflict}
+
+def conflict_usage_snapshot(raw,mode):
+    """Exact recognized counters only; never retain provider text or credentials."""
+    snapshot={}
+    for key in ('input_tokens','output_tokens','prompt_tokens','completion_tokens','total_tokens',
+                'prompt_cache_hit_tokens','prompt_cache_miss_tokens','cache_creation_input_tokens'):
+        if key in raw:snapshot[key]=control.nonnegative(raw[key],'observed '+key)
+    for key in ('input_tokens_details','prompt_tokens_details','output_tokens_details','completion_tokens_details'):
+        if key not in raw:continue
+        details=usage_details(raw,key,mode)
+        if raw[key] is None:snapshot[key]=None;continue
+        snapshot[key]={}
+        for field in ('cached_tokens','reasoning_tokens'):
+            if field in details:
+                value=details[field]
+                snapshot[key][field]=None if value is None and mode=='chat' else control.nonnegative(value,'observed '+field)
+    return snapshot
 
 def output(raw,mode,model,allowed,chat_reasoning,response_reasoning,allow_conflict=False):
     reported=raw.get('model')
@@ -378,6 +403,16 @@ class Gateway:
                 if row.get('usage_conflict'):
                     if row['output_tokens']>bounds.MAX_OUTPUT or row['input_tokens']>ceiling-bounds.MAX_OUTPUT:
                         raise control.IntegrityError('Provider reported usage beyond actual request bounds')
+                    receipt=Path(self.manifest['_receipt_path'])
+                    evidence=receipt.with_suffix('.usage-conflict-'+str(self.total['api_calls'])+'.json')
+                    # The bounded diagnostic sample is separate from durable
+                    # accounting evidence. Every admitted conflict gets a file,
+                    # including physical responses after the first sixteen.
+                    control.atomic_json(evidence,{'schema':'phpretro.claude-counter-conflict.v1',
+                      'run_id':receipt.stem,'physical_request':self.total['api_calls'],
+                      'provider':provider,'model':self.model,'reported_model':reported,
+                      'conflict':row['usage_conflict'],'usage':conflict_usage_snapshot(raw['usage'],mode),
+                      'original_token_hold':ceiling,'recorded_at':time.time()})
                     self.total['usage_conflict_policy']=usage_policy.POLICY
                     self.total['usage_conflict_calls']=self.total.get('usage_conflict_calls',0)+1
                     self.total['reported_model']=reported

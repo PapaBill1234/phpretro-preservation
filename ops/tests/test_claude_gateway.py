@@ -49,6 +49,24 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(gateway.usage(raw,'chat')['input_tokens'],28)
         with self.assertRaises(integrity.IntegrityError):gateway.usage({**raw,'prompt_cache_miss_tokens':27},'chat')
 
+    def test_malformed_details_cannot_hide_behind_other_cache_counters(self):
+        chat={'prompt_tokens':35,'completion_tokens':4,'total_tokens':39,'prompt_cache_hit_tokens':7,'prompt_cache_miss_tokens':28}
+        for value in ('invalid',[],True,4):
+            for key in ('prompt_tokens_details','completion_tokens_details'):
+                with self.subTest(key=key,value=value),self.assertRaises(integrity.IntegrityError):
+                    gateway.usage({**chat,key:value},'chat')
+            response={**self.response()['usage'],'prompt_cache_hit_tokens':7,'prompt_cache_miss_tokens':28,'input_tokens_details':value}
+            with self.assertRaises(integrity.IntegrityError):gateway.usage(response,'responses')
+
+    def test_nullable_chat_details_are_unknown_not_fabricated_zero(self):
+        chat={'prompt_tokens':35,'completion_tokens':4,'total_tokens':39,'prompt_cache_hit_tokens':7,'prompt_cache_miss_tokens':28,
+              'prompt_tokens_details':None,'completion_tokens_details':{'reasoning_tokens':None}}
+        self.assertIsNone(gateway.usage(chat,'chat')['reasoning_tokens'])
+        self.assertIsNone(gateway.compatible_usage({**chat,'prompt_cache_miss_tokens':29},'chat',True)['reasoning_tokens'])
+        for value in (None,{'reasoning_tokens':None},'invalid'):
+            with self.assertRaises(integrity.IntegrityError):
+                gateway.usage({**self.response()['usage'],'output_tokens_details':value},'responses')
+
     def test_observed_deepseek_alias_does_not_waive_conflicting_usage(self):
         model='deepseek-v4.1-flash';alias='cb/deepseek-v4.1-flash'
         self.data['models'][model]['usage_conflict_policy']='strict'
@@ -99,6 +117,33 @@ class GatewayTests(unittest.TestCase):
                         {'model':'gpt-6-luna'},{'usage_complete':True}):
             with self.subTest(changes=changes),self.assertRaises(integrity.IntegrityError):
                 request_accounting.bounded_tokens({**projected,**changes},0)
+
+    def test_conflict_evidence_survives_bounded_diagnostic_limit(self):
+        count=0
+        def upstream(*args):
+            nonlocal count
+            count+=1
+            raw=self.conflicting_response()
+            if count<=16:raw['usage']={'prompt_tokens':35,'completion_tokens':4,'total_tokens':39,'prompt_cache_hit_tokens':7,'prompt_cache_miss_tokens':28}
+            return raw
+        client=self.start(invoke=upstream,routes=['a6api'],model=usage_policy.MODEL)
+        for _ in range(17):client.arm();client.call(self.body)
+        self.assertEqual(len(client.context.data['provider_response_observations']),16)
+        evidence=json.loads((self.root/'receipt.usage-conflict-17.json').read_text())
+        self.assertEqual(evidence['physical_request'],17)
+        self.assertEqual(evidence['provider'],'a6api')
+        self.assertEqual(evidence['reported_model'],'cb/deepseek-v4.1-flash')
+        self.assertEqual(evidence['usage'],self.conflicting_response()['usage'])
+        self.assertEqual(self.row['conservative_tokens'],16*39+64096)
+        self.assertTrue(usage_policy.continuation_allowed(self.data,self.row))
+
+    def test_conflict_cannot_continue_without_durable_counter_evidence(self):
+        client=self.start(invoke=lambda *args:self.conflicting_response(),routes=['a6api'],model=usage_policy.MODEL)
+        with patch.object(gateway.control,'atomic_json',side_effect=OSError('Synthetic storage failure')):
+            with self.assertRaises(OSError):client.call(self.body)
+        self.assertEqual(self.row['conservative_tokens'],64096)
+        self.assertNotIn('usage_conflict_calls',self.row)
+        self.assertIsNone(client.last)
 
     def test_numeric_exception_cannot_hide_later_invalid_fields_or_output(self):
         raw=self.conflicting_response()
