@@ -38,11 +38,16 @@ def text(parts):
         raise control.IntegrityError('Unsupported non-text content')
     return '\n'.join(p['text'] for p in parts)
 
-def chat_request(body,model,reasoning):
+INTERACTIVE_TOOLS=frozenset(("Bash","Read","Glob","Grep","Edit","Write","Skill"))
+
+def chat_request(body,model,reasoning,approved_tools=None,allow_system_messages=False):
+    approved_tools={"mcp__phpretro__execute"} if approved_tools is None else approved_tools
     messages=[]
     if body.get('system'):messages.append({'role':'system','content':text(body['system'])})
     for message in body['messages']:
         role=message.get('role');content=message.get('content')
+        if role=='system' and allow_system_messages:
+            messages.append({'role':'system','content':text(content)});continue
         if role not in ('assistant','user'):raise control.IntegrityError('Unsupported message role')
         if isinstance(content,str):content=[{'type':'text','text':content}]
         if not isinstance(content,list):raise control.IntegrityError('Invalid message content')
@@ -71,7 +76,7 @@ def chat_request(body,model,reasoning):
         messages.extend(results)
     tools=[]
     for tool in body.get('tools',[]):
-        if tool.get('name')!='mcp__phpretro__execute' or not isinstance(tool.get('input_schema'),dict):
+        if tool.get('name') not in approved_tools or not isinstance(tool.get('input_schema'),dict):
             raise control.IntegrityError('Unapproved gateway tool')
         tools.append({'type':'function','function':{'name':tool['name'],'description':tool.get('description',''),'parameters':tool['input_schema']}})
     request={'model':model,'messages':messages,'max_tokens':bounds.MAX_OUTPUT,'stream':False}
@@ -83,7 +88,7 @@ def chat_request(body,model,reasoning):
         if not model.startswith('deepseek-'):request['tool_choice']='auto'
     return request
 
-def responses_request(chat,retained):
+def responses_request(chat,retained,effort="low"):
     inputs=[]
     for row in chat['messages']:
         if row['role']=='tool':inputs.append({'type':'function_call_output','call_id':row['tool_call_id'],'output':row['content']})
@@ -97,7 +102,7 @@ def responses_request(chat,retained):
                     if identity not in seen:inputs.append(item);seen.add(identity)
                 inputs.append({'type':'function_call','call_id':call['id'],'name':call['function']['name'],'arguments':call['function']['arguments']})
     result={'model':chat['model'],'input':inputs,'max_output_tokens':bounds.MAX_OUTPUT,
-      'store':False,'stream':False,'reasoning':{'effort':'low'},'include':['reasoning.encrypted_content']}
+      'store':False,'stream':False,'reasoning':{'effort':effort},'include':['reasoning.encrypted_content']}
     if chat.get('tools'):
         result['tools']=[{'type':'function',**t['function']} for t in chat['tools']]
         result['tool_choice']='auto'
@@ -353,16 +358,18 @@ class Gateway:
                 raise control.IntegrityError('CLI model/output bound changed')
             if not isinstance(body.get('messages'),list):raise control.IntegrityError('Missing CLI messages')
             allowed={t.get('name') for t in body.get('tools',[])}
-            if allowed and self.manifest['role']!='builder':raise control.IntegrityError('Reviewer requested tools')
-            chat=chat_request(body,self.model,self.reasoning);mode=self.data['models'][self.model]['api_mode']
-            payload=responses_request(chat,self.response_reasoning) if mode=='responses' else chat
+            if allowed and self.manifest['role']!='builder' and not (self.manifest.get('profile')=='claude-interactive' and self.manifest.get('role')=='interactive' and self.model=='gpt-6.1-sol'):raise control.IntegrityError('Reviewer requested tools')
+            interactive=(self.manifest.get('profile')=='claude-interactive' and self.manifest.get('role')=='interactive' and self.model=='gpt-6.1-sol')
+            chat=chat_request(body,self.model,self.reasoning,INTERACTIVE_TOOLS if interactive else None,allow_system_messages=interactive);mode=self.data['models'][self.model]['api_mode']
+            payload=responses_request(chat,self.response_reasoning,'high' if interactive else 'low') if mode=='responses' else chat
             # UTF-8 byte count deliberately overestimates text/tokenized schema,
             # with 4096 additional tokens for format delimiters. No paid count call.
             input_bound=len(json.dumps(payload,ensure_ascii=False).encode())+4096
-            if input_bound>bounds.MAX_INPUT:raise control.IntegrityError('Gateway input bound exceeded')
+            input_limit=min(300000-bounds.MAX_OUTPUT,self.manifest['reserved_tokens']-bounds.MAX_OUTPUT) if interactive else bounds.MAX_INPUT
+            if input_bound>input_limit:raise control.IntegrityError('Gateway input bound exceeded')
             def invoke(provider):
                 self.cancelled();remaining=self.manifest['reserved_tokens']-self.total['conservative_tokens']
-                ceiling=bounds.next_ceiling(max(0,remaining))
+                ceiling=(input_bound+bounds.MAX_OUTPUT if remaining>=input_bound+bounds.MAX_OUTPUT else 0) if interactive else bounds.next_ceiling(max(0,remaining))
                 if not ceiling or input_bound+bounds.MAX_OUTPUT>ceiling:
                     raise control.IntegrityError('Remaining original token hold cannot cover request')
                 settings=self.data['models'][self.model]

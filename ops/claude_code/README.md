@@ -29,7 +29,7 @@ sessions. OpenHands receipts and Canvas volumes remain historical/rollback data.
 
 The pinned binary is `/home/ubuntu/.local/bin/claude`, version
 `2.1.287 (Claude Code)`. Claude Code is the harness, not the model provider.
-Builders retain Luna Ã¢â€ â€™ Sol Ã¢â€ â€™ DeepSeek escalation; independent reviewers use a
+Builders retain Luna ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Sol ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ DeepSeek escalation; independent reviewers use a
 separate model family. Sol 6.1 supervises. All routes prefer A6API then admitted
 Portdan fallback, using existing private Ubuntu credentials. No Anthropic login
 is needed. Managed sessions receive only an ephemeral authenticated loopback
@@ -191,3 +191,34 @@ User route admission is separate from measured tool/usage observations and does
 not verify Portdan. Independent source/unit review, CI, STOP and original budgets
 are unaffected. A new private, source-bound paused repair installation record is
 separate from the expired migration grant and cannot authorize paid bootstrap.
+
+## Ubuntu human terminal
+
+After normal reviewed runtime installation, `install_terminal.py` installs the
+Ubuntu `claude` wrapper and **Claude Code Sol Chat** desktop launcher. They start
+a real native interactive CLI using A6API Sol 6.1 high through the private gateway,
+in a separate `/home/ubuntu/work/claude-project` checkout. Native `/doctor` and
+`/doctor prompt-audit` are available. `phpretro-doctor` supplies project-wide
+metadata for recorded builders, reviewers, supervisor and interactive sessions;
+all these receipt types and redacted timelines are collected by Doctor. Native
+transcripts deduplicate against managed UUIDs. Missing history remains unknown.
+
+Each human conversation retains a cumulative 300,000-token allowance across
+`claude --resume UUID`; each terminal segment has a 30-minute deadline. Daily
+token/spending, STOP and model admission remain enforced through the existing
+controller ledger. Native command prompts have size-derived conservative
+physical-attempt holds inside that same original conversation reservation;
+automated workers keep their existing fixed request bounds and tool allowlist.
+Every provider attempt is durably accounted. No provider key enters the CLI.
+
+Interactive tools are explicitly Bash/Read/Glob/Grep/Edit/Write/Skill. Hooks,
+external MCP, automatic cron and background inference are disabled. Headless
+worker invocations and native installation subcommands delegate unchanged to
+the pinned executable. No Anthropic subscription login is required. The app
+recurring automation is not enabled by this launcher. The terminal does not
+reset F61, grant unit approval, or modify the installed runtime checkout.
+
+A native in-CLI `/clear` or switch to another conversation is rejected before
+a paid call, because it changes the managed native UUID. Exit and start a new
+`claude` conversation or use `claude --resume UUID`. The wrapper does not adopt
+other session IDs or reset the original conversation allowance.

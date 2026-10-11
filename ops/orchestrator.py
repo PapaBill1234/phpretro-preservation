@@ -1235,7 +1235,7 @@ def log_model_run(role: str, model: str, unit: str, attempt, rc, outcome: str,
         ts_start=ts_start or now(), ts_end=ts_end or now(), role=role, model=model,
         unit=unit or "", attempt=attempt, rc=rc, outcome=outcome, usage=usage or {},
         provider=provider_override or (usage or {}).get("provider") or PROVIDER,
-        flags={"runtime":"claude-code","context_engine":"native-cli","plugins":{"active":False},"toolsets":"docker-mcp" if role=='builder' else 'none',"session":(usage or {}).get('session_id')}
+        flags={"runtime":"claude-code","context_engine":"native-cli","plugins":{"active":False},"toolsets":"docker-mcp" if role=='builder' else "native-host-tools" if role=='interactive' else 'none',"session":(usage or {}).get('session_id')}
               if (usage or {}).get('runtime')=='claude-code' else {"runtime": "openhands", "context_engine": "sdk", "plugins": {"active": False}, "toolsets": "docker-exec"}
               if (usage or {}).get("runtime") == "openhands" else mod.default_flags(profile, toolsets,
                     session=str((usage or {}).get("session_id") or "")))
