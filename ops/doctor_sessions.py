@@ -128,6 +128,13 @@ def findings(rows,state,billing,canvas):
             if identity not in known:add('missing-receipt','med','A live reservation lacks readable session evidence','The controller reservation exists but its receipt is missing or invalid.')
     return issues
 
+def interactive_skills(context):
+    raw=context.get('native_interactive',{})
+    invoked=raw.get('invoked',[]) if isinstance(raw,dict) else []
+    import re
+    names=sorted({s for s in invoked[:100] if isinstance(s,str) and re.fullmatch(r'[a-zA-Z0-9:_-]{1,80}',s)}) if isinstance(invoked,list) else []
+    return {'activated':[],'invoked':names,'coverage':'Native interactive slash commands and tools are enabled. Invocation markers come from the saved native transcript; the complete injected catalog and prompt coverage remain unknown.'}
+
 def sessions(home=None,canvas=None):
     home=Path(home or Path.home()); state=home/'phpretro-ops/state'
     rows=[]
@@ -161,7 +168,7 @@ def sessions(home=None,canvas=None):
         context_requests=[]
         if observed:
             context_requests=[{k:r[k] for k in ('estimated_context_tokens','estimated_tool_schema_tokens','estimated_system_tokens')} for r in context['requests']]
-        rows.append({'id':d['run_id'],'runtime':d['runtime'],'native_session_id':usage.get('session_id') if d['runtime']=='claude-code' else None,'unit':d.get('unit') or 'Operations' if d.get('profile')=='claude-supervisor' else d.get('unit') or 'Unknown','unit_state':unit_states.get(d.get('unit'),'unknown'),'role':'supervisor' if d.get('profile')=='claude-supervisor' else d.get('role') or 'Unknown','model':d.get('model') or 'Unknown',
+        rows.append({'id':d['run_id'],'runtime':d['runtime'],'native_session_id':usage.get('session_id') if d['runtime']=='claude-code' else None,'unit':'Interactive' if d.get('profile')=='claude-interactive' else d.get('unit') or 'Operations' if d.get('profile')=='claude-supervisor' else d.get('unit') or 'Unknown','unit_state':unit_states.get(d.get('unit'),'unknown'),'role':'supervisor' if d.get('profile')=='claude-supervisor' else d.get('role') or 'Unknown','model':d.get('model') or 'Unknown',
           'provider':usage.get('provider'),'status':'running' if running else 'failed' if d.get('rc') not in (None,0) else 'succeeded' if d.get('status')=='complete' and d.get('rc')==0 else 'incomplete',
           'receipt_status':d.get('status'),'rc':d.get('rc'),
           'started':timestamp(d.get('ts_start')) or timestamp(d.get('prepared_at')),
@@ -180,8 +187,8 @@ def sessions(home=None,canvas=None):
           'tool_output_chars':{k:number(context.get(k)) for k in ('original_tool_output_chars','sent_tool_output_chars','truncated_observations')},
           'resources':[{'name':'System prompt','kind':'instructions','required':True,'tokens':context_requests[0]['estimated_system_tokens'] if context_requests else None},
                        {'name':'Unit brief / full review diff and message envelope','kind':'instructions','required':True,'tokens':max(0,context_requests[0]['estimated_context_tokens']-context_requests[0]['estimated_system_tokens']-context_requests[0]['estimated_tool_schema_tokens']) if context_requests else None},
-                       {'name':'Execute schema','kind':'tool','required':d.get('role')=='builder','tokens':context_requests[0]['estimated_tool_schema_tokens'] if context_requests else None}],
-          'skills':{'activated':[],'invoked':[],'coverage':'Claude pipeline disables automatic host skills/memory/hooks; repository instructions are read through isolated tools. Native full prompt coverage is unavailable.' if d['runtime']=='claude-code' else 'The SDK runner disables automatic skill loading; unit instructions are supplied explicitly.'}})
+                       {'name':'Native interactive tool schemas' if d.get('profile')=='claude-interactive' else 'Execute schema','kind':'tool','required':d.get('role') in ('builder','interactive'),'tokens':context_requests[0]['estimated_tool_schema_tokens'] if context_requests else None}],
+          'skills':interactive_skills(context) if d.get('profile')=='claude-interactive' else {'activated':[],'invoked':[],'coverage':'Claude pipeline disables automatic host skills/memory/hooks; repository instructions are read through isolated tools. Native full prompt coverage is unavailable.' if d['runtime']=='claude-code' else 'The SDK runner disables automatic skill loading; unit instructions are supplied explicitly.'}})
         if len(rows)==500:break
     billing=read(state/'a6api-billing.json',{})
     if not isinstance(billing,dict):billing={}
@@ -195,7 +202,7 @@ def sessions(home=None,canvas=None):
     rows.sort(key=lambda r:r.get('started') or 0,reverse=True)
     supervisor=read(state/'codex-supervisor.json',{});supervisor=supervisor if isinstance(supervisor,dict) else {}
     activation=read(state/'claude-code-activation.json',{});activation=activation if isinstance(activation,dict) else {}
-    runtimes=[{'id':'claude-code','label':'Claude Code builders and reviewers','state':'paused' if (home/'phpretro-ops/STOP').exists() else 'enabled; admission applies' if activation.get('enabled') is True else 'not activated',
+    runtimes=[{'id':'claude-code','label':'Claude Code builders, reviewers, supervisor and interactive chats','state':'paused' if (home/'phpretro-ops/STOP').exists() else 'enabled; admission applies' if activation.get('enabled') is True else 'not activated',
                'sessions':sum(r['runtime']=='claude-code' for r in rows),'source':'Native CLI session identity, controller receipts, strict final usage and bounded redacted timelines'},
               {'id':'openhands','label':'OpenHands SDK builders and reviewers (historical)','state':'retired' if activation.get('installed') else 'paused' if (home/'phpretro-ops/STOP').exists() else 'STOP absent; controller admission applies',
                'sessions':sum(r['runtime']=='openhands' for r in rows),'source':'Controller receipts, usage checkpoints, context observers and private event journals'},

@@ -6,9 +6,11 @@ SCHEMA = "phpretro.bounded-usage.v3"
 # reservation to that enforced bound; retain v1 charges for historical receipts.
 MAX_INPUT = 60000
 MAX_OUTPUT = 4096
+INTERACTIVE_SCHEMA = "phpretro.claude-interactive-usage.v1"
+INTERACTIVE_CEILING = 300000
 CALL_CEILING = MAX_INPUT + MAX_OUTPUT
 CEILINGS = {"phpretro.bounded-usage.v1": 69632, "phpretro.bounded-usage.v2": CALL_CEILING, SCHEMA: CALL_CEILING}
-FIELDS = ("usage_schema", "request_token_ceiling", "completed_api_calls", "unknown_api_calls", "usage_known_calls", "unknown_request_ceilings", "usage_conflict_calls", "usage_conflict_policy")
+FIELDS = ("usage_schema", "request_token_ceiling", "completed_api_calls", "unknown_api_calls", "usage_known_calls", "unknown_request_ceilings", "usage_conflict_calls", "usage_conflict_policy", "interactive_token_budget")
 
 
 def next_ceiling(remaining):
@@ -24,7 +26,13 @@ def bounded_tokens(data, observed):
     """
     schema = data.get("usage_schema")
     if data.get('runtime') == 'claude-code':
-        if schema=='phpretro.claude-gateway-usage.v2':
+        if schema in ('phpretro.claude-gateway-usage.v2',INTERACTIVE_SCHEMA):
+            maximum=CALL_CEILING
+            if schema==INTERACTIVE_SCHEMA:
+                budget=control.nonnegative(data.get('interactive_token_budget'),'interactive budget')
+                if data.get('model')!='gpt-6.1-sol' or not MAX_OUTPUT<budget<=INTERACTIVE_CEILING:
+                    raise control.IntegrityError('Invalid interactive accounting scope')
+                maximum=budget
             ceiling=control.nonnegative(data.get('request_token_ceiling'),'gateway ceiling')
             started=control.nonnegative(data.get('api_calls'),'gateway calls')
             known=control.nonnegative(data.get('completed_api_calls'),'gateway known calls')
@@ -36,9 +44,9 @@ def bounded_tokens(data, observed):
                     raise control.IntegrityError('Invalid gateway conflict admission')
             pending=data.get('unknown_request_ceilings')
             if not isinstance(pending,list) or len(pending)!=unknown:raise control.IntegrityError('Missing physical request holds')
-            if any(type(v) is not int or not MAX_OUTPUT<v<=CALL_CEILING for v in pending):raise control.IntegrityError('Invalid physical request hold')
+            if any(type(v) is not int or not MAX_OUTPUT<v<=maximum for v in pending):raise control.IntegrityError('Invalid physical request hold')
             estimate=control.nonnegative(data.get('conservative_tokens'),'gateway estimate')
-            if (ceiling!=CALL_CEILING or started!=known+unknown or control.nonnegative(data.get('usage_known_calls'),'gateway usage calls')!=known
+            if (ceiling!=(INTERACTIVE_CEILING if schema==INTERACTIVE_SCHEMA else CALL_CEILING) or started!=known+unknown or control.nonnegative(data.get('usage_known_calls'),'gateway usage calls')!=known
                 or estimate<observed+sum(pending) or unknown==0 and estimate!=observed
                 or data.get('usage_complete') is True and unknown!=0):raise control.IntegrityError('Gateway accounting mismatch')
             return estimate

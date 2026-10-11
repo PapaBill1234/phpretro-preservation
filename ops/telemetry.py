@@ -46,7 +46,7 @@ PROVIDER = os.environ.get("PHPRETRO_PROVIDER", "custom:a6api")
 # The pipeline's pessimistic fallback for a run whose real spend is unknown.
 PESSIMISTIC_TOKENS = int(os.environ.get("PHPRETRO_TIMEOUT_FALLBACK_TOKENS", "1000000"))
 
-ROLES = ("builder", "reviewer", "planner", "audit", "jev", "other")
+ROLES = ("builder", "reviewer", "planner", "audit", "jev", "interactive", "other")
 OUTCOMES = ("merged", "gate_failed", "timeout", "no_change", "review_fix",
             "provider_error", "interrupted", "other")
 EVENT_KINDS = ("dispatched", "built", "gate_pass", "gate_fail", "pr_opened",

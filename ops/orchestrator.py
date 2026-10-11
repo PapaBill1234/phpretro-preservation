@@ -1113,6 +1113,16 @@ def settle_worker_receipts():
                     ts_end = datetime.fromtimestamp(finished, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 except (ValueError, OverflowError, OSError) as exc:
                     raise control.IntegrityError("invalid receipt completion timestamp") from exc
+            if rec.get("profile") == "claude-interactive":
+                # Persist recovery before the ledger append: a crash after the
+                # append must not leave a charged conversation forever running.
+                from claude_code.interactive import identity
+                sid=identity(rec.get("native_session_id"))
+                if rec.get("role") != "interactive" or rec.get("model") != "gpt-6.1-sol" or usage.get("session_id") != sid:
+                    raise control.IntegrityError("Interactive recovery identity changed")
+                rec.update(status="complete",rc=rc,usage=usage,completed_at=time.time(),recovered=True)
+                control.atomic_json(path,rec)
+                control.atomic_json(path.with_suffix(".sandbox.json"),{"run_id":rid,"drained":True})
             log_model_run(rec["role"], rec["model"], rec.get("unit", ""), rec.get("attempt"), rc,
                           "timeout" if rc == 124 else "interrupted", usage,
                           rec["profile"], ts_start=reservation["ts_start"], ts_end=ts_end,
@@ -1235,7 +1245,7 @@ def log_model_run(role: str, model: str, unit: str, attempt, rc, outcome: str,
         ts_start=ts_start or now(), ts_end=ts_end or now(), role=role, model=model,
         unit=unit or "", attempt=attempt, rc=rc, outcome=outcome, usage=usage or {},
         provider=provider_override or (usage or {}).get("provider") or PROVIDER,
-        flags={"runtime":"claude-code","context_engine":"native-cli","plugins":{"active":False},"toolsets":"docker-mcp" if role=='builder' else 'none',"session":(usage or {}).get('session_id')}
+        flags={"runtime":"claude-code","context_engine":"native-cli","plugins":{"active":False},"toolsets":"docker-mcp" if role=='builder' else "native-host-tools" if role=='interactive' else 'none',"session":(usage or {}).get('session_id')}
               if (usage or {}).get('runtime')=='claude-code' else {"runtime": "openhands", "context_engine": "sdk", "plugins": {"active": False}, "toolsets": "docker-exec"}
               if (usage or {}).get("runtime") == "openhands" else mod.default_flags(profile, toolsets,
                     session=str((usage or {}).get("session_id") or "")))

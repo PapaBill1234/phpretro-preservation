@@ -10,17 +10,30 @@ from claude_code import protocol
 
 def collect(home,exclude):
     root=home/'.claude/projects';allowed=(home/'phpretro-preservation',home/'work',home/'phpretro-claude-code/migration')
-    if root.is_symlink():return []
+    roots=[]
+    if not root.is_symlink():roots.append(root)
+    managed=home/'phpretro-claude-code/terminal-home'
+    if managed.is_dir() and not managed.is_symlink():
+        for profile in managed.iterdir():
+            try:
+                if profile.is_symlink() or str(uuid.UUID(profile.name))!=profile.name:continue
+                candidate=profile/'.claude/projects'
+                if candidate.is_dir() and not candidate.is_symlink() and not candidate.parent.is_symlink():roots.append(candidate)
+            except (ValueError,OSError):continue
     rows=[];candidates=[]
-    for path in root.glob('*/*.jsonl'):
-        try:
-            if not path.is_symlink() and path.resolve().is_relative_to(root.resolve()) and not path.parent.is_symlink() and path.stat().st_size<=4_000_000:candidates.append((path.stat().st_mtime,path))
-        except OSError:continue
-    for ended,path in sorted(candidates,reverse=True)[:50]:
+    for root in roots:
+      for path in root.glob('*/*.jsonl'):
+          try:
+              if not path.is_symlink() and path.resolve().is_relative_to(root.resolve()) and not path.parent.is_symlink() and path.stat().st_size<=4_000_000:candidates.append((path.stat().st_mtime,path))
+          except OSError:continue
+    for ended,path in sorted(candidates,reverse=True)[:500]:
         try:
             sid=str(uuid.UUID(path.stem))
             if sid!=path.stem or sid in exclude:continue
-            events=[json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+            events=[]
+            for line in path.read_text().splitlines():
+                try:events.append(json.loads(line))
+                except ValueError:continue
             relevant=[e for e in events if isinstance(e,dict) and e.get('sessionId')==sid and
                 isinstance(e.get('cwd'),str) and not any('hotel-drogon' in part.lower() for part in Path(e['cwd']).parts)
                 and any(Path(e['cwd']).resolve().is_relative_to(p.resolve()) for p in allowed)]
@@ -30,9 +43,12 @@ def collect(home,exclude):
                 started=started or doctor.timestamp(event.get('timestamp'))
                 if event.get('type')!='assistant':continue
                 message=event.get('message',{});failed=failed or event.get('isApiErrorMessage') is True or event.get('is_api_error_message') is True
+                if not isinstance(message,dict):continue
                 if not isinstance(message.get('model'),str) or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._/-]{0,100}',message['model']):continue
                 if not isinstance(message.get('id'),str):continue
-                model=message['model'];value=protocol.counters(message.get('usage'))
+                model=message['model']
+                try:value=protocol.counters(message.get('usage'))
+                except (ValueError,TypeError,KeyError,protocol.control.IntegrityError):continue
                 previous=messages.get(message['id'])
                 if previous and any(value[k]<previous[k] for k in protocol.COUNTERS):continue
                 messages[message['id']]=value
