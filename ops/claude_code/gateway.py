@@ -127,7 +127,8 @@ def usage(raw,mode):
     details=usage_details(raw,'input_tokens_details' if mode=='responses' else 'prompt_tokens_details',mode)
     reasoning=usage_details(raw,'output_tokens_details' if mode=='responses' else 'completion_tokens_details',mode)
     reported=reasoning.get('reasoning_tokens')
-    if mode=='responses' or ('reasoning_tokens' in reasoning and reported is not None):
+    if ((mode=='responses' and 'output_tokens_details' in raw)
+        or ('reasoning_tokens' in reasoning and reported is not None)):
         if control.nonnegative(reported,'provider reasoning')>output:raise control.IntegrityError('Reasoning exceeds output')
     reads=[]
     if 'cached_tokens' in details and not (details['cached_tokens'] is None and mode=='chat'):
@@ -147,7 +148,8 @@ def usage(raw,mode):
     if 'total_tokens' in raw and control.nonnegative(raw['total_tokens'],'provider total')!=total:
         raise control.IntegrityError('Provider total disagrees')
     return {'input_tokens':prompt-read-write,'output_tokens':output,'cache_read_tokens':read,
-      'cache_write_tokens':write,'total_tokens':total,'reasoning_tokens':reported}
+      'cache_write_tokens':write,'total_tokens':total,'reasoning_tokens':reported,
+      'reasoning_breakdown_complete':reported is not None}
 
 COUNTER_CONFLICTS={'Cache hit/miss counters disagree','Cache representations disagree',
                   'Cache counters exceed inclusive input','Provider total disagrees'}
@@ -265,6 +267,12 @@ def response_observation(raw,model):
     if raw.get('status') in ('completed','incomplete','failed','cancelled','queued','in_progress'):result['status']=raw['status']
     value=raw.get('usage')
     if isinstance(value,dict):
+        detail_key='output_tokens_details' if 'input_tokens' in value else 'completion_tokens_details'
+        details=value.get(detail_key)
+        reasoning=details.get('reasoning_tokens') if isinstance(details,dict) else None
+        result['reasoning_breakdown_status']=('reported' if type(reasoning) is int and reasoning>=0
+          else 'unavailable' if detail_key not in value or detail_key=='completion_tokens_details' and (details is None or isinstance(details,dict) and reasoning is None)
+          else 'invalid')
         counters={}
         for key in ('input_tokens','output_tokens','prompt_tokens','completion_tokens','total_tokens','prompt_cache_hit_tokens','prompt_cache_miss_tokens','cache_creation_input_tokens'):
             if key in value:counters[key]=value[key] if type(value[key]) in (int,float) and __import__('math').isfinite(value[key]) else 'invalid'
